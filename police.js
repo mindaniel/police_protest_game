@@ -64,6 +64,8 @@ var Police = (function () {
           stance: "calm",
           tx: SPAWN.x,
           ty: SPAWN.y,
+          homeX: SPAWN.x,
+          homeY: SPAWN.y,
           speed: CONFIG.officerSpeed,
           busy: false,
           arrestTarget: null,
@@ -122,14 +124,22 @@ var Police = (function () {
           /* cancel */
           leader.arrestTarget = null;
           leader.arrestHold = 0;
-          for (j = 0; j < squad.length; j++) squad[j].busy = false;
+          for (j = 0; j < squad.length; j++) {
+            squad[j].busy = false;
+            squad[j].tx = squad[j].homeX;
+            squad[j].ty = squad[j].homeY;
+          }
         } else {
           var ddx = tgt.x - leader.x, ddy = tgt.y - leader.y;
           var dd = Math.sqrt(ddx * ddx + ddy * ddy);
           if (dd > obsR) {
             leader.arrestTarget = null;
             leader.arrestHold = 0;
-            for (j = 0; j < squad.length; j++) squad[j].busy = false;
+            for (j = 0; j < squad.length; j++) {
+              squad[j].busy = false;
+              squad[j].tx = squad[j].homeX;
+              squad[j].ty = squad[j].homeY;
+            }
           } else if (dd < 1.0) {
             leader.arrestHold += dt;
             for (j = 0; j < squad.length; j++) squad[j].busy = true;
@@ -137,7 +147,11 @@ var Police = (function () {
               Crowd.arrest(G, tgt);
               leader.arrestTarget = null;
               leader.arrestHold = 0;
-              for (j = 0; j < squad.length; j++) squad[j].busy = false;
+              for (j = 0; j < squad.length; j++) {
+                squad[j].busy = false;
+                squad[j].tx = squad[j].homeX;
+                squad[j].ty = squad[j].homeY;
+              }
             }
           } else {
             /* Walk two officers toward target. */
@@ -197,6 +211,8 @@ var Police = (function () {
       if (G.officers[i].squad === squadIndex) {
         G.officers[i].tx = x;
         G.officers[i].ty = y;
+        G.officers[i].homeX = x;
+        G.officers[i].homeY = y;
       }
     }
   }
