@@ -714,7 +714,7 @@ var Crowd = (function () {
   /* ---------------- rioters ---------------- */
   function pickTargetShop(G, r) {
     var tx = Math.floor(r.x), ty = Math.floor(r.y);
-    var best = null, bestD = Infinity;
+    var best = null, bestD = Infinity, C = CONFIG;
     for (var i = 0; i < G.shops.length; i++) {
       var shop = G.shops[i];
       if (shop.broken) continue;
@@ -722,9 +722,79 @@ var Crowd = (function () {
       if (!field) continue;
       var d = field[ty * MAP.width + tx];
       if (d === undefined || d === Infinity) continue;
-      if (d < bestD) { bestD = d; best = { shop: shop, field: field }; }
+      var score = d;
+      if (C.shopDefense) {
+        var guarded = false;
+        if (G.officers) {
+          var gr = C.shopGuardRadius || 4;
+          for (var j = 0; j < G.officers.length; j++) {
+            var o = G.officers[j];
+            var ox = o.x - (shop.x + 1), oy = o.y - (shop.y + 1);
+            if (ox * ox + oy * oy <= gr * gr) { guarded = true; break; }
+          }
+        }
+        if ((shop.shutter || 0) < 0.5 && !guarded) score = d - 15;
+      }
+      if (score < bestD) { bestD = score; best = { shop: shop, field: field }; }
     }
     return best;
+  }
+
+  function shopGuardNear(G, shop, C) {
+    if (!G.officers) return false;
+    var gr = C.shopGuardRadius || 4, cx = shop.x + 1, cy = shop.y + 1;
+    for (var j = 0; j < G.officers.length; j++) {
+      var o = G.officers[j], ox = o.x - cx, oy = o.y - cy;
+      if (ox * ox + oy * oy <= gr * gr) return true;
+    }
+    return false;
+  }
+
+  function startShutter(G, shop) {
+    if (!CONFIG.shopDefense || shop.broken) return;
+    if (shop.shutterClosing || shop.shutter >= 1) return;
+    shop.shutterClosing = true;
+    G.log("Shutters coming down at " + shop.name);
+  }
+
+  function updateShutters(G, dt) {
+    var C = CONFIG;
+    if (!C.shopDefense) return;
+    var i, j, shop;
+    var secs = C.shutterSeconds || 8;
+    if (!G._shutterTick) G._shutterTick = 0;
+    G._shutterTick += dt;
+    var doMood = false;
+    if (G._shutterTick >= 1) { G._shutterTick -= 1; doMood = true; }
+    var radius = C.shutterAlertRadius || 14, r2 = radius * radius;
+    for (i = 0; i < G.shops.length; i++) {
+      shop = G.shops[i];
+      if (shop.broken || shop.shutter >= 1) continue;
+      if (doMood && !shop.shutterClosing) {
+        var cx = shop.x + 1, cy = shop.y + 1, sum = 0, cnt = 0;
+        for (j = 0; j < G.agents.length; j++) {
+          var a = G.agents[j];
+          if (!a.active) continue;
+          var adx = a.x - cx, ady = a.y - cy;
+          if (adx * adx + ady * ady <= 25) { sum += a.mood; cnt++; }
+        }
+        if (cnt && sum / cnt > (C.shutterMoodThreshold || 55)) startShutter(G, shop);
+      }
+      if (shop.shutterClosing) {
+        shop.shutter = Math.min(1, (shop.shutter || 0) + dt / secs);
+        if (shop.shutter >= 1) shop.shutter = 1;
+      }
+    }
+    /* (b) shops near a broken shop start closing */
+    for (i = 0; i < G.shops.length; i++) {
+      if (!G.shops[i].broken) continue;
+      for (j = 0; j < G.shops.length; j++) {
+        shop = G.shops[j];
+        if (shop.broken || shop.shutterClosing || shop.shutter >= 1) continue;
+        var bx = shop.x - G.shops[i].x, by = shop.y - G.shops[i].y;
+        if (bx * bx + by * by <= r2) startShutter(G, shop);
+      }
+    }
   }
 
   function updateRioter(G, r, dt) {
@@ -752,7 +822,29 @@ var Crowd = (function () {
         /* smashing it: visible for as long as the smashing continues */
         r.revealedUntil = Math.max(r.revealedUntil, G.time + 0.2);
         r.violentUntil = Math.max(r.violentUntil, G.time + C.violentSeconds);
-        shop.hp -= (100 / C.breakSeconds) * dt;
+        var rate = 100 / C.breakSeconds;
+        if (C.shopDefense) {
+          var gm = [1, 0.5, 0.3][shop.glass || 0];
+          var sm = 1 - 0.8 * (shop.shutter || 0);
+          var guarded = shopGuardNear(G, shop, C);
+          var dm = guarded ? 0.25 : 1;
+          rate = (100 / (C.shopBreakSeconds || 10)) * gm * sm * dm;
+          startShutter(G, shop);
+          if (guarded && G._guardTick !== G.time) {
+            /* per-second abort check: cheap approach, independent rolls */
+            if (!r._guardAbortAt || G.time >= r._guardAbortAt) {
+              r._guardAbortAt = Math.floor(G.time) + 1;
+              if (Math.random() < (C.guardAbortChance || 0.35)) {
+                r.state = "flee";
+                r._fleeUntil = G.time + C.fleeSeconds;
+                r._flow = G.flow;
+                r._targetShop = null;
+                return;
+              }
+            }
+          }
+        }
+        shop.hp -= rate * dt;
         if (shop.hp <= 0) {
           shop.hp = 0;
           shop.broken = true;
@@ -883,6 +975,7 @@ var Crowd = (function () {
       var a = agents[i];
       if (a.active && a.role === "rioter") updateRioter(G, a, dt);
     }
+    updateShutters(G, dt);
 
     /* parked vehicles block narrow streets: recompute at most 4x per second */
     if (CONFIG.vehiclesBlock && G.vehicles) {

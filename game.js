@@ -174,7 +174,12 @@ function makeG() {
   };
   for (var i = 0; i < MAP.shops.length; i++) {
     var s = MAP.shops[i];
-    g.shops.push({ id: s.id, name: s.name, x: s.x, y: s.y, hp: 100, broken: false });
+    var shop = { id: s.id, name: s.name, x: s.x, y: s.y, hp: 100, broken: false, shutter: 0, shutterClosing: false };
+    if (CONFIG.shopDefense) {
+      var hr = ((s.id * 37 + 11) % 20) / 20;   /* deterministic per shop id */
+      shop.glass = hr < 0.5 ? 0 : (hr < 0.85 ? 1 : 2);
+    }
+    g.shops.push(shop);
   }
   return g;
 }

@@ -211,7 +211,9 @@ var Art = (function () {
         if (tints[y * W + x] === 3) {
           set.shop = true;
           addBox(set, x, y, x + 1, y + 1, 0, h, set.shTop, set.shS, showS);
-          if (showS) (shopTiles[d] || (shopTiles[d] = [])).push({ x: x, y: y, s: showS, i: shopIdx[y * W + x] });
+          /* fronts facing a street: south is drawn on the wall, north/east/west as a roof-edge strip */
+          var oN = !solidCh(tile(x, y - 1)), oE = !solidCh(tile(x + 1, y)), oW = !solidCh(tile(x - 1, y));
+          if (showS || oN || oE || oW) (shopTiles[d] || (shopTiles[d] = [])).push({ x: x, y: y, s: showS, n: oN, e: oE, w: oW, h: h, i: shopIdx[y * W + x] });
           continue;
         }
         addBox(set, x, y, x + 1, y + 1, 0, h, set.tops[tints[y * W + x]], set.sw, showS);
@@ -762,6 +764,56 @@ var Art = (function () {
     setScreen(ctx);
   }
 
+  /* Shop window seen from above: a strip along the roof edge that faces the
+   * street, showing glass, shutter (grey, ribbed), cracks or the broken glow. */
+  function drawRoofFront(ctx, st, shop, t, s) {
+    var x = st.x, y = st.y, z = st.h, k = 0.3, sides = [], i;
+    if (st.n) sides.push([x, y, x + 1, y + k]);
+    if (st.e) sides.push([x + 1 - k, y, x + 1, y + 1]);
+    if (st.w) sides.push([x, y, x + k, y + 1]);
+    for (i = 0; i < sides.length; i++) {
+      var r = sides[i], vert = (r[2] - r[0]) < 0.5;
+      ctx.beginPath();
+      P(r[0], r[1], z); ctx.moveTo(_px, _py); P(r[2], r[1], z); ctx.lineTo(_px, _py);
+      P(r[2], r[3], z); ctx.lineTo(_px, _py); P(r[0], r[3], z); ctx.lineTo(_px, _py);
+      ctx.closePath();
+      if (shop.broken) {
+        ctx.fillStyle = "#2b2622"; ctx.fill();
+        ctx.fillStyle = "rgba(255,140,40," + (0.3 + 0.2 * Math.sin(t * 13 + x)).toFixed(2) + ")"; ctx.fill();
+        continue;
+      }
+      ctx.fillStyle = shop.glass === 2 ? "#7fb0d8" : "#9cc6e6"; ctx.fill();
+      var sh = shop.shutter || 0;
+      if (sh > 0) {
+        /* shutter rolls across the strip from the building side */
+        ctx.beginPath();
+        if (vert) {
+          var x0 = st.e ? r[2] - (r[2] - r[0]) * sh : r[0], x1 = st.e ? r[2] : r[0] + (r[2] - r[0]) * sh;
+          P(x0, r[1], z); ctx.moveTo(_px, _py); P(x1, r[1], z); ctx.lineTo(_px, _py);
+          P(x1, r[3], z); ctx.lineTo(_px, _py); P(x0, r[3], z); ctx.lineTo(_px, _py);
+        } else {
+          var y1 = r[1] + (r[3] - r[1]) * sh;
+          P(r[0], r[1], z); ctx.moveTo(_px, _py); P(r[2], r[1], z); ctx.lineTo(_px, _py);
+          P(r[2], y1, z); ctx.lineTo(_px, _py); P(r[0], y1, z); ctx.lineTo(_px, _py);
+        }
+        ctx.closePath(); ctx.fillStyle = "#8a8f94"; ctx.fill();
+        ctx.strokeStyle = "rgba(60,65,70,0.7)"; ctx.lineWidth = Math.max(0.4, 0.4 * s); ctx.stroke();
+      }
+      if (shop.hp < 100) {
+        var n = Math.min(4, 2 + Math.floor((100 - shop.hp) / 40)), c;
+        ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = Math.max(0.4, 0.5 * s);
+        for (c = 0; c < n; c++) {
+          var u = rnd(hash2(x * 5 + i, c * 3 + 1)), v = rnd(hash2(y * 5 + i, c * 3 + 2)), a = rnd(hash2(x + y, c)) * Math.PI;
+          var cx = r[0] + (r[2] - r[0]) * (0.15 + 0.7 * u), cy = r[1] + (r[3] - r[1]) * (0.15 + 0.7 * v);
+          ctx.beginPath();
+          P(cx - Math.cos(a) * 0.08, cy - Math.sin(a) * 0.08, z); ctx.moveTo(_px, _py);
+          P(cx + Math.cos(a) * 0.08, cy + Math.sin(a) * 0.08, z); ctx.lineTo(_px, _py);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
   function drawShopDecor(ctx, list, G, t) {
     var i, s = cam.S;
     for (i = 0; i < list.length; i++) {
@@ -769,7 +821,8 @@ var Art = (function () {
       var broken = shop && shop.broken;
       var aw = ["#e63946", "#2a9d8f", "#f4a261", "#4a7fd0"][(st.i < 0 ? 0 : st.i) % 4];
       var fx = st.x, fy = st.y, glass = broken ? "#2b2622" : "#9cc6e6";
-      if (!st.s) continue;
+      if (!st.s) { if (shop) drawRoofFront(ctx, st, shop, t, s); continue; }
+      if (shop && shop.glass === 2) glass = "#7fb0d8";
       ctx.beginPath();
       P(fx + 0.12, fy + 1, 0.06); ctx.moveTo(_px, _py); P(fx + 0.88, fy + 1, 0.06); ctx.lineTo(_px, _py);
       P(fx + 0.88, fy + 1, 0.46); ctx.lineTo(_px, _py); P(fx + 0.12, fy + 1, 0.46); ctx.lineTo(_px, _py);
@@ -779,6 +832,39 @@ var Art = (function () {
         ctx.fillStyle = "rgba(255,140,40," + (0.25 + 0.2 * Math.sin(t * 13 + st.x)).toFixed(2) + ")";
         ctx.fill();
         continue;
+      }
+      var shut = shop ? (shop.shutter || 0) : 0;
+      var hp = shop ? shop.hp : 100;
+      var fy1 = fy + 1, sid = st.i < 0 ? 0 : st.i;
+      if (hp < 100) {
+        var n = Math.min(4, 2 + Math.floor((100 - hp) / 40));
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
+        ctx.lineWidth = Math.max(0.4, 0.5 * s);
+        for (var c = 0; c < n; c++) {
+          var hx = rnd(hash2(sid * 7 + fx, c * 3 + 1)), hz = rnd(hash2(sid * 7 + fx, c * 3 + 2));
+          var ang = rnd(hash2(sid * 7 + fx, c * 3 + 3)) * Math.PI;
+          var cxp = fx + 0.2 + hx * 0.6, czp = 0.12 + hz * 0.28, len = 0.08 + hz * 0.06;
+          ctx.beginPath();
+          P(cxp - Math.cos(ang) * len, fy1, czp - Math.sin(ang) * len * 0.6); ctx.moveTo(_px, _py);
+          P(cxp + Math.cos(ang) * len, fy1, czp + Math.sin(ang) * len * 0.6); ctx.lineTo(_px, _py);
+          ctx.stroke();
+        }
+      }
+      if (shut > 0) {
+        /* roller shutter comes down from the top of the window (z 0.46) */
+        var zt = 0.46, zb = 0.46 - 0.4 * shut;
+        ctx.beginPath();
+        P(fx + 0.12, fy1, zt); ctx.moveTo(_px, _py); P(fx + 0.88, fy1, zt); ctx.lineTo(_px, _py);
+        P(fx + 0.88, fy1, zb); ctx.lineTo(_px, _py); P(fx + 0.12, fy1, zb); ctx.lineTo(_px, _py);
+        ctx.closePath();
+        ctx.fillStyle = "#8a8f94"; ctx.fill();
+        ctx.strokeStyle = "rgba(60,65,70,0.7)";
+        ctx.lineWidth = Math.max(0.4, 0.4 * s);
+        for (var rz = zt - 0.06; rz > zb; rz -= 0.07) {
+          ctx.beginPath();
+          P(fx + 0.13, fy1, rz); ctx.moveTo(_px, _py); P(fx + 0.87, fy1, rz); ctx.lineTo(_px, _py);
+          ctx.stroke();
+        }
       }
       ctx.beginPath();
       P(fx, fy + 1, 0.62); ctx.moveTo(_px, _py); P(fx + 1, fy + 1, 0.62); ctx.lineTo(_px, _py);
