@@ -717,13 +717,18 @@ var Police = (function () {
       }
       applyOfficerRun(G, off, offSquad, squadMinStam[off.squad], dt);
       /* hit by a thrown object: stands still for a moment */
+      /* tear gas: masked officers move at 60% speed */
+      var keepSp = off.speed;
+      if (off.gasSlowUntil > G.time) off.speed *= 0.6;
       if (!(off.stunUntil > G.time)) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
+      off.speed = keepSp;
       var nb = Crowd.neighbors(G, off.x, off.y, squadObs[off.squad]);
       for (j = 0; j < nb.length; j++) {
         var a = nb[j];
         if (!a.active) continue;
         /* thick smoke hides people from the police */
         if (typeof FX !== "undefined" && FX.smokeAt(G, a.x, a.y) >= 0.5) continue;
+        if (typeof GAS !== "undefined" && GAS.densityAt(G, a.x, a.y) >= 0.5) continue;
         seen[a.id] = true;
         var rise = 0;
         if (a.hasTool || a.revealedUntil > G.time || a.violentUntil > G.time) rise = 15;

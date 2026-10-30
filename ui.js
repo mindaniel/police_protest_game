@@ -88,6 +88,7 @@ UI.init = function (g, game) {
     else if (k === "b" || k === "B") { UI.mode = "barrier"; }
     else if (k === "l" || k === "L") { UI.mode = "loudspeaker"; }
     else if (k === "w" || k === "W") { UI.mode = "water"; }
+    else if ((k === "g" || k === "G") && typeof GAS !== "undefined") { UI.mode = "gas"; }
     else if (k === "a" || k === "A") { UI.mode = "arrest"; }
     else if (k === "f" || k === "F") {
       var sr = Police.shove(G, UI.selected);
@@ -116,6 +117,11 @@ UI.init = function (g, game) {
     }
   });
   window.addEventListener("mousemove", function (e) {
+    /* tear gas aiming: range circle and target cross */
+    if (typeof GAS !== "undefined") {
+      if (UI.mode === "gas") { var gt = UI.toTile(e); GAS.preview = { s: UI.selected, x: gt.x + 0.5, y: gt.y + 0.5 }; }
+      else GAS.preview = null;
+    }
     var p = UI._press;
     if (!p) return;
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
@@ -184,6 +190,13 @@ function uiWater(t) {
   else if (r === "cooldown") UI.say("Water cannon reloading");
   else if (r === "range") UI.say("Target out of range of the water truck");
 }
+function uiGas(t) {
+  var r = GAS.launch(G, UI.selected, t.x + 0.5, t.y + 0.5);
+  if (r === "none") UI.say("Squad " + (UI.selected + 1) + " has no tear gas left");
+  else if (r === "cooldown") UI.say("Tear gas reloading");
+  else if (r === "range") UI.say("Too far to throw tear gas from squad " + (UI.selected + 1));
+  else UI.say("Tear gas out: it angers everyone it hits, peaceful people too");
+}
 function uiLoud(t) {
   if (!Police.hasCar(G, UI.selected)) UI.say("Selected squad has no car");
   else if (!Police.loudspeaker(G, t.x, t.y, UI.selected)) UI.say("Loudspeaker cooling down");
@@ -214,10 +227,17 @@ function uiLeftClick(e) {
   if (UI.mode === "barrier") uiBarrier(t);
   else if (UI.mode === "loudspeaker") uiLoud(t);
   else if (UI.mode === "water") uiWater(t);
+  else if (UI.mode === "gas") uiGas(t);
   else if (UI.mode === "arrest") uiArrest(e);
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
   else Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
   UI.mode = null;
+}
+
+function uiGasHud(g) {
+  if (typeof GAS === "undefined") return "";
+  var n = GAS.stock(g, UI.selected), cd = GAS.cooldownLeft(g, UI.selected);
+  return "  Gas " + n + (n > 0 && cd > 0 ? " (" + cd.toFixed(0) + "s)" : "") + " [G]";
 }
 
 /* Right click = the selected squad's tool: water truck sprays, car uses the
@@ -544,7 +564,7 @@ UI.draw = function (ctx, g) {
     }
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
       "  Barriers left " + left +
-      "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water +
+      "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water + uiGasHud(g) +
       "  " + UI.Game.speed + "x" +
       "  | right-click = tool  A arrest  F shove" +
       (UI.mode ? "  [click: " + UI.mode.toUpperCase() + "]" : "");
