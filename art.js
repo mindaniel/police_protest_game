@@ -8,7 +8,7 @@
 var Art = (function () {
   "use strict";
 
-  var HW = 16, HH = 8, ZU = 11;          // iso half-width, half-height, height unit
+  var TS = 32, ZU = 18;                  // world units per tile, per height unit
   var SQUAD_COLORS = ["#e63946", "#f4a261", "#2a9d8f", "#e9c46a", "#9b5de5", "#00b4d8"];
   var GT = 24;                           // ground texture pixels per tile
 
@@ -58,32 +58,32 @@ var Art = (function () {
 
   /* ---------- camera / projection ---------- */
   function updateCamera() {
-    cam.fit = Math.min(LW / ((W + H) * HW), LH / ((W + H) * HH + 40)) * 0.98;
+    cam.fit = LW / (W * TS);
     cam.zoom = clamp(cam.zoom, 1, 6);
-    var k = 1 - 1 / cam.zoom;
-    cam.cx = W / 2 + clamp(cam.cx - W / 2, -W / 2 * k, W / 2 * k);
-    cam.cy = H / 2 + clamp(cam.cy - H / 2, -H / 2 * k, H / 2 * k);
     cam.S = cam.fit * cam.zoom;
-    cam.OX = LW / 2 - cam.S * (cam.cx - cam.cy) * HW;
-    cam.OY = LH / 2 - cam.S * ((cam.cx + cam.cy) * HH - 10);
+    var vw = LW / cam.S, vh = LH / cam.S;
+    var x0 = W * TS - vw, y0 = H * TS - vh;
+    cam.cx = clamp(cam.cx, vw / 2 / TS, x0 > 0 ? (W * TS - vw / 2) / TS : W / 2);
+    cam.cy = clamp(cam.cy, vh / 2 / TS, y0 > 0 ? (H * TS - vh / 2) / TS : H / 2);
+    cam.OX = LW / 2 - cam.S * cam.cx * TS;
+    cam.OY = LH / 2 - cam.S * cam.cy * TS;
   }
   function P(x, y, z) {
-    _px = cam.OX + cam.S * (x - y) * HW;
-    _py = cam.OY + cam.S * ((x + y) * HH - z * ZU);
+    _px = cam.OX + cam.S * x * TS;
+    _py = cam.OY + cam.S * (y * TS - (z || 0) * ZU);
   }
   function project(x, y, z) {
     P(x, y, z || 0);
     return { x: _px, y: _py };
   }
   function screenToTile(lx, ly) {
-    var X = (lx - cam.OX) / cam.S, Y = (ly - cam.OY) / cam.S;
-    return { x: (X / HW + Y / HH) / 2, y: (Y / HH - X / HW) / 2 };
+    return { x: ((lx - cam.OX) / cam.S) / TS, y: ((ly - cam.OY) / cam.S) / TS };
   }
   function setScreen(ctx) { ctx.setTransform(_rs, 0, 0, _rs, 0, 0); }
   function setIso(ctx) { ctx.setTransform(_rs * cam.S, 0, 0, _rs * cam.S, _rs * cam.OX, _rs * cam.OY); }
   function setGround(ctx, unit) {
-    var a = cam.S * HW / unit, b = cam.S * HH / unit;
-    ctx.setTransform(_rs * a, _rs * b, -_rs * a, _rs * b, _rs * cam.OX, _rs * cam.OY);
+    var a = cam.S * TS / unit;
+    ctx.setTransform(_rs * a, 0, 0, _rs * a, _rs * cam.OX, _rs * cam.OY);
   }
   /* For UI: draw in tile-pixel units (tileSize per tile) on the ground plane. */
   function groundBegin(ctx) {
@@ -95,9 +95,8 @@ var Art = (function () {
   function groundEnd(ctx) { ctx.restore(); }
 
   function panScreen(dlx, dly) {
-    var X = dlx / cam.S, Y = dly / cam.S;
-    cam.cx += (X / HW + Y / HH) / 2;
-    cam.cy += (Y / HH - X / HW) / 2;
+    cam.cx += (dlx / cam.S) / TS;
+    cam.cy += (dly / cam.S) / TS;
     updateCamera();
   }
   function zoomAt(lx, ly, f) {
@@ -171,8 +170,8 @@ var Art = (function () {
     }
   }
 
-  function ix(x, y) { return (x - y) * HW; }
-  function iy(x, y, z) { return (x + y) * HH - z * ZU; }
+  function ix(x, y) { return x * TS; }
+  function iy(x, y, z) { return y * TS - z * ZU; }
   function quad(p, x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3) {
     p.moveTo(ix(x0, y0), iy(x0, y0, z0));
     p.lineTo(ix(x1, y1), iy(x1, y1, z1));
@@ -181,16 +180,15 @@ var Art = (function () {
     p.closePath();
   }
   function newSet() {
-    var o = { tops: [new Path2D(), new Path2D(), new Path2D()], sw: new Path2D(), ew: new Path2D(),
-      winS: new Path2D(), winE: new Path2D(), shTop: new Path2D(), shS: new Path2D(), shE: new Path2D(),
-      rTop: new Path2D(), rS: new Path2D(), rE: new Path2D(), roof: false, shop: false };
+    var o = { tops: [new Path2D(), new Path2D(), new Path2D()], sw: new Path2D(),
+      winS: new Path2D(), shTop: new Path2D(), shS: new Path2D(),
+      rTop: new Path2D(), rS: new Path2D(), roof: false, shop: false };
     return o;
   }
-  /* Axis-aligned box faces (top, south, east) into a set's paths. */
-  function addBox(set, x0, y0, x1, y1, z0, z1, pt, ps, pe, showS, showE) {
+  /* Axis-aligned box faces (top, south) into a set's paths. */
+  function addBox(set, x0, y0, x1, y1, z0, z1, pt, ps, showS) {
     quad(pt, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1);
     if (showS) quad(ps, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1);
-    if (showE) quad(pe, x1, y0, z0, x1, y1, z0, x1, y1, z1, x1, y0, z1);
   }
 
   function buildCity() {
@@ -198,7 +196,7 @@ var Art = (function () {
     cityVer++;
     HMAXZ = 0.5;
     for (var hi = 0; hi < heights.length; hi++) if (heights[hi] + 0.5 > HMAXZ) HMAXZ = heights[hi] + 0.5;
-    ND = W + H - 1;
+    ND = H;
     diags = new Array(ND);
     shopTiles = new Array(ND);
     var x, y;
@@ -207,16 +205,16 @@ var Art = (function () {
       for (x = 0; x < W; x++) {
         var h = heights[y * W + x];
         if (!(h > 0)) continue;
-        var d = x + y, set = diags[d] || (diags[d] = newSet());
-        var hS = hAt(x, y + 1), hE = hAt(x + 1, y);
-        var showS = hS < h, showE = hE < h, z, a;
+        var d = y, set = diags[d] || (diags[d] = newSet());
+        var hS = hAt(x, y + 1);
+        var showS = hS < h, z, a;
         if (tints[y * W + x] === 3) {
           set.shop = true;
-          addBox(set, x, y, x + 1, y + 1, 0, h, set.shTop, set.shS, set.shE, showS, showE);
-          if (showS || showE) (shopTiles[d] || (shopTiles[d] = [])).push({ x: x, y: y, s: showS, e: showE, i: shopIdx[y * W + x] });
+          addBox(set, x, y, x + 1, y + 1, 0, h, set.shTop, set.shS, showS);
+          if (showS) (shopTiles[d] || (shopTiles[d] = [])).push({ x: x, y: y, s: showS, i: shopIdx[y * W + x] });
           continue;
         }
-        addBox(set, x, y, x + 1, y + 1, 0, h, set.tops[tints[y * W + x]], set.sw, set.ew, showS, showE);
+        addBox(set, x, y, x + 1, y + 1, 0, h, set.tops[tints[y * W + x]], set.sw, showS);
         if (lowMode) continue;
         for (z = Math.max(hS, 0) + 0.28; z + 0.22 < h - 0.12; z += 0.45) {
           if (!showS) break;
@@ -225,16 +223,9 @@ var Art = (function () {
             quad(set.winS, xa, y + 1, z, xa + 0.26, y + 1, z, xa + 0.26, y + 1, z + 0.22, xa, y + 1, z + 0.22);
           }
         }
-        for (z = Math.max(hE, 0) + 0.28; z + 0.22 < h - 0.12; z += 0.45) {
-          if (!showE) break;
-          for (a = 0; a < 2; a++) {
-            var ya = y + 0.16 + a * 0.4;
-            quad(set.winE, x + 1, ya, z, x + 1, ya + 0.26, z, x + 1, ya + 0.26, z + 0.22, x + 1, ya, z + 0.22);
-          }
-        }
-        if (!showS && !showE && hAt(x - 1, y) === h && hAt(x, y - 1) === h && hash2(x, y) % 9 === 0) {
+        if (!showS && hAt(x - 1, y) === h && hAt(x, y - 1) === h && hash2(x, y) % 9 === 0) {
           set.roof = true;
-          addBox(set, x + 0.22, y + 0.25, x + 0.78, y + 0.75, h, h + 0.22, set.rTop, set.rS, set.rE, true, true);
+          addBox(set, x + 0.22, y + 0.25, x + 0.78, y + 0.75, h, h + 0.22, set.rTop, set.rS, true);
         }
       }
     }
@@ -417,8 +408,8 @@ var Art = (function () {
       var j = (i + 1) % 4;
       var nx = (X[i] + X[j]) / 2 - mx, ny = (Y[i] + Y[j]) / 2 - my, nl = Math.sqrt(nx * nx + ny * ny) || 1;
       nx /= nl; ny /= nl;
-      if (nx + ny <= 0.001) continue;
-      var k = 0.86 + 0.14 * (ny - nx);
+      if (ny <= 0.001) continue;
+      var k = 0.86 + 0.14 * ny;
       ctx.beginPath();
       P(X[i], Y[i], z0); ctx.moveTo(_px, _py);
       P(X[j], Y[j], z0); ctx.lineTo(_px, _py);
@@ -444,7 +435,6 @@ var Art = (function () {
     ctx.fillStyle = top;
     ctx.fill();
   }
-
   /* ---------- sprites ---------- */
   function agentPal(a) {
     var row = palettes[hash2(a.id | 0, 7) % palettes.length];
@@ -663,10 +653,9 @@ var Art = (function () {
     var it = pool[poolN] || (pool[poolN] = { k: 0, o: null });
     poolN++;
     it.k = k; it.o = o;
-    var b = clamp(Math.floor(x + y), 0, ND);
+    var b = clamp(Math.floor(y), 0, ND);
     (buckets[b] || (buckets[b] = [])).push(it);
-    if (k <= 2 && (k === 2 || hAt(Math.floor(x) + 1, Math.floor(y)) > 0.4 || hAt(Math.floor(x), Math.floor(y) + 1) > 0.4 ||
-        hAt(Math.floor(x) + 1, Math.floor(y) + 1) > 0.4)) ghosts.push(it);
+    if (k <= 2 && (k === 2 || hAt(Math.floor(x), Math.floor(y) + 1) > 0.4)) ghosts.push(it);
   }
 
   function collect(G) {
@@ -692,15 +681,6 @@ var Art = (function () {
     gr.addColorStop(0, "#eef1f5"); gr.addColorStop(1, "#dde3ea");
     ctx.fillStyle = gr;
     ctx.fillRect(0, 0, LW, LH);
-    /* model base: south and east edges of the map slab */
-    ctx.beginPath();
-    P(0, H, 0); ctx.moveTo(_px, _py); P(W, H, 0); ctx.lineTo(_px, _py);
-    P(W, H, -0.9); ctx.lineTo(_px, _py); P(0, H, -0.9); ctx.lineTo(_px, _py);
-    ctx.closePath(); ctx.fillStyle = "#b6c1ce"; ctx.fill();
-    ctx.beginPath();
-    P(W, 0, 0); ctx.moveTo(_px, _py); P(W, H, 0); ctx.lineTo(_px, _py);
-    P(W, H, -0.9); ctx.lineTo(_px, _py); P(W, 0, -0.9); ctx.lineTo(_px, _py);
-    ctx.closePath(); ctx.fillStyle = "#a1aebe"; ctx.fill();
   }
 
   function drawGround(ctx) {
@@ -710,7 +690,6 @@ var Art = (function () {
     ctx.drawImage(groundCv, 0, 0, W, H);
     setScreen(ctx);
   }
-
   function drawDecals(ctx, G) {
     var i, o, a;
     setGround(ctx, 1);
@@ -788,38 +767,24 @@ var Art = (function () {
       var st = list[i], shop = (G && G.shops && st.i >= 0) ? G.shops[st.i] : null;
       var broken = shop && shop.broken;
       var aw = ["#e63946", "#2a9d8f", "#f4a261", "#4a7fd0"][(st.i < 0 ? 0 : st.i) % 4];
-      var f, fx, fy, glass = broken ? "#2b2622" : "#9cc6e6";
-      for (f = 0; f < 2; f++) {
-        var isS = f === 0;
-        if (isS ? !st.s : !st.e) continue;
-        fx = st.x; fy = st.y;
-        ctx.beginPath();
-        if (isS) {
-          P(fx + 0.12, fy + 1, 0.06); ctx.moveTo(_px, _py); P(fx + 0.88, fy + 1, 0.06); ctx.lineTo(_px, _py);
-          P(fx + 0.88, fy + 1, 0.46); ctx.lineTo(_px, _py); P(fx + 0.12, fy + 1, 0.46); ctx.lineTo(_px, _py);
-        } else {
-          P(fx + 1, fy + 0.12, 0.06); ctx.moveTo(_px, _py); P(fx + 1, fy + 0.88, 0.06); ctx.lineTo(_px, _py);
-          P(fx + 1, fy + 0.88, 0.46); ctx.lineTo(_px, _py); P(fx + 1, fy + 0.12, 0.46); ctx.lineTo(_px, _py);
-        }
-        ctx.closePath();
-        ctx.fillStyle = glass; ctx.fill();
-        if (broken) {
-          ctx.fillStyle = "rgba(255,140,40," + (0.25 + 0.2 * Math.sin(t * 13 + st.x)).toFixed(2) + ")";
-          ctx.fill();
-          continue;
-        }
-        ctx.beginPath();
-        if (isS) {
-          P(fx, fy + 1, 0.62); ctx.moveTo(_px, _py); P(fx + 1, fy + 1, 0.62); ctx.lineTo(_px, _py);
-          P(fx + 1, fy + 1.22, 0.5); ctx.lineTo(_px, _py); P(fx, fy + 1.22, 0.5); ctx.lineTo(_px, _py);
-        } else {
-          P(fx + 1, fy, 0.62); ctx.moveTo(_px, _py); P(fx + 1, fy + 1, 0.62); ctx.lineTo(_px, _py);
-          P(fx + 1.22, fy + 1, 0.5); ctx.lineTo(_px, _py); P(fx + 1.22, fy, 0.5); ctx.lineTo(_px, _py);
-        }
-        ctx.closePath();
-        ctx.fillStyle = aw; ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = Math.max(0.5, 0.6 * s); ctx.stroke();
+      var fx = st.x, fy = st.y, glass = broken ? "#2b2622" : "#9cc6e6";
+      if (!st.s) continue;
+      ctx.beginPath();
+      P(fx + 0.12, fy + 1, 0.06); ctx.moveTo(_px, _py); P(fx + 0.88, fy + 1, 0.06); ctx.lineTo(_px, _py);
+      P(fx + 0.88, fy + 1, 0.46); ctx.lineTo(_px, _py); P(fx + 0.12, fy + 1, 0.46); ctx.lineTo(_px, _py);
+      ctx.closePath();
+      ctx.fillStyle = glass; ctx.fill();
+      if (broken) {
+        ctx.fillStyle = "rgba(255,140,40," + (0.25 + 0.2 * Math.sin(t * 13 + st.x)).toFixed(2) + ")";
+        ctx.fill();
+        continue;
       }
+      ctx.beginPath();
+      P(fx, fy + 1, 0.62); ctx.moveTo(_px, _py); P(fx + 1, fy + 1, 0.62); ctx.lineTo(_px, _py);
+      P(fx + 1, fy + 1.22, 0.5); ctx.lineTo(_px, _py); P(fx, fy + 1.22, 0.5); ctx.lineTo(_px, _py);
+      ctx.closePath();
+      ctx.fillStyle = aw; ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = Math.max(0.5, 0.6 * s); ctx.stroke();
     }
   }
 
@@ -829,23 +794,19 @@ var Art = (function () {
     setScreen(ctx);
   }
 
-  /* Fill one diagonal's building paths in the current (iso-unit) transform. */
+  /* Fill one row's building paths in the current (world-unit) transform. */
   function fillPaths(ctx, p) {
     ctx.fillStyle = "#9fb0c4"; ctx.fill(p.sw);
-    ctx.fillStyle = "#8a9cb2"; ctx.fill(p.ew);
     ctx.fillStyle = "#8193aa"; ctx.fill(p.winS);
-    ctx.fillStyle = "#73859d"; ctx.fill(p.winE);
     ctx.fillStyle = "#c5d0dd"; ctx.fill(p.tops[0]);
     ctx.fillStyle = "#bccad9"; ctx.fill(p.tops[1]);
     ctx.fillStyle = "#cbd5e1"; ctx.fill(p.tops[2]);
     if (p.shop) {
       ctx.fillStyle = "#eadfc9"; ctx.fill(p.shS);
-      ctx.fillStyle = "#d5c7ad"; ctx.fill(p.shE);
       ctx.fillStyle = "#f3ece0"; ctx.fill(p.shTop);
     }
     if (p.roof) {
       ctx.fillStyle = "#b3c0cf"; ctx.fill(p.rS);
-      ctx.fillStyle = "#9fadbf"; ctx.fill(p.rE);
       ctx.fillStyle = "#e6ebf1"; ctx.fill(p.rTop);
     }
   }
@@ -853,13 +814,13 @@ var Art = (function () {
   /* ---------- static layer cache ----------
    * Ground and buildings only change when the camera zooms, pans far or the
    * city is rebuilt, so they are rendered once into canvases: a background
-   * (slab + ground) and one strip per pair of diagonals. Each frame blits
-   * them; people drawn between strips keep correct depth: objects on the
-   * first diagonal of a pair go before its strip, the second after it. */
+   * (ground) and one strip per pair of rows. Each frame blits them; people
+   * drawn between strips keep correct depth: objects on the first row of a
+   * pair go before its strip, the second after it. */
   var SC = { k: 0, ver: -1, rx0: 0, rx1: 0, ry0: 0, ry1: 0, bg: null, strips: [], lastK: 0, zoomAt: 0 };
 
   function isoBounds() {
-    return { x0: -H * HW - 2, x1: W * HW + 2, y0: -HMAXZ * ZU - 4, y1: (W + H) * HH + 0.9 * ZU + 4 };
+    return { x0: -2, x1: W * TS + 2, y0: -HMAXZ * ZU - 4, y1: H * TS + 4 };
   }
   function viewIso(m) {
     var x0 = -cam.OX / cam.S, x1 = (LW - cam.OX) / cam.S, y0 = -cam.OY / cam.S, y1 = (LH - cam.OY) / cam.S;
@@ -874,17 +835,6 @@ var Art = (function () {
   }
   function snap(v, o, k) { return o + Math.floor((v - o) * k) / k; }
 
-  function slabIso(g) {
-    g.beginPath();
-    g.moveTo(ix(0, H), iy(0, H, 0)); g.lineTo(ix(W, H), iy(W, H, 0));
-    g.lineTo(ix(W, H), iy(W, H, -0.9)); g.lineTo(ix(0, H), iy(0, H, -0.9));
-    g.closePath(); g.fillStyle = "#b6c1ce"; g.fill();
-    g.beginPath();
-    g.moveTo(ix(W, 0), iy(W, 0, 0)); g.lineTo(ix(W, H), iy(W, H, 0));
-    g.lineTo(ix(W, H), iy(W, H, -0.9)); g.lineTo(ix(W, 0), iy(W, 0, -0.9));
-    g.closePath(); g.fillStyle = "#a1aebe"; g.fill();
-  }
-
   function buildCache() {
     var k = _rs * cam.S, b = isoBounds(), v = viewIso(0.25), d0;
     var rx0 = Math.max(b.x0, v.x0), rx1 = Math.min(b.x1, v.x1);
@@ -893,22 +843,18 @@ var Art = (function () {
     SC.rx0 = rx0; SC.rx1 = rx1; SC.ry0 = ry0; SC.ry1 = ry1;
     var bg = makeCanvas((rx1 - rx0) * k, (ry1 - ry0) * k), g = bg.getContext("2d");
     g.setTransform(k, 0, 0, k, -rx0 * k, -ry0 * k);
-    slabIso(g);
     if (groundCv) {
-      g.transform(HW, HH, -HW, HH, 0, 0);
       g.imageSmoothingEnabled = true;
-      g.drawImage(groundCv, 0, 0, W, H);
+      g.drawImage(groundCv, 0, 0, W * TS, H * TS);
     }
     SC.bg = { c: bg, ox: rx0, oy: ry0 };
     SC.strips = [];
     for (d0 = 0; d0 < ND; d0 += 2) {
       var e = null;
       if (diags && (diags[d0] || diags[d0 + 1])) {
-        var xmin = Math.max(0, d0 - H + 1), xmax = Math.min(W - 1, d0 + 1);
-        var sx0 = snap(Math.max(rx0, (2 * xmin - d0 - 2) * HW), rx0, k);
-        var sx1 = Math.min(rx1, (2 * xmax - d0 + 2) * HW);
-        var top = snap(Math.max(ry0, d0 * HH - HMAXZ * ZU - 1), ry0, k);
-        var bot = Math.min(ry1, (d0 + 3) * HH + 1);
+        var sx0 = Math.max(rx0, 0), sx1 = Math.min(rx1, W * TS);
+        var top = snap(Math.max(ry0, d0 * TS - HMAXZ * ZU - 1), ry0, k);
+        var bot = Math.min(ry1, (d0 + 2) * TS + 1);
         if (bot > top && sx1 > sx0) {
           var c = makeCanvas((sx1 - sx0) * k, (bot - top) * k), cg = c.getContext("2d");
           cg.setTransform(k, 0, 0, k, -sx0 * k, -top * k);
@@ -947,7 +893,6 @@ var Art = (function () {
       ctx.drawImage(e.c, _rs * (cam.OX + cam.S * e.ox), _rs * (cam.OY + cam.S * e.oy), e.c.width * sc, e.c.height * sc);
     }
   }
-
   function drawWater(ctx, G, t) {
     if (!G.waterFx || !(G.time < G.waterFx.until)) return;
     var fx = G.waterFx, i, N = 26, s = cam.S;
@@ -1030,7 +975,6 @@ var Art = (function () {
     if (diags) for (d = 0; d < ND; d++) if (diags[d]) fillSet(ctx, d);
     ctx.restore();
   }
-
   function drawAgents(ctx, G) {
     beginFrame(ctx, G);
     var t = Date.now() / 1000, i;
@@ -1089,7 +1033,6 @@ var Art = (function () {
     drawTags(ctx, G);
     ctx.restore();
   }
-
   return {
     invalidate: invalidate,
     init: init,
