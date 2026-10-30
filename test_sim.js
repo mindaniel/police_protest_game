@@ -92,14 +92,14 @@ console.log("");
 /* Scenario 1: no player input, full 300 s. */
 var s1 = runScenario(world, 300, null, "Scenario 1: no player input", [0, 60, 120, 300]);
 
-/* Scenario 2: block the boulevard at x=14 (rows 18 and 19); crowd must detour. */
-var s2 = runScenario(world, 120, ["14,18", "14,19"],
+/* Scenario 2: block the boulevard at x=14 (rows 31 and 32); crowd must detour. */
+var s2 = runScenario(world, 120, ["14,31", "14,32"],
   "Scenario 2: boulevard blocked at x=14", [0, 60, 120]);
 
-/* Scenario 3: seal every route (boulevard + both verticals + west corridor). */
-var seal = ["14,18", "14,19"];
-for (var yy = 0; yy < MAPREF.height; yy++) { seal.push("10," + yy); seal.push("11," + yy); }
-seal.push("6,18"); seal.push("6,19");
+/* Scenario 3: seal every route (boulevard + the west cross street + west corridor). */
+var seal = ["14,31", "14,32"];
+for (var yy = 0; yy < MAPREF.height; yy++) { seal.push("20," + yy); seal.push("21," + yy); }
+seal.push("6,31"); seal.push("6,32");
 var s3 = runScenario(world, 60, seal, "Scenario 3: every route sealed", [0, 30, 60]);
 
 console.log("=== comparison ===");

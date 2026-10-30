@@ -14,19 +14,35 @@ var CONFIG = {
   tileSize: 16,          // pixels per tile on the canvas
 
   // Reserved for later steps (crowd mood, police, tools)
-  squadCount: 3,
+  squadCount: 6,
   officersPerSquad: 4,
   barrierCount: 4,
+  barriersPerTruck: 3,       // stock carried by one barrier truck
+  loadoutBudget: 10,         // total loadout cost across all squads
+  loadouts: {
+    none:         { cost: 0 },
+    car:          { cost: 2 },
+    watertruck:   { cost: 3 },
+    barriertruck: { cost: 2 },
+    motorbike:    { cost: 2 }
+  },
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
   suspicionThreshold: 50,    // minimum suspicion to allow an arrest
   observeRadiusTiles: 5,     // police observation radius
   revealSeconds: 10,         // how long a spotted rioter stays revealed
+  vanguardChance: 0.05,      // per-second chance a marching rioter heads for a shop early
+  violentSeconds: 4,         // how long a violent act keeps a rioter visible to police
 
   // ---- crowd tuning (step 2) ----
   agentRadius: 0.3,          // tiles
-  agentSpeedMin: 2.0,        // tiles per second
-  agentSpeedMax: 2.5,
+  agentSpeedMin: 1.2,        // tiles per second
+  agentSpeedMax: 1.5,
+  runSpeedMin: 2.2,           // tiles/s while running
+  runSpeedMax: 2.6,
+  staminaDrain: 12,           // stamina per second while running
+  staminaRegen: 8,            // stamina per second while walking
+  staminaMinToRun: 30,        // must recover to this before running again
   wanderSpeed: 0.45,         // plaza milling speed
   hashCell: 2,               // spatial hash bucket size in tiles
   sepRadius: 0.8,            // agent-agent separation radius
@@ -43,6 +59,13 @@ var CONFIG = {
   moodOfficerCalmRise: 2,
   moodBrokenShopRadius: 8,   // tiles
   moodBrokenShopRise: 3.0,   // mood per second near a broken shop
+  moodBrokenShopCap: 66,     // broken shops alone can never push mood above this (stay below agitMood 70)
+  arrestAngerSeconds: 15,    // how long an arrest keeps angering the crowd around it
+  arrestAngerRadius: 6,      // tiles
+  arrestAngerRise: 7,        // mood per second after a normal arrest (net of calming it must beat ~4/s decay)
+  arrestAngerCap: 68,        // normal arrests alone never push mood past this (below agitMood 70)
+  wrongArrestAngerRise: 12,  // mood per second after a wrong arrest
+  wrongArrestAngerCap: 88,   // wrong arrests alone never push mood past this (below radicalMood 90)
   moodDecayBase: 2.0,        // mood lost per second
   moodDecayOpenBonus: 1.5,   // extra loss when few neighbours
   moodDecayPathBonus: 0.5,   // extra loss when a path to the plaza exists
@@ -65,10 +88,48 @@ var CONFIG = {
   throwChance: 0.2,          // per second
   throwMoodSpike: 8,
   shopBreakMoodSpike: 10,
-    wrongArrestMoodSpike: 20,
-    officerSpeed: 2.2,
-    loudspeakerRadius: 6,
-    loudspeakerStrength: 25
+  wrongArrestMoodSpike: 20,
+  officerSpeed: 1.6,
+  officerRunSpeed: 2.6,      // foot officer sprint speed
+  officerStaminaDrain: 16,   // stamina per second while running
+  officerStaminaRegen: 8,    // stamina per second while walking
+  officerStaminaMinToRun: 30, // must recover to this before running again
+  waterPushSeconds: 1.5,     // water cannon knock-back duration
+  waterPushStrength: 5.0,    // knock-back speed (tiles/s)
+  policeLineRadius: 1.4,     // tiles within which a foot officer slows the crowd
+  policeLineSlowCalm: 0.5,   // speed multiplier near a calm officer
+  policeLineSlowFirm: 0.3,   // speed multiplier near a firm officer
+  loudspeakerRadius: 6,
+  loudspeakerStrength: 25,
+    // ---- vehicles and planning ----
+    carSpeed: 4.5,
+    truckSpeed: 3.0,
+    motorbikeSpeed: 6.0,     // officers of a motorbike squad move this fast
+    carObserveBonus: 2,      // extra observe radius (tiles) for a squad that has a car
+    waterRange: 9,           // tiles from the truck
+    waterRadius: 3,
+    waterStrength: 40,
+    waterCooldown: 25,       // seconds
+    deployMinX: 8,           // squads may only be placed at x >= this (keeps clear of crowd entry)
+    // ---- crowd entrances (rectangles in tiles; share = fraction of the crowd) ----
+    spawnZones: [
+      { x: 0,  y: 30, w: 4, h: 3, share: 0.4, name: "WEST" },
+      { x: 96, y: 30, w: 4, h: 3, share: 0.2, name: "EAST" },
+      { x: 18, y: 0,  w: 6, h: 3, share: 0.2, name: "NORTH STREET" },
+      { x: 70, y: 60, w: 6, h: 3, share: 0.2, name: "SOUTH STREET" }
+    ],
+    // ---- street blockade sites (rectangles in tiles) ----
+    plazaShare: 0.25,        // fraction of peaceful agents that simply head for the plaza
+    blockSites: [
+      { x: 8,  y: 30, w: 2, h: 2, name: "WEST BLVD" },
+      { x: 88, y: 30, w: 2, h: 2, name: "EAST BLVD" },
+      { x: 20, y: 10, w: 2, h: 2, name: "WEST AVE N" },
+      { x: 20, y: 50, w: 2, h: 2, name: "WEST AVE S" },
+      { x: 72, y: 8,  w: 2, h: 2, name: "EAST AVE N" },
+      { x: 72, y: 45, w: 2, h: 2, name: "EAST AVE S" },
+      { x: 30, y: 30, w: 2, h: 2, name: "MID BLVD" },
+      { x: 60, y: 31, w: 2, h: 2, name: "ALLEY" }
+    ]
 };
 
 /* ---------------------------------------------------------------
@@ -132,10 +193,17 @@ var Game = {
 /* Size the canvas to the map in device pixels, CSS scales it to the window. */
 function sizeCanvas() {
   var ts = CONFIG.tileSize;
-  Game.canvas.width = MAP.width * ts;
-  Game.canvas.height = MAP.height * ts;
-  // Crisp pixel look
-  Game.ctx.imageSmoothingEnabled = false;
+  var lw = MAP.width * ts, lh = MAP.height * ts;      // logical size, never changes
+  var dpr = window.devicePixelRatio || 1;
+  var scale = Math.min(window.innerWidth / lw, window.innerHeight / lh);
+  if (!(scale > 0)) scale = 1;
+  var cssW = Math.floor(lw * scale), cssH = Math.floor(lh * scale);
+  Game.canvas.style.width = cssW + "px";
+  Game.canvas.style.height = cssH + "px";
+  Game.canvas.width = Math.max(1, Math.round(cssW * dpr));   // physical pixels
+  Game.canvas.height = Math.max(1, Math.round(cssH * dpr));
+  Game.renderScale = Game.canvas.width / lw;
+  Game.ctx.imageSmoothingEnabled = true;
 }
 
 /* Draw one full frame of the static map. */
@@ -194,14 +262,17 @@ function drawDebug(ctx) {
   ctx.fillText(txt, 12, 10);
 }
 
-/* Main loop: simulate, then draw map -> crowd -> debug. */
+/* Main loop: simulate, then draw map -> crowd -> police -> UI. */
 function frame(now) {
   if (!Game.running) return;
   var dt = (now - Game.lastTime) / 1000;
   Game.lastTime = now;
   if (dt > 0.25) dt = 0.25;   // clamp after tab switches
 
-  if (!Game.paused) {
+  var hasUI = (typeof UI !== "undefined");
+  if (hasUI) UI.tick(G);
+
+  if (!Game.paused && (!hasUI || UI.screen === "playing")) {
     var step = Math.min(dt, 0.05);
     for (var i = 0; i < Game.speed; i++) {
       Crowd.update(G, step);
@@ -209,12 +280,36 @@ function frame(now) {
     }
   }
 
-  drawMap();
-  Crowd.draw(Game.ctx, G);
-  if (typeof Police !== "undefined") Police.draw(Game.ctx, G);
-  drawDebug(Game.ctx);
+  Game.ctx.setTransform(Game.renderScale || 1, 0, 0, Game.renderScale || 1, 0, 0);
+  if (typeof Art !== "undefined") {
+    Art.draw(Game.ctx, G);
+  } else {
+    drawMap();
+    Crowd.draw(Game.ctx, G);
+    if (typeof Police !== "undefined") Police.draw(Game.ctx, G);
+  }
+  if (hasUI) UI.draw(Game.ctx, G); else drawDebug(Game.ctx);
 
   requestAnimationFrame(frame);
+}
+
+/* Random city: ?seed=123 in the URL replays one city, otherwise a new one each launch. */
+function citySeed() {
+  var m = /[?&]seed=(\d+)/.exec(window.location.search || "");
+  return m ? parseInt(m[1], 10) : Math.floor(Math.random() * 1e9);
+}
+
+/* newCity: true = generate another random city, false = replay the same one. */
+function restartGame(newCity) {
+  if (typeof CityGen !== "undefined") CityGen.apply(newCity ? Math.floor(Math.random() * 1e9) : MAP.seed);
+  G = makeG();
+  Crowd.init(G);
+  Crowd.rebuildFlow(G);
+  if (typeof Police !== "undefined") Police.init(G);
+  if (typeof Art !== "undefined") Art.init(G);
+  Game.paused = false;
+  Game.speed = 1;
+  if (typeof UI !== "undefined") { UI.screen = "planning"; UI.mode = null; }
 }
 
 function initGame() {
@@ -223,18 +318,27 @@ function initGame() {
   sizeCanvas();
   window.addEventListener("resize", sizeCanvas);
 
+  if (typeof CityGen !== "undefined") {
+    CityGen.apply(citySeed());
+    G = makeG();
+  }
   Crowd.init(G);
   Crowd.rebuildFlow(G);
   if (typeof Police !== "undefined") Police.init(G);
+  if (typeof Art !== "undefined") Art.init(G);
 
-  window.addEventListener("keydown", function (e) {
-    if (e.code === "Space") {
-      Game.paused = !Game.paused;
-      e.preventDefault();
-    } else if (e.key === "t" || e.key === "T") {
-      Game.speed = Game.speed === 1 ? 2 : 1;
-    }
-  });
+  if (typeof UI !== "undefined") {
+    UI.init(G, Game);
+  } else {
+    window.addEventListener("keydown", function (e) {
+      if (e.code === "Space") {
+        Game.paused = !Game.paused;
+        e.preventDefault();
+      } else if (e.key === "t" || e.key === "T") {
+        Game.speed = Game.speed === 1 ? 2 : 1;
+      }
+    });
+  }
 
   Game.running = true;
   Game.lastTime = performance.now();

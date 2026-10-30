@@ -118,6 +118,8 @@ var Crowd = (function () {
     G.flow = bfsFrom(G, sources);
     G.flowVersion = (G.flowVersion || 0) + 1;
     G._shopFields = null;   // invalidate per-shop caches
+    G._siteFields = null;
+    G._zoneFields = null;
   }
 
   /* Walkable tiles around a shop the rioters can stand on to break it. */
@@ -143,24 +145,166 @@ var Crowd = (function () {
     return f;
   }
 
+  /* ---------------- street blockade sites ---------------- */
+  function siteField(G, i) {
+    var sites = CONFIG.blockSites || [];
+    if (!sites[i]) return null;
+    if (!G._siteFields) G._siteFields = {};
+    if (Object.prototype.hasOwnProperty.call(G._siteFields, i)) return G._siteFields[i];
+    var s = sites[i], src = [];
+    for (var y = s.y; y < s.y + s.h; y++) {
+      for (var x = s.x; x < s.x + s.w; x++) src.push({ x: x, y: y });
+    }
+    var f = bfsFrom(G, src);
+    G._siteFields[i] = f;
+    return f;
+  }
+
+  /* Pick a site for a peaceful agent: nearest by walking distance, with a
+   * penalty for sites that already have many agents. -1 means plaza. */
+  function assignSite(G, a) {
+    var sites = CONFIG.blockSites || [];
+    if (!G._siteLoad) G._siteLoad = [];
+    if (a._site >= 0 && G._siteLoad[a._site] > 0) G._siteLoad[a._site]--;
+    a._site = -1;
+    var ps = (CONFIG.plazaShare === undefined) ? 0.25 : CONFIG.plazaShare;
+    if (Math.random() < ps) return;
+    var tx = Math.floor(a.x), ty = Math.floor(a.y), best = -1, bestCost = Infinity;
+    for (var i = 0; i < sites.length; i++) {
+      var f = siteField(G, i);
+      var d = f ? f[ty * MAP.width + tx] : Infinity;
+      if (d === undefined || d === Infinity) continue;
+      var cost = d + (G._siteLoad[i] || 0) * 1.5;
+      if (cost < bestCost) { bestCost = cost; best = i; }
+    }
+    a._site = best;
+    if (best >= 0) G._siteLoad[best] = (G._siteLoad[best] || 0) + 1;
+  }
+
+  /* Point a peaceful agent's flow field at its site; reassign if the site is unreachable. */
+  function applySite(G, a) {
+    var f = siteField(G, a._site);
+    var v = f ? f[Math.floor(a.y) * MAP.width + Math.floor(a.x)] : Infinity;
+    if (v === undefined || v === Infinity) {
+      assignSite(G, a);
+      f = (a._site >= 0) ? siteField(G, a._site) : null;
+    }
+    a._flow = (a._site >= 0) ? f : null;
+  }
+
+  /* ---------------- protest areas (random city mode) ----------------
+   * CONFIG.rallyZones: areas the protesters occupy and stay in. Field value 0
+   * means "inside the area"; there agents mill about instead of freezing. */
+  function zoneField(G, i) {
+    var zs = CONFIG.rallyZones || [];
+    if (!zs[i]) return null;
+    if (!G._zoneFields) G._zoneFields = {};
+    if (Object.prototype.hasOwnProperty.call(G._zoneFields, i)) return G._zoneFields[i];
+    var f = bfsFrom(G, zs[i].tiles || [{ x: zs[i].x, y: zs[i].y }]);
+    G._zoneFields[i] = f;
+    return f;
+  }
+
+  function leaveZone(G, a) {
+    if (G._zoneLoad && a._zone >= 0 && G._zoneLoad[a._zone] > 0) G._zoneLoad[a._zone]--;
+    a._zone = -1;
+  }
+
+  /* Pick an area: close by walking distance, not overfull, a little random. */
+  function assignZone(G, a, avoidCurrent) {
+    var zs = CONFIG.rallyZones || [];
+    if (!G._zoneLoad) G._zoneLoad = [];
+    var cur = a._zone;
+    leaveZone(G, a);
+    var idx = Math.floor(a.y) * MAP.width + Math.floor(a.x), best = -1, bestC = Infinity, bestF = null;
+    for (var i = 0; i < zs.length; i++) {
+      var f = zoneField(G, i), d = f ? f[idx] : Infinity;
+      if (d === undefined || d === Infinity) continue;
+      var cap = (zs[i].tiles ? zs[i].tiles.length : 20) * 1.3, load = G._zoneLoad[i] || 0;
+      var cost = d * 0.6 + (load / cap) * 40 + Math.random() * 12;
+      if (load >= cap) cost += 60;
+      if (avoidCurrent && i === cur) cost += 80;
+      if (cost < bestC) { bestC = cost; best = i; bestF = f; }
+    }
+    a._zone = best;
+    a._flow = bestF;
+    a._flowVer = G.flowVersion;
+    a._zoneUntil = G.time + 45 + Math.random() * 90;
+    if (best >= 0) G._zoneLoad[best] = (G._zoneLoad[best] || 0) + 1;
+  }
+
+  /* Keep a protester's area field fresh, and now and then march elsewhere. */
+  function tendZone(G, a) {
+    if (a._zone >= 0 && a._flowVer !== G.flowVersion) {
+      a._flow = zoneField(G, a._zone);
+      a._flowVer = G.flowVersion;
+      var v = a._flow ? a._flow[Math.floor(a.y) * MAP.width + Math.floor(a.x)] : Infinity;
+      if (v === undefined || v === Infinity) assignZone(G, a, true);
+    }
+    if (G.time >= a._zoneUntil) {
+      if (Math.random() < (CONFIG.zoneSwitchChance || 0)) assignZone(G, a, true);
+      else a._zoneUntil = G.time + 50 + Math.random() * 70;
+    }
+  }
+
+  /* Random city mode: people come out of houses and in from the edges over time.
+   * Rioters appear near the shopping strips. */
+  function placeTrickle(G) {
+    var doors = MAP.doors, trickle = CONFIG.spawnTrickleSeconds, i, k;
+    var early = CONFIG.spawnAtStart || 0, doorShare = CONFIG.doorSpawnShare || 0;
+    for (i = 0; i < G.agents.length; i++) {
+      var a = G.agents[i], door = null;
+      if (a.role === "rioter" && G.shops.length) {
+        var sh = G.shops[Math.floor(Math.random() * G.shops.length)], near = [];
+        for (k = 0; k < doors.length; k++) {
+          var dx = doors[k].x - sh.x, dy = doors[k].y - sh.y;
+          if (dx * dx + dy * dy < 144) near.push(doors[k]);
+        }
+        if (near.length) door = near[Math.floor(Math.random() * near.length)];
+        a.spawnAt = 8 + Math.random() * trickle * 0.8;
+      } else {
+        if (Math.random() < doorShare) door = doors[Math.floor(Math.random() * doors.length)];
+        a.spawnAt = Math.random() < early ? 0 : Math.random() * trickle;
+      }
+      if (door) {
+        a.x = door.x + 0.25 + Math.random() * 0.5;
+        a.y = door.y + 0.25 + Math.random() * 0.5;
+      }
+      if (a.spawnAt > 0) { a.active = false; a.pending = true; }
+    }
+  }
+
   /* ---------------- setup ---------------- */
   function init(G) {
     G.agents = [];
     G.time = 0;
 
     var sp = MAP.crowdSpawn;
-    var tiles = [];
-    for (var y = sp.y; y < sp.y + sp.h; y++) {
-      for (var x = sp.x; x < sp.x + sp.w; x++) {
-        if (inBounds(x, y) && !isSolidTile(G, x, y)) tiles.push({ x: x, y: y });
+    var zones = CONFIG.spawnZones || [{ x: sp.x, y: sp.y, w: sp.w, h: sp.h, share: 1 }];
+    var zoneTiles = [], shareSum = 0, zi;
+    for (zi = 0; zi < zones.length; zi++) {
+      var zt = [], zz = zones[zi];
+      for (var zy = zz.y; zy < zz.y + zz.h; zy++) {
+        for (var zx = zz.x; zx < zz.x + zz.w; zx++) {
+          if (inBounds(zx, zy) && !isSolidTile(G, zx, zy)) zt.push({ x: zx, y: zy });
+        }
       }
+      zoneTiles.push(zt);
+      if (zt.length) shareSum += zz.share;
     }
-    if (!tiles.length) tiles.push({ x: sp.x, y: 18 });   // safety fallback
+    if (shareSum <= 0) { zones = [{ share: 1 }]; zoneTiles = [[{ x: sp.x, y: 18 }]]; shareSum = 1; }
 
     for (var i = 0; i < CONFIG.crowdSize; i++) {
       /* Round-robin over the spawn tiles: even spread, several per tile when
        * the spawn rectangle has fewer tiles than agents. */
-      var t = tiles[i % tiles.length];
+      var pick = (i + 0.5) / CONFIG.crowdSize * shareSum, acc = 0, zsel = 0;
+      for (zi = 0; zi < zones.length; zi++) {
+        if (!zoneTiles[zi].length) continue;
+        acc += zones[zi].share; zsel = zi;
+        if (pick <= acc) break;
+      }
+      var zlist = zoneTiles[zsel];
+      var t = zlist[i % zlist.length];
       G.agents.push({
         id: i,
         x: t.x + 0.2 + Math.random() * 0.6,
@@ -175,6 +319,8 @@ var Crowd = (function () {
         hasTool: false,
         state: "march",
         speed: CONFIG.agentSpeedMin + Math.random() * (CONFIG.agentSpeedMax - CONFIG.agentSpeedMin),
+        stamina: 100,
+        _exhausted: false,
         _flow: null,
         _targetShop: null,
         _wanderT: 0,
@@ -182,7 +328,8 @@ var Crowd = (function () {
         _highMoodTime: 0,
         _blocked: false,
         _fleeUntil: 0,
-        _throwCd: 0
+        _throwCd: 0,
+        violentUntil: 0
       });
     }
 
@@ -195,9 +342,24 @@ var Crowd = (function () {
     }
     var rn = Math.min(CONFIG.rioterCount, idx.length);
     for (var n = 0; n < rn; n++) G.agents[idx[n]].role = "rioter";
+    G.rioterTotal = rn;
+
+    var zoneMode = !!(CONFIG.rallyZones && CONFIG.rallyZones.length);
+    if (zoneMode && CONFIG.spawnTrickleSeconds > 0 && MAP.doors && MAP.doors.length) placeTrickle(G);
 
     rebuildFlow(G);
     rebuildHash(G);
+
+    G._siteLoad = [];
+    G._zoneLoad = [];
+    for (var ai = 0; ai < G.agents.length; ai++) {
+      var ag = G.agents[ai];
+      ag._site = -1;
+      ag._zone = -1;
+      if (ag.role !== "peaceful") continue;
+      if (zoneMode) { if (ag.active) assignZone(G, ag); }
+      else assignSite(G, ag);
+    }
   }
 
   /* ---------------- helpers used by the sim ---------------- */
@@ -292,7 +454,7 @@ var Crowd = (function () {
       if (!sh.broken) continue;
       var sdx = sh.x - a.x, sdy = sh.y - a.y;
       if (sdx * sdx + sdy * sdy < C.moodBrokenShopRadius * C.moodBrokenShopRadius) {
-        mood += C.moodBrokenShopRise * dt;
+        if (mood < C.moodBrokenShopCap) mood = Math.min(C.moodBrokenShopCap, mood + C.moodBrokenShopRise * dt);
         break;
       }
     }
@@ -308,6 +470,19 @@ var Crowd = (function () {
     } else {
       mood += C.moodBaselineRecover * dt;
       if (mood > C.moodBaseline) mood = C.moodBaseline;
+    }
+
+    /* (g) a recent arrest nearby angers the crowd */
+    if (G._angers) {
+      for (var ei = 0; ei < G._angers.length; ei++) {
+        var ev = G._angers[ei];
+        if (ev.until <= G.time) continue;
+        var edx = ev.x - a.x, edy = ev.y - a.y;
+        if (edx * edx + edy * edy > C.arrestAngerRadius * C.arrestAngerRadius) continue;
+        var arise = ev.wrong ? C.wrongArrestAngerRise : C.arrestAngerRise;
+        var acap = ev.wrong ? C.wrongArrestAngerCap : C.arrestAngerCap;
+        if (mood < acap) mood = Math.min(acap, mood + arise * dt);
+      }
     }
 
     if (mood < 0) mood = 0;
@@ -326,6 +501,8 @@ var Crowd = (function () {
           a.role = "rioter";
           a._flow = null;
           a._targetShop = null;
+          leaveZone(G, a);
+          G.rioterTotal = (G.rioterTotal || 0) + 1;
           G.log("A protester has turned violent");
         }
       } else {
@@ -341,8 +518,13 @@ var Crowd = (function () {
 
     var onPlaza = tileChar(Math.floor(a.x), Math.floor(a.y)) === "P";
     var rioterBusy = a.role === "rioter" && (a.state === "attackShop" || a.state === "flee");
+    /* protest-area agents mill once inside their area; others on the plaza */
+    var zoneMode = a.role === "peaceful" && a._zone >= 0 && a._flow;
+    var mill = !rioterBusy && (zoneMode
+      ? a._flow[Math.floor(a.y) * MAP.width + Math.floor(a.x)] === 0
+      : onPlaza);
 
-    if (onPlaza && !rioterBusy) {
+    if (mill) {
       /* Mill about the plaza instead of freezing. */
       a._wanderT -= dt;
       if (a._wanderT <= 0) {
@@ -351,11 +533,37 @@ var Crowd = (function () {
       }
       vx = Math.cos(a._wanderA) * C.wanderSpeed;
       vy = Math.sin(a._wanderA) * C.wanderSpeed;
+      /* milling about is walking: recover stamina */
+      if (typeof a.stamina !== "number") a.stamina = 100;
+      a.stamina = Math.min(100, a.stamina + C.staminaRegen * dt);
+      if (a._exhausted && a.stamina >= C.staminaMinToRun) a._exhausted = false;
     } else {
       var dir = desiredDir(G, a);
+      /* Running: rioters breaking shops or fleeing, and agitated agents sprint
+       * while they still have stamina; exhausted agents fall back to walking. */
+      var wantsRun = (a.role === "rioter" && (a.state === "attackShop" || a.state === "flee")) ||
+                     a.state === "agitated";
+      if (typeof a.stamina !== "number") a.stamina = 100;
+      var running = wantsRun && !a._exhausted;
+      if (running) {
+        a.stamina -= C.staminaDrain * dt;
+        if (a.stamina <= 0) { a.stamina = 0; a._exhausted = true; running = false; }
+      } else {
+        a.stamina = Math.min(100, a.stamina + C.staminaRegen * dt);
+        if (a._exhausted && a.stamina >= C.staminaMinToRun) a._exhausted = false;
+      }
       if (dir) {
         var sp = a.speed;
-        if (a.state === "agitated") sp *= C.agitSpeedMul;
+        if (running) {
+          /* one run speed per agent, derived from its walk speed */
+          var wmin = C.agentSpeedMin, wmax = C.agentSpeedMax;
+          var rf = (wmax > wmin) ? (a.speed - wmin) / (wmax - wmin) : 0;
+          if (rf < 0) rf = 0;
+          if (rf > 1) rf = 1;
+          sp = C.runSpeedMin + rf * (C.runSpeedMax - C.runSpeedMin);
+        } else if (a.state === "agitated") {
+          sp *= C.agitSpeedMul;
+        }
         vx = dir.x * sp;
         vy = dir.y * sp;
         if (a.state === "agitated") {
@@ -394,6 +602,52 @@ var Crowd = (function () {
     if (cnt) {
       vx += (sx / cnt) * C.sepStrength;
       vy += (sy / cnt) * C.sepStrength;
+    }
+
+    /* police lines: foot officers slow nearby protesters (firm more than calm)
+     * and softly push back anyone who gets right up against them */
+    var lineR = C.policeLineRadius || 0;
+    if (lineR > 0 && G.officers.length) {
+      var slow = 1, rx = 0, ry = 0;
+      for (var li = 0; li < G.officers.length; li++) {
+        var lo = G.officers[li];
+        if (lo.escorting || (typeof lo.baseSpeed === "number" && lo.baseSpeed >= C.motorbikeSpeed)) continue;
+        var ldx = a.x - lo.x, ldy = a.y - lo.y;
+        var ld2 = ldx * ldx + ldy * ldy;
+        if (ld2 > lineR * lineR) continue;
+        var lm = (lo.stance === "firm") ? C.policeLineSlowFirm : C.policeLineSlowCalm;
+        if (lm < slow) slow = lm;
+        var ld = Math.sqrt(ld2) || 0.001;
+        if (ld < 0.6) {
+          var lp = (0.6 - ld) / 0.6 * 2.0;
+          rx += ldx / ld * lp;
+          ry += ldy / ld * lp;
+        }
+      }
+      vx = vx * slow + rx;
+      vy = vy * slow + ry;
+    }
+
+    /* random city mode: people step out of the way of police vehicles */
+    if (C.crowdBlocksPolice && G.vehicles) {
+      for (var vi = 0; vi < G.vehicles.length; vi++) {
+        var vh = G.vehicles[vi];
+        var vdx = a.x - vh.x, vdy = a.y - vh.y, vd2 = vdx * vdx + vdy * vdy;
+        if (vd2 > 1.69) continue;
+        var vd = Math.sqrt(vd2) || 0.001, vp = (1.3 - vd) / 1.3 * 2.5;
+        vx += vdx / vd * vp;
+        vy += vdy / vd * vp;
+      }
+    }
+
+    /* water cannon push: decays linearly to zero by a._push.until */
+    if (a._push && G.time < a._push.until) {
+      var tLeft = (a._push.until - G.time) / C.waterPushSeconds;
+      if (tLeft > 1) tLeft = 1;
+      vx += a._push.vx * tLeft;
+      vy += a._push.vy * tLeft;
+    } else {
+      a._push = null;
     }
 
     /* per-axis collision so agents slide along walls instead of sticking */
@@ -445,10 +699,12 @@ var Crowd = (function () {
       if (Math.sqrt(dx * dx + dy * dy) < 1.6) {
         /* smashing it: visible for as long as the smashing continues */
         r.revealedUntil = Math.max(r.revealedUntil, G.time + 0.2);
+        r.violentUntil = Math.max(r.violentUntil, G.time + C.violentSeconds);
         shop.hp -= (100 / C.breakSeconds) * dt;
         if (shop.hp <= 0) {
           shop.hp = 0;
           shop.broken = true;
+          if (typeof Art !== "undefined") Art.invalidate();
           G.stats.shopsDamaged++;
           G.log("Shop broken: " + shop.name);
           r.hasTool = true;
@@ -458,13 +714,38 @@ var Crowd = (function () {
           r._fleeUntil = G.time + C.fleeSeconds;
           r._flow = G.flow;
           r._targetShop = null;
-          var nb = neighbors(G, r.x, r.y, 6);
+          var nb = neighbors(G, r.x, r.y, 6), joined = 0;
           for (var i = 0; i < nb.length; i++) {
             if (nb[i].active) nb[i].mood = Math.min(100, nb[i].mood + C.shopBreakMoodSpike);
           }
+          /* random city mode: angry bystanders close by join the looting */
+          for (i = 0; C.lootJoinChance && i < nb.length && joined < 2; i++) {
+            var by = nb[i], bdx = by.x - r.x, bdy = by.y - r.y;
+            if (!by.active || by.role !== "peaceful" || by.mood < 50 || bdx * bdx + bdy * bdy > 16) continue;
+            if (Math.random() >= C.lootJoinChance) continue;
+            by.role = "rioter";
+            by.state = "march";
+            by._flow = null;
+            by._targetShop = null;
+            leaveZone(G, by);
+            G.rioterTotal = (G.rioterTotal || 0) + 1;
+            joined++;
+          }
+          if (joined) G.log("Bystanders join the looting near " + shop.name);
         }
       }
       return;
+    }
+
+    /* vanguard: a small chance per second to break off and go for a shop now */
+    if (Math.random() < C.vanguardChance * dt) {
+      var vt = pickTargetShop(G, r);
+      if (vt) {
+        r.state = "attackShop";
+        r._targetShop = vt.shop;
+        r._flow = vt.field;
+        return;
+      }
     }
 
     /* march: decide whether it is time to go after a shop */
@@ -496,6 +777,7 @@ var Crowd = (function () {
         if (Math.sqrt(odx * odx + ody * ody) < C.throwRange) {
           if (Math.random() < C.throwChance * dt) {
             r.revealedUntil = G.time + C.revealSeconds;
+            r.violentUntil = Math.max(r.violentUntil, G.time + C.violentSeconds);
             r._throwCd = G.time + 3;
             G.log("Object thrown at police");
             var nb2 = neighbors(G, r.x, r.y, 5);
@@ -513,9 +795,18 @@ var Crowd = (function () {
   function update(G, dt) {
     if (!G.flow) rebuildFlow(G);
     G.time += dt;
-    rebuildHash(G);
 
     var agents = G.agents, i;
+    var zoneMode = !!(CONFIG.rallyZones && CONFIG.rallyZones.length);
+    for (i = 0; i < agents.length; i++) {
+      var pa = agents[i];
+      if (!pa.pending || G.time < pa.spawnAt) continue;
+      pa.pending = false;
+      pa.active = true;
+      if (zoneMode && pa.role === "peaceful") assignZone(G, pa);
+    }
+    rebuildHash(G);
+
     var queryR = Math.max(CONFIG.moodSpreadRadius, CONFIG.sepRadius);
 
     for (i = 0; i < agents.length; i++) {
@@ -523,6 +814,12 @@ var Crowd = (function () {
       if (!am.active) continue;
       am._nbrs = neighbors(G, am.x, am.y, queryR);
       updateMood(G, am, am._nbrs, dt);
+    }
+    for (i = 0; i < agents.length; i++) {
+      var sa = agents[i];
+      if (!sa.active || sa.role !== "peaceful") continue;
+      if (zoneMode) tendZone(G, sa);
+      else if (sa._site >= 0) applySite(G, sa);
     }
     for (i = 0; i < agents.length; i++) {
       var mv = agents[i];
@@ -619,6 +916,9 @@ var Crowd = (function () {
     if (!a || !a.active) return false;
     a.active = false;
     a.arrested = true;
+    if (!G._angers) G._angers = [];
+    G._angers = G._angers.filter(function (e) { return e.until > G.time; });
+    G._angers.push({ x: a.x, y: a.y, until: G.time + CONFIG.arrestAngerSeconds, wrong: a.role !== "rioter" });
     if (a.role === "rioter") {
       G.stats.rioterArrested++;
       G.log("Rioter arrested");
@@ -642,6 +942,20 @@ var Crowd = (function () {
     }
   }
 
+  function push(G, x, y, radius, strength, fromX, fromY) {
+    var nb = neighbors(G, x, y, radius);
+    for (var i = 0; i < nb.length; i++) {
+      var a = nb[i];
+      if (!a.active) continue;
+      var dx = a.x - fromX, dy = a.y - fromY;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.01) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d = Math.sqrt(dx * dx + dy * dy) || 1; }
+      var vx = (dx / d) * strength;
+      var vy = (dy / d) * strength;
+      a._push = { vx: vx, vy: vy, until: G.time + CONFIG.waterPushSeconds };
+    }
+  }
+
   return {
     init: init,
     update: update,
@@ -650,6 +964,7 @@ var Crowd = (function () {
     neighbors: neighbors,
     arrest: arrest,
     loudspeaker: loudspeaker,
+    push: push,
     averageMood: averageMood
   };
 })();
