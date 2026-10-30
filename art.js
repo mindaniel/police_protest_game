@@ -1114,6 +1114,7 @@ var Art = (function () {
     if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
     drawWater(ctx, G, t);
     drawSmoke(ctx, G, t);
+    if (typeof FX !== "undefined") FX.draw(ctx, G);
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
     ctx.globalAlpha = 1;

@@ -282,6 +282,7 @@ function frame(now) {
     for (var i = 0; i < Game.speed; i++) {
       Crowd.update(G, step);
       if (typeof Police !== "undefined") Police.update(G, step);
+      if (typeof FX !== "undefined") FX.update(G, step);
     }
   }
 
@@ -311,6 +312,7 @@ function restartGame(newCity) {
   Crowd.init(G);
   Crowd.rebuildFlow(G);
   if (typeof Police !== "undefined") Police.init(G);
+  if (typeof FX !== "undefined") FX.init(G);
   if (typeof Art !== "undefined") Art.init(G);
   Game.paused = false;
   Game.speed = 1;
@@ -330,6 +332,7 @@ function initGame() {
   Crowd.init(G);
   Crowd.rebuildFlow(G);
   if (typeof Police !== "undefined") Police.init(G);
+  if (typeof FX !== "undefined") FX.init(G);
   if (typeof Art !== "undefined") Art.init(G);
 
   if (typeof UI !== "undefined") {

@@ -30,7 +30,8 @@ var Crowd = (function () {
    * Only used by BFS; collision tests must NOT consult G.vehBlocked. */
   function isPathWall(G, x, y) {
     if (isSolidTile(G, x, y)) return true;
-    return !!(G.vehBlocked && G.vehBlocked.has(tkey(x, y)));
+    var k = tkey(x, y);
+    return !!((G.vehBlocked && G.vehBlocked.has(k)) || (G.fireBlocked && G.fireBlocked.has(k)));
   }
 
   /* Circle-vs-tile test used to stop agents ending a step inside a wall. */
@@ -851,6 +852,7 @@ var Crowd = (function () {
           if (typeof Art !== "undefined") Art.invalidate();
           G.stats.shopsDamaged++;
           G.log("Shop broken: " + shop.name);
+          if (typeof FX !== "undefined") FX.shopBroken(G, shop);
           r.hasTool = true;
           r.revealedUntil = G.time + C.revealSeconds;
           G.log("Rioter spotted near " + shop.name);
@@ -924,6 +926,7 @@ var Crowd = (function () {
             r.violentUntil = Math.max(r.violentUntil, G.time + C.violentSeconds);
             r._throwCd = G.time + 3;
             G.log("Object thrown at police");
+            if (typeof FX !== "undefined") FX.throwAt(G, r, off);
             var nb2 = neighbors(G, r.x, r.y, 5);
             for (var j = 0; j < nb2.length; j++) {
               if (nb2[j].active) nb2[j].mood = Math.min(100, nb2[j].mood + C.throwMoodSpike);
@@ -1158,6 +1161,7 @@ var Crowd = (function () {
     update: update,
     draw: draw,
     rebuildFlow: rebuildFlow,
+    collides: collides,
     neighbors: neighbors,
     arrest: arrest,
     loudspeaker: loudspeaker,

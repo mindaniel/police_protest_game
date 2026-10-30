@@ -716,11 +716,14 @@ var Police = (function () {
         if (G.officers[j].squad === off.squad) offSquad.push(G.officers[j]);
       }
       applyOfficerRun(G, off, offSquad, squadMinStam[off.squad], dt);
-      stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
+      /* hit by a thrown object: stands still for a moment */
+      if (!(off.stunUntil > G.time)) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
       var nb = Crowd.neighbors(G, off.x, off.y, squadObs[off.squad]);
       for (j = 0; j < nb.length; j++) {
         var a = nb[j];
         if (!a.active) continue;
+        /* thick smoke hides people from the police */
+        if (typeof FX !== "undefined" && FX.smokeAt(G, a.x, a.y) >= 0.5) continue;
         seen[a.id] = true;
         var rise = 0;
         if (a.hasTool || a.revealedUntil > G.time || a.violentUntil > G.time) rise = 15;
@@ -1118,6 +1121,7 @@ var Police = (function () {
     truck.readyAt = G.time + CONFIG.waterCooldown;
     G.waterFx = { x: x, y: y, fromX: truck.x, fromY: truck.y, until: G.time + 1.2 };
     G.log("Water cannon used");
+    if (typeof FX !== "undefined") FX.water(G, x, y, CONFIG.waterRadius);
     return "ok";
   }
 
