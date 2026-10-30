@@ -1,4 +1,4 @@
-/* police.js - police squads, vehicles, stances, tools, observation, arrests.
+﻿/* police.js - police squads, vehicles, stances, tools, observation, arrests.
  * Exposes a global Police object. All coordinates are in tile units.
  * Hooks into crowd.js through G.officers, Crowd.arrest, Crowd.loudspeaker,
  * Crowd.neighbors, Crowd.rebuildFlow. Owns agent.suspicion.
@@ -65,6 +65,13 @@ var Police = (function () {
     return (ch === "#" || ch === "S");
   }
 
+  /* Turn rate per vehicle type; CONFIG is read here because it loads later. */
+  function vehTurnRate(type) {
+    var C = (typeof CONFIG !== "undefined") ? CONFIG : {};
+    if (typeof C.vehicleTurnRate === "number") return C.vehicleTurnRate;
+    return (type === "car") ? 2.6 : 1.8;
+  }
+
   var VEH_OFFSET_X = -1.9;   /* vehicle parks this far west of the squad centre */
 
   /* Default squad centres: six squads, four on the main boulevard (row 18) and
@@ -94,6 +101,41 @@ var Police = (function () {
 
   /* Where a unit really aims: its target plus its formation offset,
    * unless that spot is solid, then the plain target. */
+  function isVehicle(e) {
+    return e.type === "car" || e.type === "watertruck" || e.type === "barriertruck";
+  }
+  function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
+
+  /* One vehicle step toward (dx, dy) at distance d. The vehicle records the
+   * heading it wants (turned by turnVehicle), turns in place when that is more
+   * than 60 degrees off, otherwise drives along its CURRENT heading, slower
+   * while turning. The last 0.6 tiles go straight to the spot (parking). */
+  function vehStep(G, v, dx, dy, d, dt) {
+    var want = Math.atan2(dy, dx);
+    if (typeof v.ang !== "number") v.ang = want;
+    v._wantAng = want;
+    var diff = angDiff(want, v.ang);
+    if (d > 0.6 && Math.abs(diff) > Math.PI / 3) return;
+    var step = v.speed * dt * Math.max(0.2, Math.cos(diff));
+    if (step > d) step = d;
+    var ux = d > 0.6 ? Math.cos(v.ang) : dx / d, uy = d > 0.6 ? Math.sin(v.ang) : dy / d;
+    var nx = v.x + ux * step, ny = v.y + uy * step;
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) { v.x = nx; v.y = ny; return; }
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(v.y))) { v.x = nx; return; }
+    if (!isSolidPolice(G, Math.floor(v.x), Math.floor(ny))) v.y = ny;
+  }
+  function turnVehicle(v, dt) {
+    if (typeof v.ang !== "number") v.ang = 0;
+    if (typeof v._wantAng !== "number") return;
+    var diff = angDiff(v._wantAng, v.ang), maxT = vehTurnRate(v.type) * dt;
+    v.ang += Math.abs(diff) <= maxT ? diff : (diff > 0 ? maxT : -maxT);
+  }
+  /* Face along the street at (x, y): east-west if that way is open, else north-south. */
+  function streetAngle(G, x, y) {
+    var tx = Math.floor(x), ty = Math.floor(y);
+    return (!isSolidPolice(G, tx - 1, ty) || !isSolidPolice(G, tx + 1, ty)) ? 0 : Math.PI / 2;
+  }
+
   function goalOf(G, e) {
     var gx = e.tx, gy = e.ty;
     if (e.ox || e.oy) {
@@ -183,6 +225,7 @@ var Police = (function () {
     var dx = tx - off.x, dy = ty - off.y;
     var d = Math.sqrt(dx * dx + dy * dy);
     if (d < 0.001) return false;
+    if (isVehicle(off)) { vehStep(G, off, dx, dy, d, dt); return true; }
     var step = off.speed * dt;
     if (step > d) step = d;
     var nx2 = off.x + (dx / d) * step;
@@ -207,15 +250,17 @@ var Police = (function () {
     if (d > 2) {
       var hx = (typeof off.homeX === "number") ? off.homeX : off.tx;
       var hy = (typeof off.homeY === "number") ? off.homeY : off.ty;
-      if (Math.abs(goal.x - hx) < 0.6 && Math.abs(goal.y - hy) < 0.6) {
+      /* vehicles park offset from the home point, so they always use the field */
+      if (isVehicle(off) || (Math.abs(goal.x - hx) < 0.6 && Math.abs(goal.y - hy) < 0.6)) {
         var field = policeFlowField(G, off.squad);
         if (field && stepByField(G, off, dt, field)) return;
       }
     }
 
+    if (isVehicle(off)) { vehStep(G, off, dx, dy, d, dt); return; }
+    var ux = dx / d, uy = dy / d;
     var step = off.speed * dt;
     if (step > d) step = d;
-    var ux = dx / d, uy = dy / d;
     var nx = off.x + ux * step;
     var ny = off.y + uy * step;
     if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) {
@@ -291,16 +336,24 @@ var Police = (function () {
         break;
       }
     }
+    var vx = c.x + ox, vy = c.y + oy;
+    /* face along the street: east-west if walkable, else north-south */
+    var ang = 0;
+    var tx0 = Math.floor(vx), ty0 = Math.floor(vy);
+    if (!isSolidPolice(G, tx0 - 1, ty0) || !isSolidPolice(G, tx0 + 1, ty0)) ang = 0;
+    else ang = Math.PI / 2;
     var vehicle = {
       id: "v" + (G.vehicles.length + 1),
       type: type,
       squad: squadIndex,
-      x: c.x + ox,
-      y: c.y + oy,
+      x: vx,
+      y: vy,
       ox: ox,
       oy: oy,
       tx: c.x,
       ty: c.y,
+      ang: ang,
+      _wantAng: ang,
       speed: vehicleSpeedFor(type),
       readyAt: 0
     };
@@ -687,6 +740,7 @@ var Police = (function () {
         if (G.officers[j].squad === v.squad) { v.tx = G.officers[j].homeX; v.ty = G.officers[j].homeY; break; }
       }
       stepThroughCrowd(G, v, dt, 1.4, 0.15, 0.08);
+      turnVehicle(v, dt);
     }
 
     /* Arrest logic per squad. */
@@ -969,6 +1023,7 @@ var Police = (function () {
       gx = cx + e.ox; gy = cy + e.oy;
       if (isSolidPolice(G, Math.floor(gx), Math.floor(gy))) { gx = cx; gy = cy; }
       e.x = gx; e.y = gy;
+      e.ang = e._wantAng = streetAngle(G, gx, gy);
     }
     return true;
   }

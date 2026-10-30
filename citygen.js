@@ -291,6 +291,7 @@ var CityGen = (function () {
     CONFIG.zoneSwitchChance = 0.35;     /* chance to march to another area when the stay ends */
     CONFIG.lootJoinChance = 0.25;       /* angry bystanders join in when a shop is smashed */
     CONFIG.crowdBlocksPolice = true;
+    CONFIG.vehiclesBlock = true;        /* vehicles are solid; parked ones cut narrow streets */
     return m;
   }
 

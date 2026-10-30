@@ -569,6 +569,7 @@ var Art = (function () {
 
   var C_WHITE = [236, 240, 245], C_BLUE = [42, 93, 176], C_DARK = [44, 48, 56];
   function vehAng(v) {
+    if (typeof v.ang === "number") return v.ang;
     var dx = v.tx - v.x, dy = v.ty - v.y;
     if (dx * dx + dy * dy > 0.04) v._artAng = Math.atan2(dy, dx);
     return typeof v._artAng === "number" ? v._artAng : 0;

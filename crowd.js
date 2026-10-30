@@ -26,6 +26,13 @@ var Crowd = (function () {
     return G.blocked.has(tkey(x, y));
   }
 
+  /* Path-search wall: real solids plus tiles covered by parked vehicles.
+   * Only used by BFS; collision tests must NOT consult G.vehBlocked. */
+  function isPathWall(G, x, y) {
+    if (isSolidTile(G, x, y)) return true;
+    return !!(G.vehBlocked && G.vehBlocked.has(tkey(x, y)));
+  }
+
   /* Circle-vs-tile test used to stop agents ending a step inside a wall. */
   function collides(G, x, y, r) {
     r = r || CONFIG.agentRadius;
@@ -87,7 +94,7 @@ var Crowd = (function () {
     var i;
     for (i = 0; i < sources.length; i++) {
       var s = sources[i];
-      if (!inBounds(s.x, s.y) || isSolidTile(G, s.x, s.y)) continue;
+      if (!inBounds(s.x, s.y) || isPathWall(G, s.x, s.y)) continue;
       var si = s.y * W + s.x;
       if (dist[si] !== Infinity) continue;
       dist[si] = 0;
@@ -98,10 +105,10 @@ var Crowd = (function () {
       var idx = queue[head++];
       var cx = idx % W, cy = (idx - cx) / W;
       var cd = dist[idx];
-      if (cx > 0 && !isSolidTile(G, cx - 1, cy) && dist[idx - 1] === Infinity) { dist[idx - 1] = cd + 1; queue.push(idx - 1); }
-      if (cx < W - 1 && !isSolidTile(G, cx + 1, cy) && dist[idx + 1] === Infinity) { dist[idx + 1] = cd + 1; queue.push(idx + 1); }
-      if (cy > 0 && !isSolidTile(G, cx, cy - 1) && dist[idx - W] === Infinity) { dist[idx - W] = cd + 1; queue.push(idx - W); }
-      if (cy < H - 1 && !isSolidTile(G, cx, cy + 1) && dist[idx + W] === Infinity) { dist[idx + W] = cd + 1; queue.push(idx + W); }
+      if (cx > 0 && !isPathWall(G, cx - 1, cy) && dist[idx - 1] === Infinity) { dist[idx - 1] = cd + 1; queue.push(idx - 1); }
+      if (cx < W - 1 && !isPathWall(G, cx + 1, cy) && dist[idx + 1] === Infinity) { dist[idx + 1] = cd + 1; queue.push(idx + 1); }
+      if (cy > 0 && !isPathWall(G, cx, cy - 1) && dist[idx - W] === Infinity) { dist[idx - W] = cd + 1; queue.push(idx - W); }
+      if (cy < H - 1 && !isPathWall(G, cx, cy + 1) && dist[idx + W] === Infinity) { dist[idx + W] = cd + 1; queue.push(idx + W); }
     }
     return dist;
   }
@@ -120,6 +127,45 @@ var Crowd = (function () {
     G._shopFields = null;   // invalidate per-shop caches
     G._siteFields = null;
     G._zoneFields = null;
+  }
+
+  /* Half extents (length/width) of a vehicle type, kept local to crowd. */
+  function vehDims(type) {
+    if (type === "car") return { L: 0.9, W: 0.42 };
+    return { L: 1.3, W: 0.5 };
+  }
+
+  /* Push an agent out of any vehicle's expanded oriented rectangle along the
+   * nearest side. Never pushes into a solid tile; sub-steps avoid tunnelling. */
+  function pushOutOfVehicles(G, a) {
+    if (!G.vehicles) return;
+    var rad = CONFIG.agentRadius || 0.25;
+    for (var vi = 0; vi < G.vehicles.length; vi++) {
+      var v = G.vehicles[vi];
+      var d = vehDims(v.type);
+      var hl = d.L + rad, hw = d.W + rad;
+      var ang = (typeof v.ang === "number") ? v.ang : 0;
+      var ca = Math.cos(ang), sa = Math.sin(ang);
+      var dx = a.x - v.x, dy = a.y - v.y;
+      var lx = dx * ca + dy * sa;       /* along the vehicle */
+      var ly = -dx * sa + dy * ca;      /* across the vehicle */
+      if (lx > -hl && lx < hl && ly > -hw && ly < hw) {
+        /* minimal translation in local space */
+        var px = (hl - lx) < (lx + hl) ? (hl - lx) : -(lx + hl);
+        var py = (hw - ly) < (ly + hw) ? (hw - ly) : -(ly + hw);
+        var mx = 0, my = 0;
+        if (Math.abs(px) <= Math.abs(py)) mx = px; else my = py;
+        /* rotate the push back into world space */
+        var wx = mx * ca - my * sa, wy = mx * sa + my * ca;
+        var steps = Math.ceil(Math.sqrt(wx * wx + wy * wy) / 0.1) || 1;
+        var sxp = wx / steps, syp = wy / steps;
+        for (var s = 0; s < steps; s++) {
+          var tx = a.x + sxp, ty = a.y + syp;
+          if (collides(G, tx, ty)) break;
+          a.x = tx; a.y = ty;
+        }
+      }
+    }
   }
 
   /* Walkable tiles around a shop the rioters can stand on to break it. */
@@ -376,6 +422,7 @@ var Crowd = (function () {
   function hasPath(G, a) {
     var tx = Math.floor(a.x), ty = Math.floor(a.y);
     if (!inBounds(tx, ty)) return false;
+    if (isPathWall(G, tx, ty)) return false;
     var f = G.flow[ty * MAP.width + tx];
     return f !== undefined && f !== Infinity;
   }
@@ -628,8 +675,10 @@ var Crowd = (function () {
       vy = vy * slow + ry;
     }
 
-    /* random city mode: people step out of the way of police vehicles */
-    if (C.crowdBlocksPolice && G.vehicles) {
+    /* random city mode: people step out of the way of police vehicles.
+     * With CONFIG.vehiclesBlock the push becomes a hard rectangle push-out
+     * after the step instead (see below), so skip the soft push then. */
+    if (C.crowdBlocksPolice && G.vehicles && !C.vehiclesBlock) {
       for (var vi = 0; vi < G.vehicles.length; vi++) {
         var vh = G.vehicles[vi];
         var vdx = a.x - vh.x, vdy = a.y - vh.y, vd2 = vdx * vdx + vdy * vdy;
@@ -655,6 +704,9 @@ var Crowd = (function () {
     if (!collides(G, nx, a.y)) a.x = nx;
     var ny = a.y + vy * dt;
     if (!collides(G, a.x, ny)) a.y = ny;
+
+    /* vehicles are solid obstacles in random city mode */
+    if (C.vehiclesBlock) pushOutOfVehicles(G, a);
 
     a.vx = vx; a.vy = vy;
   }
@@ -794,6 +846,7 @@ var Crowd = (function () {
   /* ---------------- main update ---------------- */
   function update(G, dt) {
     if (!G.flow) rebuildFlow(G);
+    if (!G.vehBlocked) G.vehBlocked = new Set();
     G.time += dt;
 
     var agents = G.agents, i;
@@ -831,6 +884,16 @@ var Crowd = (function () {
       if (a.active && a.role === "rioter") updateRioter(G, a, dt);
     }
 
+    /* parked vehicles block narrow streets: recompute at most 4x per second */
+    if (CONFIG.vehiclesBlock && G.vehicles) {
+      G._vehBlockAcc = (G._vehBlockAcc || 0) + dt;
+      if (G._vehBlockAcc >= 0.25) {
+        G._vehBlockAcc = 0;
+        var changed = recomputeVehBlocked(G);
+        if (changed) rebuildFlow(G);
+      }
+    }
+
     /* stats: sample the average mood about once per second */
     G._moodAcc = (G._moodAcc || 0) + dt;
     if (G._moodAcc >= 1) {
@@ -840,6 +903,47 @@ var Crowd = (function () {
       G.stats.moodSamples++;
       if (m > G.stats.peakMood) G.stats.peakMood = m;
     }
+  }
+
+  /* Update each vehicle's parked state and rebuild G.vehBlocked.
+   * Returns true if the set of blocked tiles changed. */
+  function recomputeVehBlocked(G) {
+    if (!G.vehBlocked) G.vehBlocked = new Set();
+    var next = new Set();
+    var W = MAP.width, H = MAP.height;
+    for (var vi = 0; vi < G.vehicles.length; vi++) {
+      var v = G.vehicles[vi];
+      if (typeof v._px !== "number") { v._px = v.x; v._py = v.y; v._still = 0; }
+      var moved = Math.abs(v.x - v._px) + Math.abs(v.y - v._py);
+      if (moved >= 0.05) { v._still = 0; v._px = v.x; v._py = v.y; }
+      else { v._still = (v._still || 0) + 0.25; v._px = v.x; v._py = v.y; }
+      var parked = v._still >= 1.5;
+      if (!parked) continue;
+      var d = vehDims(v.type);
+      var hl = d.L + 0.25, hw = d.W + 0.25;
+      var ang = (typeof v.ang === "number") ? v.ang : 0;
+      var ca = Math.cos(ang), sa = Math.sin(ang);
+      var r = Math.sqrt(hl * hl + hw * hw);
+      var x0 = Math.max(0, Math.floor(v.x - r)), x1 = Math.min(W - 1, Math.floor(v.x + r));
+      var y0 = Math.max(0, Math.floor(v.y - r)), y1 = Math.min(H - 1, Math.floor(v.y + r));
+      for (var ty = y0; ty <= y1; ty++) {
+        for (var tx = x0; tx <= x1; tx++) {
+          if (!inBounds(tx, ty)) continue;
+          var ch = MAP.rows[ty].charAt(tx);
+          if (ch === "#" || ch === "S") continue;
+          var dx = (tx + 0.5) - v.x, dy = (ty + 0.5) - v.y;
+          var lx = dx * ca + dy * sa;
+          var ly = -dx * sa + dy * ca;
+          if (lx > -hl && lx < hl && ly > -hw && ly < hw) next.add(tkey(tx, ty));
+        }
+      }
+    }
+    var same = (next.size === G.vehBlocked.size);
+    if (same) {
+      next.forEach(function (k) { if (!G.vehBlocked.has(k)) same = false; });
+    }
+    if (!same) G.vehBlocked = next;
+    return !same;
   }
 
   /* ---------------- drawing ---------------- */
