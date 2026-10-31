@@ -195,6 +195,21 @@ var CityGen = (function () {
       shopBlocks[k].street = streets[k % streets.length];
     }
 
+    /* doors: road/alley tiles in front of houses, spread out */
+    var doorC = [];
+    for (i = 0; i < leaves.length; i++) {
+      b = leaves[i];
+      if (b.kind) continue;
+      var rr = rimFacingRoad(b);
+      for (k = 0; k < rr.length; k++) if (get(rr[k].x, rr[k].y) === "#") doorC.push({ x: rr[k].ox, y: rr[k].oy, hx: rr[k].x, hy: rr[k].y });
+    }
+    return finish(pc, Math.max(plaza.w, plaza.h), shops, shopBlocks, doorC);
+  }
+
+  /* Shared second half: entrances, doors, protest areas and police staging
+   * for a finished grid g (W x H). doorC = candidate doors {x, y, hx, hy}. */
+  function finish(pc, plazaR, shops, shopBlocks, doorC) {
+    var i, k;
     /* crowd entrances: road runs on the map edge */
     var runs = [], x, y, s0;
     function edgeRuns(len, at, side) {
@@ -223,14 +238,6 @@ var CityGen = (function () {
       zones.push(z);
     }
 
-    /* doors: road/alley tiles in front of houses, spread out */
-    var doorC = [];
-    for (i = 0; i < leaves.length; i++) {
-      b = leaves[i];
-      if (b.kind) continue;
-      var rr = rimFacingRoad(b);
-      for (k = 0; k < rr.length; k++) if (get(rr[k].x, rr[k].y) === "#") doorC.push({ x: rr[k].ox, y: rr[k].oy, hx: rr[k].x, hy: rr[k].y });
-    }
     var doors = spacedPick(shuffle(doorC), 90, 3, null, 0);
 
     /* protest areas: the plaza plus open junctions spread across the city */
@@ -244,7 +251,7 @@ var CityGen = (function () {
     var zoneAvoid = [pc];
     for (i = 0; i < zones.length; i++) zoneAvoid.push({ x: zones[i].x + zones[i].w / 2, y: zones[i].y + zones[i].h / 2 });
     var rc = spacedPick(junc, 5, 15, zoneAvoid, 9);
-    var rally = [{ x: pc.x, y: pc.y, r: Math.max(plaza.w, plaza.h), name: "PLAZA", plaza: true }];
+    var rally = [{ x: pc.x, y: pc.y, r: plazaR, name: "PLAZA", plaza: true }];
     for (i = 0; i < rc.length; i++) rally.push({ x: rc[i].x, y: rc[i].y, r: 5, name: "PROTEST " + String.fromCharCode(65 + i) });
     for (i = 0; i < rally.length; i++) rally[i].tiles = area(rally[i].x, rally[i].y, rally[i].r);
 
@@ -295,6 +302,7 @@ var CityGen = (function () {
     CONFIG.shopDefense = true;          /* glass grades, roller shutters, police deterrence */
     CONFIG.shopBreakSeconds = 15;       /* one rioter on plain open glass */
     CONFIG.nightCycle = true;           /* dusk falls partway through the match */
+    if (typeof LEVELS !== "undefined") { LEVELS.apply(); CONFIG._levelId = LEVELS.current().id; }
     return m;
   }
 

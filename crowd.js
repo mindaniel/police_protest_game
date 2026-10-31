@@ -22,7 +22,7 @@ var Crowd = (function () {
   function isSolidTile(G, x, y) {
     if (!inBounds(x, y)) return true;
     var ch = MAP.rows[y].charAt(x);
-    if (ch === "#" || ch === "S") return true;
+    if (ch === "#" || ch === "S" || ch === "W") return true;
     return G.blocked.has(tkey(x, y));
   }
 
@@ -1027,7 +1027,7 @@ var Crowd = (function () {
         for (var tx = x0; tx <= x1; tx++) {
           if (!inBounds(tx, ty)) continue;
           var ch = MAP.rows[ty].charAt(tx);
-          if (ch === "#" || ch === "S") continue;
+          if (ch === "#" || ch === "S" || ch === "W") continue;
           var dx = (tx + 0.5) - v.x, dy = (ty + 0.5) - v.y;
           var lx = dx * ca + dy * sa;
           var ly = -dx * sa + dy * ca;

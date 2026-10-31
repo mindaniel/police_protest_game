@@ -212,7 +212,8 @@ var DEBRIEF = (function () {
   function bestKey(G) {
     var seed = "default";
     if (typeof MAP !== "undefined" && MAP && MAP.seed) seed = String(MAP.seed);
-    return "ppg_best_" + seed;
+    var lv = (typeof LEVELS !== "undefined") ? LEVELS.current().id : "tense";
+    return "ppg_best_" + seed + (lv === "tense" ? "" : "_" + lv);
   }
 
   function saveBest(G) {
@@ -478,7 +479,7 @@ var DEBRIEF = (function () {
     y = panelY + panelH - footerH + 6;
     ctx.font = font14;
     ctx.fillStyle = "#ffd866";
-    ctx.fillText("Press R to replay this city   N for a new city", cx, y);
+    ctx.fillText("R replay this city   N new city   M change difficulty", cx, y);
     var best = G ? G._debriefPrevBest : null;
     ctx.font = font12;
     ctx.fillStyle = "#8a95a6";

@@ -66,11 +66,17 @@ UI.init = function (g, game) {
       HELP.toggle(); e.preventDefault(); return;
     }
     if (UI.screen === "title") {
-      if (e.code === "Enter") { UI.screen = "planning"; e.preventDefault(); }
+      if (typeof LEVELS !== "undefined") {
+        if (k === "ArrowRight") LEVELS.next();
+        else if (k === "ArrowLeft") LEVELS.prev();
+        else if (k >= "1" && k <= "4" && k.length === 1) LEVELS.set(LEVELS.list()[+k - 1].id);
+      }
+      if (e.code === "Enter") { uiStartLevel(); e.preventDefault(); }
       return;
     }
     if (UI.screen === "over") {
       if (k === "r" || k === "R") restartGame();
+      else if (k === "m" || k === "M") { UI.screen = "title"; }
       else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("New random city"); }
       return;
     }
@@ -234,7 +240,18 @@ function uiArrest(e) {
   if (Police.orderArrest(G, UI.selected, ag)) UI.say("Squad " + (UI.selected + 1) + " moving in to arrest (a peaceful protester = wrong arrest)");
 }
 
+/* Leave the title screen; rebuild the crowd when the difficulty changed. */
+function uiStartLevel() {
+  if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
+  UI.screen = "planning";
+}
+
 function uiLeftClick(e) {
+  if (UI.screen === "title" && typeof LEVELS !== "undefined") {
+    var lp = UI.toLogical(e), id = LEVELS.hit(lp.x, lp.y);
+    if (id) { if (id === LEVELS.current().id) uiStartLevel(); else LEVELS.set(id); }
+    return;
+  }
   if (UI.screen === "title" || UI.screen === "over") return;
   var t = UI.toTile(e);
   if (UI.screen === "planning") {
@@ -405,6 +422,7 @@ function uiOverlay(ctx, title, lines, footer) {
   ctx.fillStyle = "#ffd866";
   ctx.font = "bold 16px Consolas, monospace";
   ctx.fillText(footer, w / 2, y + 20);
+  return y + 20;
 }
 
 var UI_CONTROLS = [
@@ -600,8 +618,9 @@ UI.draw = function (ctx, g) {
       "2. Press Enter in planning to start the match.",
       "3. During the match, command squads and use your tools.",
       "",
-      "#CONTROLS"
-    ].concat(UI_CONTROLS), "Press Enter to go to planning");
+      "The controls are shown in the top-right corner during the game (? hides them)."
+    ], typeof LEVELS !== "undefined" ? "Choose a difficulty, then press Enter" : "Press Enter to go to planning");
+    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 10 * 22 + 60);
     return;
   }
 
@@ -647,7 +666,8 @@ UI.draw = function (ctx, g) {
   var top;
   if (UI.screen === "planning") {
     top = "PLANNING - the match has not started, time is frozen" +
-      (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city)" : "");
+      (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city)" : "") +
+      (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : "");
   } else {
     var mood = (typeof Crowd !== "undefined") ? Crowd.averageMood(g) : 0;
     var onStreet = 0;

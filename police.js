@@ -55,7 +55,7 @@ var Police = (function () {
   function isSolid(G, x, y) {
     if (!inBounds(x, y)) return true;
     var ch = MAP.rows[y].charAt(x);
-    if (ch === "#" || ch === "S") return true;
+    if (ch === "#" || ch === "S" || ch === "W") return true;
     if (G.blocked && G.blocked.has(tkey(x, y))) return true;
     return false;
   }
@@ -64,7 +64,7 @@ var Police = (function () {
   function isSolidPolice(G, x, y) {
     if (!inBounds(x, y)) return true;
     var ch = MAP.rows[y].charAt(x);
-    if (ch === "#" || ch === "S") return true;
+    if (ch === "#" || ch === "S" || ch === "W") return true;
     /* finished protester barricades stop police and vehicles */
     return !!(G && G.barricadeTiles && G.barricadeTiles.size && G.barricadeTiles.has(tkey(x, y)));
   }

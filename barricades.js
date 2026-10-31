@@ -34,7 +34,7 @@ var BAR = (function () {
   }
 
   function isWall(ch) {
-    return ch === "#" || ch === "S";
+    return ch === "#" || ch === "S" || ch === "W";
   }
 
   function isWalkable(ch) {
