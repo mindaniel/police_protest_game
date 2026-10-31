@@ -272,10 +272,14 @@ var ParisGen = (function () {
     for (var i = 0; i < places.length; i++) {
       var pl = places[i];
       var n = 5 + Math.floor(rnd() * 3);
-      var rot = rnd() * Math.PI * 2;
+      var rot = rnd() * Math.PI * 2, used = {};
       for (var j = 0; j < n; j++) {
         var ang = rot + (j / n) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
-        blvds.push({ x: pl.x, y: pl.y, ang: ang, from: i });
+        /* snap to the 8 grid directions: 45-degree edges can be drawn smooth */
+        var oct = ((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8;
+        if (used[oct]) continue;
+        used[oct] = true;
+        blvds.push({ x: pl.x, y: pl.y, ang: oct * Math.PI / 4, from: i });
       }
     }
     // first: between places - add direct connections
@@ -287,7 +291,11 @@ var ParisGen = (function () {
     }
     for (var k = 0; k < between.length; k++) {
       var bl = between[k];
-      drawLine(bl.x0, bl.y0, bl.x1, bl.y1, 1.6, '.', null, true);
+      /* octilinear link: a 45-degree leg, then a straight leg */
+      var ldx = bl.x1 - bl.x0, ldy = bl.y1 - bl.y0, dd = Math.min(Math.abs(ldx), Math.abs(ldy));
+      var mx = bl.x0 + (ldx < 0 ? -dd : dd), my = bl.y0 + (ldy < 0 ? -dd : dd);
+      drawLine(bl.x0, bl.y0, mx, my, 1.6, '.', null, true);
+      drawLine(mx, my, bl.x1, bl.y1, 1.6, '.', null, true);
     }
     // other boulevards: radial to edge or until hitting a place
     for (var m = 0; m < blvds.length; m++) {
@@ -324,7 +332,7 @@ var ParisGen = (function () {
     var cellW = 26, cellH = 22;
     for (var cy = 0; cy < H; cy += cellH) {
       for (var cx = 0; cx < W; cx += cellW) {
-        var ang = rnd() < 0.5 ? 0 : (rnd() - 0.5) * 2 * (30 * Math.PI / 180);
+        var ang = rnd() < 0.6 ? 0 : Math.PI / 4;   /* streets run straight or at 45 degrees */
         var cxm = cx + cellW / 2, cym = cy + cellH / 2;
         var spacing = 11 + Math.floor(rnd() * 5);
         for (var dir = 0; dir < 2; dir++) {

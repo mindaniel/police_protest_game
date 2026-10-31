@@ -816,9 +816,15 @@ var Police = (function () {
     /* Vehicles follow their squad's home point. */
     for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
-      /* transport.js steers vehicles that carry officers or arrested people */
-      if (!v.ctrl) for (j = 0; j < G.officers.length; j++) {
-        if (G.officers[j].squad === v.squad) { v.tx = G.officers[j].homeX; v.ty = G.officers[j].homeY; break; }
+      /* transport.js steers vehicles that carry officers or arrested people; otherwise the
+       * vehicle stays with its officers (their centre), so it never races ahead of them */
+      if (!v.ctrl) {
+        var fx = 0, fy = 0, fn = 0;
+        for (j = 0; j < G.officers.length; j++) {
+          var fo = G.officers[j];
+          if (fo.squad === v.squad && !fo.escorting) { fx += fo.x; fy += fo.y; fn++; }
+        }
+        if (fn) { v.tx = fx / fn; v.ty = fy / fn; }
       }
       stepThroughCrowd(G, v, dt, 1.4, 0.15, 0.08);
       turnVehicle(v, dt);

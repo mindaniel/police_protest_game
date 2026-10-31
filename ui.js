@@ -54,7 +54,7 @@ function uiLabel(ctx, text, tx, ty, col, font) {
 function uiSelectKey(k) {
   var n = parseInt(k, 10);
   if (k === "0") n = 10;   /* reinforcement squads 7-10 use keys 7, 8, 9, 0 */
-  if (n >= 1 && n <= CONFIG.squadCount) { UI.selected = n - 1; return true; }
+  if (n >= 1 && n <= CONFIG.squadCount) { UI.selected = n - 1; UI.selVehicle = false; return true; }
   return false;
 }
 
@@ -234,9 +234,10 @@ UI.pickSquad = function (e) {
     d = uiScreenDist(lp, G.officers[i].x, G.officers[i].y, 0.45);
     if (d < bestD) { bestD = d; best = G.officers[i].squad; }
   }
+  UI._pickVeh = false;
   for (i = 0; i < G.vehicles.length; i++) {
     d = uiScreenDist(lp, G.vehicles[i].x, G.vehicles[i].y, 0.4) * 0.7;
-    if (d < bestD) { bestD = d; best = G.vehicles[i].squad; }
+    if (d < bestD) { bestD = d; best = G.vehicles[i].squad; UI._pickVeh = true; }
   }
   return best;
 };
@@ -281,6 +282,34 @@ function uiArrest(e) {
   if (Police.orderArrest(G, UI.selected, ag)) UI.say("Squad " + (UI.selected + 1) + " moving in to arrest (a peaceful protester = wrong arrest)");
 }
 
+/* Send squad s to (x, y): drive alone if only its vehicle is selected, ride if the squad
+ * is aboard, get in and drive when the trip is long, otherwise walk (the vehicle follows). */
+function uiSquadGo(s, x, y, run) {
+  if (typeof TRANSPORT !== "undefined") {
+    if (TRANSPORT.drive(G, s, x, y)) return;
+    if (UI.selVehicle && TRANSPORT.driveEmpty(G, s, x, y)) return;
+    var v = TRANSPORT.vehicleOf(G, s);
+    if (v && TRANSPORT.seats(v.type).crew > 0) {
+      var n = 0, cx = 0, cy = 0;
+      for (var i = 0; i < G.officers.length; i++) {
+        var o = G.officers[i];
+        if (o.squad === s && !o.escorting) { cx += o.x; cy += o.y; n++; }
+      }
+      if (n) {
+        cx /= n; cy /= n;
+        var far = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) > (CONFIG.autoRideDistance || 12);
+        var near = Math.sqrt((v.x - cx) * (v.x - cx) + (v.y - cy) * (v.y - cy)) < 6;
+        if (far && near && TRANSPORT.toggle(G, s) === "boarding") {
+          TRANSPORT.drive(G, s, x, y);
+          UI.say("Squad " + (s + 1) + " gets in and drives there");
+          return;
+        }
+      }
+    }
+  }
+  Police.moveSquad(G, s, x, y, run);
+}
+
 /* Planning -> live play. */
 function uiStartPlay() {
   UI.screen = "playing"; UI.mode = null;
@@ -322,7 +351,14 @@ function uiLeftClick(e) {
   if (UI.Game.paused) return;
   if (!UI.mode) {
     var sq = UI.pickSquad(e);
-    if (sq >= 0) { UI.selected = sq; return; }
+    if (sq >= 0) {
+      /* clicking the vehicle selects only the vehicle; clicking an officer selects the squad */
+      var aboard = typeof TRANSPORT !== "undefined" && (TRANSPORT.isAboard(G, sq) || TRANSPORT.isBoarding(G, sq));
+      UI.selVehicle = UI._pickVeh && !aboard;
+      UI.selected = sq;
+      if (UI.selVehicle) UI.say("Squad " + (sq + 1) + " vehicle selected - click to drive it alone (click an officer to select the squad)");
+      return;
+    }
   }
   if (uiOrderClick(t)) return;
   if (UI.mode === "barrier") uiBarrier(t);
@@ -352,9 +388,7 @@ function uiLeftClick(e) {
   else if (UI.mode === "arrest") uiArrest(e);
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
   else {
-    /* a squad sitting in its vehicle drives there and gets out on arrival */
-    if (!(typeof TRANSPORT !== "undefined" && TRANSPORT.drive(G, UI.selected, t.x + 0.5, t.y + 0.5)))
-      Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
+    uiSquadGo(UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
     if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
   }
   UI.mode = null;
@@ -446,8 +480,7 @@ function uiRightClick(e) {
   else if (lo === "barriertruck") uiBarrier(t);
   else if (UI.pickAgent(e)) uiArrest(e);
   else if (Police.isWalkable(G, t.x, t.y)) {
-    if (!(typeof TRANSPORT !== "undefined" && TRANSPORT.drive(G, UI.selected, t.x + 0.5, t.y + 0.5)))
-      Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, true);
+    uiSquadGo(UI.selected, t.x + 0.5, t.y + 0.5, true);
     if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
   }
 }
@@ -740,9 +773,18 @@ UI.draw = function (ctx, g) {
     var o = g.officers[i];
     if (o.squad !== UI.selected) continue;
     if (!first) first = o;
+    if (UI.selVehicle) continue;   /* only the vehicle is selected */
     ctx.beginPath();
     ctx.arc(o.x * ts, o.y * ts, 9, 0, Math.PI * 2);
     ctx.stroke();
+  }
+  for (i = 0; i < g.vehicles.length; i++) {
+    if (g.vehicles[i].squad !== UI.selected) continue;
+    ctx.lineWidth = UI.selVehicle ? 3 : 1;
+    ctx.beginPath();
+    ctx.arc(g.vehicles[i].x * ts, g.vehicles[i].y * ts, UI.selVehicle ? 22 : 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 2;
   }
   if (first && first.arrestTarget && first.arrestTarget.active) {
     ctx.strokeStyle = "#e03131";

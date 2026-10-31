@@ -112,6 +112,7 @@ var TRANSPORT = (function () {
     if (!v.crew) v.crew = [];
     if (v.crew.length >= cap) return "dismount";
     st = t.runs[s] = { phase: "board", t: 0, cap: cap };
+    v.parked = false;
     v.ctrl = true;
     v.tx = v.x; v.ty = v.y;
     var offs = squadOfficers(G, s), i, o;
@@ -148,6 +149,18 @@ var TRANSPORT = (function () {
     if (v.run === "unload") return true;
     if (v.run === "station") { v.run = null; }
     if (v.run === "back") { v.run = null; }
+    return true;
+  }
+
+  /* Drive the vehicle alone (squad stays on foot); it parks there until the squad boards. */
+  function driveEmpty(G, s, x, y) {
+    ensure(G);
+    var v = vehicleOf(G, s);
+    if (!v || hasCrew(v) || v.run) return false;
+    v.ctrl = true;
+    v.parked = true;
+    v.tx = x; v.ty = y;
+    v.dest = null;
     return true;
   }
 
@@ -585,6 +598,7 @@ var TRANSPORT = (function () {
     draw: draw,
     toggle: toggle,
     drive: drive,
+    driveEmpty: driveEmpty,
     setAutoDismount: setAutoDismount,
     pickVehicle: pickVehicle,
     onLoaded: onLoaded,

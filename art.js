@@ -344,6 +344,129 @@ var Art = (function () {
     }
   }
 
+  /* Corner code of a BUILDING tile whose box corner is cut by a diagonal
+     street, or 0. Codes: 1=NW, 2=NE, 3=SW, 4=SE (the OPEN corner). */
+  function chamferAt(x, y) {
+    var h = hAt(x, y);
+    if (!(h > 0) || h > 2.0 || tints[y * W + x] === 3) return 0;
+    var nN = hAt(x, y - 1), nS = hAt(x, y + 1);
+    var nW = hAt(x - 1, y), nE = hAt(x + 1, y);
+    var oN = !solidCh(tile(x, y - 1)), oS = !solidCh(tile(x, y + 1));
+    var oW = !solidCh(tile(x - 1, y)), oE = !solidCh(tile(x + 1, y));
+    /* NW: N+W open, S+E buildings, diagonal (x-1,y-1) open */
+    if (oN && oW && nS > 0 && nE > 0 &&
+        !solidCh(tile(x - 1, y - 1)) &&
+        (hAt(x + 1, y - 1) > 0 || hAt(x - 1, y + 1) > 0))
+      return 1;
+    /* NE: N+E open, S+W buildings, diagonal (x+1,y-1) open */
+    if (oN && oE && nS > 0 && nW > 0 &&
+        !solidCh(tile(x + 1, y - 1)) &&
+        (hAt(x - 1, y - 1) > 0 || hAt(x + 1, y + 1) > 0))
+      return 2;
+    /* SW: S+W open, N+E buildings, diagonal (x-1,y+1) open */
+    if (oS && oW && nN > 0 && nE > 0 &&
+        !solidCh(tile(x - 1, y + 1)) &&
+        (hAt(x + 1, y + 1) > 0 || hAt(x - 1, y - 1) > 0))
+      return 3;
+    /* SE: S+E open, N+W buildings, diagonal (x+1,y+1) open */
+    if (oS && oE && nN > 0 && nW > 0 &&
+        !solidCh(tile(x + 1, y + 1)) &&
+        (hAt(x - 1, y + 1) > 0 || hAt(x + 1, y - 1) > 0))
+      return 4;
+    return 0;
+  }
+
+  /* Slanted-wall windows for a visible chamfer wall (ax,ay)-(bx,by). */
+  function chamWins(p, ax, ay, bx, by, h) {
+    wedgeWins(p, ax, ay, bx, by, h);
+  }
+
+  /* Cut building tile geometry instead of its full box. */
+  function addChamfer(set, x, y, h, t, code) {
+    var z;
+    if (code === 4) {
+      /* roof: (x,y)(x+1,y)(x,y+1); wall (x+1,y)->(x,y+1) faces SE */
+      tri(set.tops[t], x, y, h, x + 1, y, h, x, y + 1, h);
+      quad(set.sw, x + 1, y, 0, x, y + 1, 0, x, y + 1, h, x + 1, y, h);
+      chamWins(set.winS, x + 1, y, x, y + 1, h);
+    } else if (code === 3) {
+      /* roof: (x,y)(x+1,y)(x+1,y+1); wall (x,y)->(x+1,y+1) faces SW */
+      tri(set.tops[t], x, y, h, x + 1, y, h, x + 1, y + 1, h);
+      quad(set.sw, x, y, 0, x + 1, y + 1, 0, x + 1, y + 1, h, x, y, h);
+      chamWins(set.winS, x, y, x + 1, y + 1, h);
+    } else if (code === 1) {
+      /* roof: (x+1,y)(x+1,y+1)(x,y+1); slanted face NW hidden */
+      tri(set.tops[t], x + 1, y, h, x + 1, y + 1, h, x, y + 1, h);
+      var hS = hAt(x, y + 1);
+      if (hS < h) {
+        quad(set.sw, x, y + 1, hS, x + 1, y + 1, hS,
+             x + 1, y + 1, h, x, y + 1, h);
+        for (z = Math.max(hS, 0) + 0.28; z + 0.22 < h - 0.12; z += 0.45) {
+          var xa = x + 0.16, xb = x + 0.56;
+          quad(set.winS, xa, y + 1, z, xb, y + 1, z,
+               xb, y + 1, z + 0.22, xa, y + 1, z + 0.22);
+        }
+      }
+    } else {
+      /* code 2: roof (x,y)(x,y+1)(x+1,y+1); slanted face NE hidden */
+      tri(set.tops[t], x, y, h, x, y + 1, h, x + 1, y + 1, h);
+      var hS2 = hAt(x, y + 1);
+      if (hS2 < h) {
+        quad(set.sw, x, y + 1, hS2, x + 1, y + 1, hS2,
+             x + 1, y + 1, h, x, y + 1, h);
+        for (z = Math.max(hS2, 0) + 0.28; z + 0.22 < h - 0.12; z += 0.45) {
+          var xa2 = x + 0.16, xb2 = x + 0.56;
+          quad(set.winS, xa2, y + 1, z, xb2, y + 1, z,
+               xb2, y + 1, z + 0.22, xa2, y + 1, z + 0.22);
+        }
+      }
+    }
+  }
+
+  /* Ground pavement under each chamfer cut, plus a kerb along the diagonal. */
+  function groundChamfers(g, t) {
+    var x, y, cc;
+    g.lineWidth = 1.5;
+    for (y = 0; y < H; y++) {
+      for (x = 0; x < W; x++) {
+        cc = chamferAt(x, y);
+        if (!cc) continue;
+        g.beginPath();
+        if (cc === 1) {           /* NW open: triangle (x,y)(x+1,y)(x,y+1) of ground */
+          g.moveTo(x * t, y * t);
+          g.lineTo((x + 1) * t, y * t);
+          g.lineTo(x * t, (y + 1) * t);
+          g.closePath();
+        } else if (cc === 2) {    /* NE open */
+          g.moveTo((x + 1) * t, y * t);
+          g.lineTo((x + 1) * t, (y + 1) * t);
+          g.lineTo(x * t, y * t);
+          g.closePath();
+        } else if (cc === 3) {    /* SW open */
+          g.moveTo(x * t, (y + 1) * t);
+          g.lineTo((x + 1) * t, (y + 1) * t);
+          g.lineTo(x * t, y * t);
+          g.closePath();
+        } else {                  /* SE open */
+          g.moveTo((x + 1) * t, (y + 1) * t);
+          g.lineTo((x + 1) * t, y * t);
+          g.lineTo(x * t, (y + 1) * t);
+          g.closePath();
+        }
+        g.fillStyle = PAVE;
+        g.fill();
+        /* kerb along the diagonal edge */
+        g.beginPath();
+        if (cc === 1) { g.moveTo((x + 1) * t, y * t); g.lineTo(x * t, (y + 1) * t); }
+        else if (cc === 2) { g.moveTo((x + 1) * t, (y + 1) * t); g.lineTo(x * t, y * t); }
+        else if (cc === 3) { g.moveTo((x + 1) * t, (y + 1) * t); g.lineTo(x * t, y * t); }
+        else { g.moveTo((x + 1) * t, y * t); g.lineTo(x * t, (y + 1) * t); }
+        g.strokeStyle = "#c6ceda";
+        g.stroke();
+      }
+    }
+  }
+
   function buildCity() {
     computeHeights();
     cityVer++;
@@ -369,6 +492,9 @@ var Art = (function () {
           if (showS || oN || oE || oW) (shopTiles[d] || (shopTiles[d] = [])).push({ x: x, y: y, s: showS, n: oN, e: oE, w: oW, h: h, i: shopIdx[y * W + x] });
           continue;
         }
+        /* outer step of a diagonal edge: cut the open corner off */
+        var cc = lowMode ? 0 : chamferAt(x, y);
+        if (cc) { addChamfer(set, x, y, h, tints[y * W + x], cc); continue; }
         addBox(set, x, y, x + 1, y + 1, 0, h, set.tops[tints[y * W + x]], set.sw, showS);
         if (lowMode) continue;
         for (z = Math.max(hS, 0) + 0.28; z + 0.22 < h - 0.12; z += 0.45) {
@@ -476,7 +602,7 @@ var Art = (function () {
     g.strokeStyle = "#b9c3d0"; g.lineWidth = 2;
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
     if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
-    if (!lowMode) groundWedges(g, t);
+    if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
   }
 
   function buildProps() {
@@ -1078,6 +1204,7 @@ var Art = (function () {
   }
 
   /* Fill one row's building paths in the current (world-unit) transform. */
+  var PAVE = "#f1f4f7";   /* pavement colour under cut building corners */
   var COL_DEFAULT = { wall: "#9fb0c4", window: "#8193aa", tops: ["#c5d0dd", "#bccad9", "#cbd5e1"],
     shopWall: "#eadfc9", shopTop: "#f3ece0", roofSide: "#b3c0cf", roofTop: "#e6ebf1" };
   var COL = COL_DEFAULT;

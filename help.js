@@ -67,7 +67,8 @@ var HELP = (function () {
     } else {
       sec("Squad");
       ln("1-6 / click", "select", 1);
-      ln("click street", "move (Shift = run)", 1);
+      ln("click street", "move (far: squad drives)", 1);
+      ln("click vehicle", "select only the vehicle", 2);
       ln("A + click", "arrest", 1);
       ln("F", "shove crowd back", 1);
       ln("S", "calm / firm stance", 2);
