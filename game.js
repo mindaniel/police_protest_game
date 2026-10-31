@@ -284,6 +284,8 @@ function frame(now) {
       if (typeof Police !== "undefined") Police.update(G, step);
       if (typeof FX !== "undefined") FX.update(G, step);
       if (typeof GAS !== "undefined") GAS.update(G, step);
+      if (typeof BAR !== "undefined") BAR.update(G, step);
+      if (typeof MEDIA !== "undefined") MEDIA.update(G, step);
     }
   }
 
@@ -315,6 +317,8 @@ function restartGame(newCity) {
   if (typeof Police !== "undefined") Police.init(G);
   if (typeof FX !== "undefined") FX.init(G);
   if (typeof GAS !== "undefined") GAS.init(G);
+  if (typeof BAR !== "undefined") BAR.init(G);
+  if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof Art !== "undefined") Art.init(G);
   Game.paused = false;
   Game.speed = 1;
@@ -336,6 +340,8 @@ function initGame() {
   if (typeof Police !== "undefined") Police.init(G);
   if (typeof FX !== "undefined") FX.init(G);
   if (typeof GAS !== "undefined") GAS.init(G);
+  if (typeof BAR !== "undefined") BAR.init(G);
+  if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof Art !== "undefined") Art.init(G);
 
   if (typeof UI !== "undefined") {

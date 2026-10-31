@@ -62,7 +62,9 @@ var Police = (function () {
   function isSolidPolice(G, x, y) {
     if (!inBounds(x, y)) return true;
     var ch = MAP.rows[y].charAt(x);
-    return (ch === "#" || ch === "S");
+    if (ch === "#" || ch === "S") return true;
+    /* finished protester barricades stop police and vehicles */
+    return !!(G && G.barricadeTiles && G.barricadeTiles.size && G.barricadeTiles.has(tkey(x, y)));
   }
 
   /* Turn rate per vehicle type; CONFIG is read here because it loads later. */
@@ -678,6 +680,7 @@ var Police = (function () {
     }
     G.shoveReadyAt[squadIndex] = G.time + (CONFIG.shoveCooldown || 6);
     G.shoveFx = { x: cx, y: cy, r: r, until: G.time + 0.6 };
+    if (typeof MEDIA !== "undefined") MEDIA.report(G, "shove", cx, cy);
     G.log("Squad " + (squadIndex + 1) + " shoves the crowd back");
     return "ok";
   }
@@ -1127,6 +1130,7 @@ var Police = (function () {
     G.waterFx = { x: x, y: y, fromX: truck.x, fromY: truck.y, until: G.time + 1.2 };
     G.log("Water cannon used");
     if (typeof FX !== "undefined") FX.water(G, x, y, CONFIG.waterRadius);
+    if (typeof MEDIA !== "undefined") MEDIA.report(G, "water", x, y);
     return "ok";
   }
 

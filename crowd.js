@@ -1122,9 +1122,11 @@ var Crowd = (function () {
     if (a.role === "rioter") {
       G.stats.rioterArrested++;
       G.log("Rioter arrested");
+      if (typeof MEDIA !== "undefined") MEDIA.report(G, "arrest", a.x, a.y);
     } else {
       G.stats.wrongArrests++;
       G.log("Wrong arrest");
+      if (typeof MEDIA !== "undefined") MEDIA.report(G, "wrongArrest", a.x, a.y);
       var nb = neighbors(G, a.x, a.y, 6);
       for (var i = 0; i < nb.length; i++) {
         if (nb[i].active) nb[i].mood = Math.min(100, nb[i].mood + CONFIG.wrongArrestMoodSpike);

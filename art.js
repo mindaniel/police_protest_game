@@ -438,7 +438,9 @@ var Art = (function () {
     ctx.fill();
   }
   /* ---------- sprites ---------- */
+  var BLOC_PAL = { id: "bloc", base: "#2b2d33", dark: "#16171b", light: "#4a4d55" };
   function agentPal(a) {
+    if (a.blocDressed) return BLOC_PAL;   /* black bloc: dark clothes */
     var row = palettes[hash2(a.id | 0, 7) % palettes.length];
     var t = clamp((a.mood - 45) / 40, 0, 1);
     return row[Math.round(t * 10)];
@@ -1115,6 +1117,8 @@ var Art = (function () {
     drawWater(ctx, G, t);
     drawSmoke(ctx, G, t);
     if (typeof FX !== "undefined") FX.draw(ctx, G);
+    if (typeof BAR !== "undefined") BAR.draw(ctx, G);
+    if (typeof MEDIA !== "undefined") MEDIA.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);

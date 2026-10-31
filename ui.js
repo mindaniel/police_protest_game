@@ -195,7 +195,10 @@ function uiGas(t) {
   if (r === "none") UI.say("Squad " + (UI.selected + 1) + " has no tear gas left");
   else if (r === "cooldown") UI.say("Tear gas reloading");
   else if (r === "range") UI.say("Too far to throw tear gas from squad " + (UI.selected + 1));
-  else UI.say("Tear gas out: it angers everyone it hits, peaceful people too");
+  else {
+    UI.say("Tear gas out: it angers everyone it hits, peaceful people too");
+    if (typeof MEDIA !== "undefined") MEDIA.report(G, "gas", t.x + 0.5, t.y + 0.5);
+  }
 }
 function uiLoud(t) {
   if (!Police.hasCar(G, UI.selected)) UI.say("Selected squad has no car");
