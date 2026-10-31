@@ -628,6 +628,8 @@ def step14_sites(ctx, elements):
         # gov
         if a == "townhall" or b == "government" or g("office") == "government" or g("government") or a == "courthouse":
             return "gov"
+        if b in ("parliament", "palace") or a == "parliament" or "palace of westminster" in nl or "parliament" in nl or "downing street" in nl:
+            return "gov"
         if b == "public" and any(k in nl for k in ["palais", "hall", "parliament", "ministry", "hôtel de ville", "hotel de ville", "tribunal", "court", "banque"]):
             return "gov"
         # church
@@ -773,11 +775,13 @@ def step14_sites(ctx, elements):
             merged.append((typ, name, box))
 
     weights = {"gov": 5, "column": 4, "church": 3, "statue": 3, "theatre": 1}
-    merged.sort(key=lambda r: (-weights[r[0]], -(r[2][2] * r[2][3])))
+    merged = [r for r in merged if r[1] not in ("North Tower", "South Tower")]   # parts of a cathedral
+    famous = lambda n: any(k in n for k in ("Column", "Colonne", "Tower", "Tour", "Parliament", "Palace", "Notre", "Cathedral", "Downing"))
+    merged.sort(key=lambda r: (-weights[r[0]], not famous(r[1]), -(r[2][2] * r[2][3])))
 
     kept = []
-    counts = {"theatre": 0, "church": 0, "gov": 0}
-    limits = {"theatre": 2, "church": 3, "gov": 3}
+    counts = {"theatre": 0, "church": 0, "gov": 0, "column": 0, "statue": 0}
+    limits = {"theatre": 2, "church": 3, "gov": 3, "column": 2, "statue": 2}
     for typ, name, (x, y, w, h) in merged:
         if len(kept) >= 9:
             break

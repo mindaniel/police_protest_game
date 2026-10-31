@@ -194,6 +194,125 @@ var Police = (function () {
     return dist;
   }
 
+  /* ---- vehicles drive only on streets at least 2 tiles wide and part crowds (DeepSeek) ---- */
+  function driveClear(G) {
+    var h = MAP.rows.length, w = MAP.rows[0].length;
+    var key = h + ":" + (G.blocked ? G.blocked.size : 0);
+    if (G._driveClear && G._driveClearKey === key) return G._driveClear;
+    var solid = new Uint8Array(w * h);
+    var x, y;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) solid[y * w + x] = isSolidPolice(G, x, y) ? 1 : 0;
+    var clear = new Uint8Array(w * h);
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        if (solid[y * w + x]) continue;
+        // 2x2 block fully non-solid with this tile in any corner
+        if (x + 1 < w && y + 1 < h && !solid[y * w + x] && !solid[y * w + x + 1] && !solid[(y + 1) * w + x] && !solid[(y + 1) * w + x + 1]) { clear[y * w + x] = 1; continue; }
+        if (x - 1 >= 0 && y + 1 < h && !solid[y * w + x - 1] && !solid[y * w + x] && !solid[(y + 1) * w + x - 1] && !solid[(y + 1) * w + x]) { clear[y * w + x] = 1; continue; }
+        if (x + 1 < w && y - 1 >= 0 && !solid[(y - 1) * w + x] && !solid[(y - 1) * w + x + 1] && !solid[y * w + x] && !solid[y * w + x + 1]) { clear[y * w + x] = 1; continue; }
+        if (x - 1 >= 0 && y - 1 >= 0 && !solid[(y - 1) * w + x - 1] && !solid[(y - 1) * w + x] && !solid[y * w + x - 1] && !solid[y * w + x]) { clear[y * w + x] = 1; continue; }
+      }
+    }
+    // fill straight-line gaps at junction corners
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        if (solid[y * w + x]) continue;
+        if (x > 0 && x + 1 < w && clear[y * w + x - 1] && clear[y * w + x + 1]) clear[y * w + x] = 1;
+        else if (y > 0 && y + 1 < h && clear[(y - 1) * w + x] && clear[(y + 1) * w + x]) clear[y * w + x] = 1;
+      }
+    }
+    G._driveClear = clear;
+    G._driveClearKey = key;
+    return clear;
+  }
+
+  function vehicleFlowField(G, sx, sy) {
+    var clear = driveClear(G);
+    var h = MAP.rows.length, w = MAP.rows[0].length;
+    var cx = sx, cy = sy, r, dx, dy;
+    if (!(sx >= 0 && sx < w && sy >= 0 && sy < h) || !clear[sy * w + sx]) {
+      // nearest drivable tile within radius 6
+      var found = false;
+      for (r = 1; r <= 6 && !found; r++) {
+        for (dy = -r; dy <= r && !found; dy++) {
+          for (dx = -r; dx <= r && !found; dx++) {
+            var nx = sx + dx, ny = sy + dy;
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h && clear[ny * w + nx]) { cx = nx; cy = ny; found = true; }
+          }
+        }
+      }
+      if (!found) cx = sx, cy = sy;
+    }
+    var key = cx + "," + cy;
+    if (!G._vehFlow || G._vehFlowN > 48) { G._vehFlow = {}; G._vehFlowN = 0; }
+    if (!G._vehFlow[key]) {
+      var dist = new Int16Array(w * h);
+      var i;
+      for (i = 0; i < dist.length; i++) dist[i] = -1;
+      if (cx >= 0 && cx < w && cy >= 0 && cy < h && clear[cy * w + cx]) {
+        var q = [cx + cy * w];
+        dist[cy * w + cx] = 0;
+        var head = 0;
+        while (head < q.length) {
+          var idx = q[head++];
+          var x = idx % w, y = (idx - x) / w, d = dist[idx];
+          if (x > 0 && clear[idx - 1] && dist[idx - 1] < 0) { dist[idx - 1] = d + 1; q.push(idx - 1); }
+          if (x + 1 < w && clear[idx + 1] && dist[idx + 1] < 0) { dist[idx + 1] = d + 1; q.push(idx + 1); }
+          if (y > 0 && clear[idx - w] && dist[idx - w] < 0) { dist[idx - w] = d + 1; q.push(idx - w); }
+          if (y + 1 < h && clear[idx + w] && dist[idx + w] < 0) { dist[idx + w] = d + 1; q.push(idx + w); }
+        }
+      }
+      G._vehFlow[key] = dist;
+      G._vehFlowN++;
+    }
+    return G._vehFlow[key];
+  }
+
+  function vehicleField(G, v, sx, sy) {
+    var f = vehicleFlowField(G, sx, sy);
+    var w = MAP.rows[0].length;
+    var tx = Math.floor(v.x), ty = Math.floor(v.y);
+    if (tx < 0 || ty < 0 || ty >= MAP.rows.length || tx >= w) return tileFlowField(G, sx, sy);
+    if (f[ty * w + tx] === -1) return tileFlowField(G, sx, sy);
+    return f;
+  }
+
+  function stepVehicleThroughCrowd(G, v, dt) {
+    var cosA = Math.cos(v.ang), sinA = Math.sin(v.ang);
+    var nb = Crowd.neighbors(G, v.x, v.y, 1.5);
+    var n = 0, i, a;
+    for (i = 0; i < nb.length; i++) {
+      a = nb[i];
+      if (!a.active) continue;
+      var dx = a.x - v.x, dy = a.y - v.y;
+      var fwd = dx * cosA + dy * sinA;
+      var side = -dx * sinA + dy * cosA;
+      if (fwd > -0.3 && fwd < 1.2 && side > -0.9 && side < 0.9) n++;
+    }
+    // part the crowd: push sideways away from centre line
+    var push = 2.2 * dt;
+    for (i = 0; i < nb.length; i++) {
+      a = nb[i];
+      if (!a.active) continue;
+      var adx = a.x - v.x, ady = a.y - v.y;
+      var afwd = adx * cosA + ady * sinA;
+      var aside = -adx * sinA + ady * cosA;
+      var inBox = afwd > -0.3 && afwd < 1.2 && aside > -0.9 && aside < 0.9;
+      var near = Math.sqrt(adx * adx + ady * ady) < 1.3;
+      if (!inBox && !near) continue;
+      var sgn = aside >= 0 ? 1 : -1;
+      var nx = a.x + sgn * (-sinA) * push;
+      var ny = a.y + sgn * (cosA) * push;
+      if (!Crowd.collides(G, nx, ny)) { a.x = nx; a.y = ny; }
+    }
+    var keep = v.speed;
+    v.speed = keep * Math.max(0.35, 1 - 0.07 * n);
+    v.crowded = n >= 3;
+    stepToward(G, v, dt);
+    v.speed = keep;
+  }
+
+
   /* Field toward any tile (kettle slots); a small cache, emptied when it fills. */
   function tileFlowField(G, sx, sy) {
     var key = sx + "," + sy;
@@ -288,8 +407,8 @@ var Police = (function () {
       if (stepByField(G, off, dt, kf)) return;
     }
     /* a vehicle steered by transport.js drives to its own target, not the squad's */
-    if (d > 2 && isVehicle(off) && off.ctrl) {
-      var vf = tileFlowField(G, Math.floor(goal.x), Math.floor(goal.y));
+    if (d > 2 && isVehicle(off)) {
+      var vf = vehicleField(G, off, Math.floor(goal.x), Math.floor(goal.y));
       if (stepByField(G, off, dt, vf)) return;
     }
     if (d > 2) {
@@ -848,7 +967,8 @@ var Police = (function () {
         }
         if (fn) { v.tx = fx / fn; v.ty = fy / fn; }
       }
-      stepThroughCrowd(G, v, dt, 1.4, 0.15, 0.08);
+      if (CONFIG.crowdBlocksPolice) stepVehicleThroughCrowd(G, v, dt);
+      else stepToward(G, v, dt);
       turnVehicle(v, dt);
       /* ambulance medics calm hurt and angry people around them */
       if (v.type === "ambulance") {
