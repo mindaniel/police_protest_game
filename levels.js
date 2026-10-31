@@ -2,25 +2,25 @@
 var LEVELS = (function () {
   var list = [
     {
-      id: "calm", forceBudget: 26, matchSeconds: 600, name: "Calm march", crowdSize: 220, rioterCount: 6,
+      id: "calm", forceBudget: 26, matchSeconds: 600, name: "Calm march", crowdSize: 260, rioterCount: 6, rioterMin: 4, rioterMax: 9,
       loadoutBudget: 12, lootJoinChance: 0.15, vanguardChance: 0.03,
       spawnTrickleSeconds: 90, duskStart: 0.5,
       blurb: "A peaceful march with a few troublemakers."
     },
     {
-      id: "tense", forceBudget: 22, matchSeconds: 720, name: "Tense rally", crowdSize: 420, rioterCount: 10,
+      id: "tense", forceBudget: 22, matchSeconds: 720, name: "Tense rally", crowdSize: 520, rioterCount: 11, rioterMin: 7, rioterMax: 15,
       loadoutBudget: 10, lootJoinChance: 0.25, vanguardChance: 0.05,
       spawnTrickleSeconds: 110, duskStart: 0.45,
       blurb: "A big angry rally. Rioters hide in the crowd."
     },
     {
-      id: "angry", forceBudget: 22, matchSeconds: 900, name: "Angry city", crowdSize: 640, rioterCount: 15,
+      id: "angry", forceBudget: 22, matchSeconds: 900, name: "Angry city", crowdSize: 780, rioterCount: 17, rioterMin: 12, rioterMax: 22,
       loadoutBudget: 10, lootJoinChance: 0.32, vanguardChance: 0.07,
       spawnTrickleSeconds: 130, duskStart: 0.4,
       blurb: "Huge crowds, looting spreads fast."
     },
     {
-      id: "riot", forceBudget: 20, matchSeconds: 900, name: "Riot night", crowdSize: 900, rioterCount: 22,
+      id: "riot", forceBudget: 20, matchSeconds: 900, name: "Riot night", crowdSize: 1100, rioterCount: 25, rioterMin: 18, rioterMax: 32,
       loadoutBudget: 9, lootJoinChance: 0.40, vanguardChance: 0.09,
       spawnTrickleSeconds: 150, duskStart: 0,
       blurb: "The whole city is out. Starts at dusk."
@@ -60,7 +60,8 @@ var LEVELS = (function () {
     var lv = list[currentIndex];
     if (typeof CONFIG === "undefined" || !CONFIG) return;
     CONFIG.crowdSize = lv.crowdSize;
-    CONFIG.rioterCount = lv.rioterCount;
+    /* a random number of hidden rioters each match; the player is not told how many */
+    CONFIG.rioterCount = lv.rioterMin + Math.floor(Math.random() * (lv.rioterMax - lv.rioterMin + 1));
     CONFIG.loadoutBudget = lv.loadoutBudget;
     CONFIG.lootJoinChance = lv.lootJoinChance;
     CONFIG.vanguardChance = lv.vanguardChance;
@@ -143,7 +144,7 @@ var LEVELS = (function () {
       // People / rioters line
       ctx.fillStyle = "#c9d1dc";
       ctx.font = "14px Consolas, monospace";
-      ctx.fillText(lv.crowdSize + " people, " + Math.round(lv.matchSeconds / 60) + " min", cx + 10, cy + 30);
+      ctx.fillText(lv.crowdSize + " people, " + lv.rioterMin + "-" + lv.rioterMax + " rioters?", cx + 10, cy + 30);
 
       // Blurb wrapped
       ctx.fillStyle = "#9aa6b5";

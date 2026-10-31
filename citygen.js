@@ -246,13 +246,18 @@ var CityGen = (function () {
       if (get(x, y) !== ".") continue;
       var o = openness(x, y);
       if (o >= 15) junc.push({ x: x, y: y, o: o + R() * 3 });
+      else if (o >= 11) junc.push({ x: x, y: y, o: o - 20 });   /* street spots, used when many areas are needed */
     }
     junc.sort(function (p, q) { return q.o - p.o; });
     var zoneAvoid = [pc];
     for (i = 0; i < zones.length; i++) zoneAvoid.push({ x: zones[i].x + zones[i].w / 2, y: zones[i].y + zones[i].h / 2 });
-    var rc = spacedPick(junc, 5, 15, zoneAvoid, 9);
+    /* bigger crowds spread over more protest areas (many streets fill up, not just a few) */
+    var crowdN = (typeof LEVELS !== "undefined") ? LEVELS.current().crowdSize : 320;
+    var want = Math.max(5, Math.min(15, Math.round(crowdN / 75)));
+    var rc = spacedPick(junc, want, want > 8 ? 10 : 15, zoneAvoid, 9);
+    if (rc.length < want) rc = rc.concat(spacedPick(junc, want - rc.length, 7, rc.concat(zoneAvoid), 7));
     var rally = [{ x: pc.x, y: pc.y, r: plazaR, name: "PLAZA", plaza: true }];
-    for (i = 0; i < rc.length; i++) rally.push({ x: rc[i].x, y: rc[i].y, r: 5, name: "PROTEST " + String.fromCharCode(65 + i) });
+    for (i = 0; i < rc.length; i++) rally.push({ x: rc[i].x, y: rc[i].y, r: want > 8 ? 6 : 5, name: "PROTEST " + String.fromCharCode(65 + i) });
     for (i = 0; i < rally.length; i++) rally[i].tiles = area(rally[i].x, rally[i].y, rally[i].r);
 
     /* police staging: wide road tiles away from entrances and protest areas */

@@ -823,7 +823,7 @@ UI.draw = function (ctx, g) {
     top = "Time " + uiMmss(CONFIG.matchSeconds - g.time) +
       "  Crowd " + onStreet +
       "  Mood " + mood.toFixed(0) +
-      "  Arrested " + g.stats.rioterArrested + "/" + (g.rioterTotal || CONFIG.rioterCount) +
+      "  Rioters arrested " + g.stats.rioterArrested +   /* the total stays hidden until the debrief */
       "  Wrong " + g.stats.wrongArrests +
       "  In custody " + (g.stats.delivered || 0) +
       "  Shops hit " + g.stats.shopsDamaged + "/" + g.shops.length +
