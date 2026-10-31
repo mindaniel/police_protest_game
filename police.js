@@ -17,6 +17,8 @@ var Police = (function () {
   /* Default loadouts, one string per squad (index 0 = squad 1). Only strings
    * here; init() copies them into G.squadLoadouts. */
   var DEFAULT_LOADOUTS = ["car", "watertruck", "barriertruck", "motorbike", "none", "none"];
+  var planned = null;   /* force planned in force.js (one loadout per squad), or null */
+  function setForce(list) { planned = (list && list.length) ? list.slice(0, CONFIG.maxSquads || 10) : null; }
 
   function loadoutOf(G, squadIndex) {
     if (G && G.squadLoadouts && typeof G.squadLoadouts[squadIndex] === "string") {
@@ -33,13 +35,20 @@ var Police = (function () {
     if (loadout === "car") return "car";
     if (loadout === "watertruck") return "watertruck";
     if (loadout === "barriertruck") return "barriertruck";
+    if (loadout === "van") return "van";
+    if (loadout === "truck") return "truck";
+    if (loadout === "ambulance") return "ambulance";
     return null;   /* motorbike and none have no big vehicle */
   }
   function vehicleSpeedFor(type) {
+    if (type === "van") return CONFIG.carSpeed * 0.85;
     return type === "car" ? CONFIG.carSpeed : CONFIG.truckSpeed;
   }
   function officersPerSquadFor(loadout) {
     if (loadout === "liaison") return 3;
+    if (loadout === "van") return 6;      /* a van seats 6 officers */
+    if (loadout === "truck") return 8;    /* a truck seats 8 */
+    if (loadout === "ambulance") return 2;   /* 2 medics */
     return loadout === "motorbike" ? 2 : CONFIG.officersPerSquad;
   }
   function officerSpeedFor(loadout) {
@@ -83,6 +92,14 @@ var Police = (function () {
    * two tiles of a crowd entrance, and no two centres coincide. */
   function defaultCenter(s) {
     if (CONFIG.squadCenters && CONFIG.squadCenters[s]) return CONFIG.squadCenters[s];
+    if (CONFIG.squadCenters && CONFIG.squadCenters.length) {
+      /* more squads than staging points: stand next to an earlier squad's point */
+      var b = CONFIG.squadCenters[s % CONFIG.squadCenters.length], offs = [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2]];
+      for (var oi = 0; oi < offs.length; oi++) {
+        if (!isSolidPolice(null, Math.floor(b.x + offs[oi][0]), Math.floor(b.y + offs[oi][1]))) return { x: b.x + offs[oi][0], y: b.y + offs[oi][1] };
+      }
+      return b;
+    }
     var centres = [
       { x: 10.5, y: 31.5 },   /* squad 1: car */
       { x: 14.5, y: 31.5 },   /* squad 2: water truck */
@@ -144,7 +161,7 @@ var Police = (function () {
   function goalOf(G, e) {
     if (typeof e.kettleX === "number") return { x: e.kettleX, y: e.kettleY };   /* kettle ring slot */
     var gx = e.tx, gy = e.ty;
-    if (e.ox || e.oy) {
+    if ((e.ox || e.oy) && !e.ctrl) {   /* transport-steered vehicles drive to the exact spot */
       var cx = e.tx + e.ox, cy = e.ty + e.oy;
       if (!isSolidPolice(G, Math.floor(cx), Math.floor(cy))) { gx = cx; gy = cy; }
     }
@@ -270,6 +287,11 @@ var Police = (function () {
       var kf = tileFlowField(G, Math.floor(goal.x), Math.floor(goal.y));
       if (stepByField(G, off, dt, kf)) return;
     }
+    /* a vehicle steered by transport.js drives to its own target, not the squad's */
+    if (d > 2 && isVehicle(off) && off.ctrl) {
+      var vf = tileFlowField(G, Math.floor(goal.x), Math.floor(goal.y));
+      if (stepByField(G, off, dt, vf)) return;
+    }
     if (d > 2) {
       var hx = (typeof off.homeX === "number") ? off.homeX : off.tx;
       var hy = (typeof off.homeY === "number") ? off.homeY : off.ty;
@@ -297,6 +319,8 @@ var Police = (function () {
   }
 
   function init(G) {
+    CONFIG.squadCount = planned ? planned.length : (CONFIG.baseSquadCount || 6);   /* reinforcements add more */
+    G.squadCount = CONFIG.squadCount;
     G.officers = [];
     G.vehicles = [];
     G.barriers = [];
@@ -311,7 +335,7 @@ var Police = (function () {
     var id = 1, s, k;
     G.squadLoadouts = [];
     for (s = 0; s < CONFIG.squadCount; s++) {
-      G.squadLoadouts[s] = DEFAULT_LOADOUTS[s] || "none";
+      G.squadLoadouts[s] = (planned ? planned[s] : DEFAULT_LOADOUTS[s]) || "none";
     }
     for (s = 0; s < CONFIG.squadCount; s++) {
       var loadout = G.squadLoadouts[s];
@@ -460,6 +484,10 @@ var Police = (function () {
     }
     if (!officer) officer = leaderForSquad(G, squadIndex);
 
+    /* with transport.js: a vehicle with a free arrest seat, else walk to the station */
+    var target = null;
+    if (typeof TRANSPORT !== "undefined") target = TRANSPORT.pickVehicle(G, agent.x, agent.y) || TRANSPORT.stationTarget(G);
+    else target = nearestVehicle(G, agent.x, agent.y);
     var detainee = {
       id: nextDetaineeId++,
       agent: agent,
@@ -467,7 +495,7 @@ var Police = (function () {
       y: agent.y,
       wrong: agent.role !== "rioter",
       officer: officer,
-      car: nearestVehicle(G, agent.x, agent.y),
+      car: target,
       state: "walk",
       loadT: 0,
       holdT: 0,
@@ -494,6 +522,10 @@ var Police = (function () {
   function finishEscort(G, detainee) {
     var index = G.detainees.indexOf(detainee);
     if (index >= 0) G.detainees.splice(index, 1);
+    if (typeof TRANSPORT !== "undefined" && detainee.car) {
+      if (detainee.car.station) TRANSPORT.onDelivered(G, 1);
+      else TRANSPORT.onLoaded(G, detainee.car);
+    }
 
     var officer = detainee.officer;
     if (officer) {
@@ -529,7 +561,8 @@ var Police = (function () {
       var officer = detainee.officer;
       var age = (typeof G.time === "number" ? G.time : 0) - detainee.startedAt;
 
-      if (age > escortSafetyTime()) {
+      /* walking all the way to the station takes longer than to a car */
+      if (age > escortSafetyTime() * (detainee.car && detainee.car.station ? 3 : 1)) {
         finishEscort(G, detainee);
         continue;
       }
@@ -678,7 +711,8 @@ var Police = (function () {
     if (!agent || !agent.active) return false;
     var leader = leaderForSquad(G, squadIndex);
     if (!leader) return false;
-    if (loadoutOf(G, squadIndex) === "liaison") return false;   /* liaison officers never arrest */
+    var nolo = loadoutOf(G, squadIndex);
+    if (nolo === "liaison" || nolo === "ambulance") return false;   /* liaison officers and medics never arrest */
     leader.arrestTarget = agent;
     leader.arrestManual = true;
     leader.arrestHold = 0;
@@ -782,11 +816,19 @@ var Police = (function () {
     /* Vehicles follow their squad's home point. */
     for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
-      for (j = 0; j < G.officers.length; j++) {
+      /* transport.js steers vehicles that carry officers or arrested people */
+      if (!v.ctrl) for (j = 0; j < G.officers.length; j++) {
         if (G.officers[j].squad === v.squad) { v.tx = G.officers[j].homeX; v.ty = G.officers[j].homeY; break; }
       }
       stepThroughCrowd(G, v, dt, 1.4, 0.15, 0.08);
       turnVehicle(v, dt);
+      /* ambulance medics calm hurt and angry people around them */
+      if (v.type === "ambulance") {
+        var amb = Crowd.neighbors(G, v.x, v.y, CONFIG.ambulanceRadius || 3.5);
+        for (j = 0; j < amb.length; j++) {
+          if (amb[j].active && amb[j].mood > 40) amb[j].mood -= (CONFIG.ambulanceCalm || 2.5) * dt;
+        }
+      }
     }
 
     /* Arrest logic per squad. */
@@ -798,7 +840,7 @@ var Police = (function () {
       }
       var leader = squad[0];
       if (!leader) continue;
-      if (loadoutOf(G, s) === "liaison") continue;
+      if (loadoutOf(G, s) === "liaison" || loadoutOf(G, s) === "ambulance") continue;
 
       if (leader.arrestTarget && leader.arrestManual) {
         updateManualArrest(G, s, squad, dt);
@@ -1087,7 +1129,29 @@ var Police = (function () {
     var truck = barrierTruckFor(G, squadIndex);
     return (truck && typeof truck.stock === "number") ? truck.stock : 0;
   }
-  function hasCar(G, squadIndex) { return loadoutOf(G, squadIndex) === "car"; }
+  function hasCar(G, squadIndex) {
+    var lo = loadoutOf(G, squadIndex);
+    return lo === "car" || lo === "van" || lo === "truck";   /* all carry a loudspeaker */
+  }
+
+  /* Reinforcements: add a new squad at (x, y) during play; returns its index or -1. */
+  function addSquad(G, loadout, x, y) {
+    var max = CONFIG.maxSquads || 10;
+    if (CONFIG.squadCount >= max) return -1;
+    var s = CONFIG.squadCount;
+    CONFIG.squadCount++;
+    G.squadCount = CONFIG.squadCount;
+    G.squadLoadouts[s] = loadout;
+    var id = 1;
+    for (var i = 0; i < G.officers.length; i++) if (G.officers[i].id >= id) id = G.officers[i].id + 1;
+    addSquadOfficers(G, s, loadout, x, y, id, "calm");
+    var type = vehicleTypeFor(loadout);
+    if (type) {
+      G.vehicles.push({ id: "v" + (G.vehicles.length + 1) + "r", type: type, squad: s, x: x, y: y, ox: 0, oy: 0,
+        tx: x, ty: y, ang: 0, _wantAng: 0, speed: vehicleSpeedFor(type), readyAt: 0 });
+    }
+    return s;
+  }
   function hasWaterTruck(G, squadIndex) {
     for (var i = 0; i < G.vehicles.length; i++) {
       if (G.vehicles[i].squad === squadIndex && G.vehicles[i].type === "watertruck") return true;
@@ -1204,6 +1268,8 @@ var Police = (function () {
     update: update,
     draw: draw,
     startEscort: startEscort,
+    addSquad: addSquad,
+    setForce: setForce,
     orderArrest: orderArrest,
     shove: shove,
     moveSquad: moveSquad,

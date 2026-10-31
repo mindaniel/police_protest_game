@@ -264,8 +264,10 @@ var CityGen = (function () {
     }
     stage.sort(function (p, q) { return p.s - q.s; });
     var sAvoid = zoneAvoid.slice(1).concat(rc);
-    var centers = spacedPick(stage, 6, 4, sAvoid, 7);
-    if (centers.length < 6) centers = centers.concat(spacedPick(stage, 6 - centers.length, 3, centers, 3));
+    /* up to 12 staging points: the planned force can have more than 6 squads */
+    var centers = spacedPick(stage, 12, 4, sAvoid, 7);
+    if (centers.length < 12) centers = centers.concat(spacedPick(stage, 12 - centers.length, 3, centers, 3));
+    if (centers.length < 12) centers = centers.concat(spacedPick(stage, 12 - centers.length, 2, centers, 2));
     for (i = 0; i < centers.length; i++) centers[i] = { x: centers[i].x + 0.5, y: centers[i].y + 0.5 };
 
     var rows = [];

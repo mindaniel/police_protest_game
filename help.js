@@ -70,6 +70,8 @@ var HELP = (function () {
       ln("A + click", "arrest", 1);
       ln("F", "shove crowd back", 1);
       ln("S", "calm / firm stance", 2);
+      ln("E", "get in / out of the vehicle", 1);
+      ln("U", "vehicle takes arrests to station", 2);
       ln("O", "standing order", 1);
       ln("Y / Z", "patrol route / trigger zone", 3);
       ln("order: " + info.order, orderMeaning(info.order), 2);
@@ -80,8 +82,8 @@ var HELP = (function () {
       ln("D + click", "drone", 2);
       ln("right click", "squad's own tool", 2);
       var lo = info.loadout;
-      if (lo === "car") ln("L + click", "loudspeaker", 1);
-      else if (lo === "watertruck") ln("W + click", "water cannon", 1);
+      if (lo === "car" || lo === "van" || lo === "truck") ln("hold L / right btn", "loudspeaker (bar drains)", 1);
+      else if (lo === "watertruck") ln("hold W / right btn", "water cannon (aim with mouse)", 1);
       else if (lo === "barriertruck") ln("B + click", "drop barrier", 1);
       else if (lo === "liaison") ln("(auto)", "talks people calm, never arrests", 1);
       else if (lo === "mounted") ln("click street", "horses push the crowd", 1);

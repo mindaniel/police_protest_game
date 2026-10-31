@@ -240,8 +240,9 @@ var NIGHT = (function () {
     var C = CONFIG;
     var matchSec = C.matchSeconds || 300;
     var t0 = (C.duskStart !== undefined ? C.duskStart : 0.4) * matchSec;
-    var dur = C.duskSeconds || 70;
-    var maxD = C.nightMax !== undefined ? C.nightMax : 0.72;
+    /* dusk is slow: about a quarter of the match, and night never gets pitch black */
+    var dur = C.duskSeconds || Math.max(150, matchSec * 0.28);
+    var maxD = C.nightMax !== undefined ? C.nightMax : 0.6;
     var t = G.time - t0;
     if (t <= 0) return 0;
     if (t >= dur) return maxD;

@@ -15,6 +15,8 @@ var CONFIG = {
 
   // Reserved for later steps (crowd mood, police, tools)
   squadCount: 6,
+  baseSquadCount: 6,         // squads at the start; reinforcements add more
+  maxSquads: 10,
   officersPerSquad: 4,
   barrierCount: 4,
   barriersPerTruck: 3,       // stock carried by one barrier truck
@@ -26,7 +28,10 @@ var CONFIG = {
     barriertruck: { cost: 2 },
     motorbike:    { cost: 2 },
     mounted:      { cost: 3 },   // 4 officers on horseback: fast, push the crowd, panic in gas/fire
-    liaison:      { cost: 1 }    // 3 liaison officers: talk people down, never arrest
+    liaison:      { cost: 1 },   // 3 liaison officers: talk people down, never arrest
+    van:          { cost: 3 },   // 6 officers ride in a van, 5 arrest seats
+    truck:        { cost: 4 },   // 8 officers ride in a truck, 8 arrest seats
+    ambulance:    { cost: 2 }    // 2 medics calm the hurt and angry nearby, never arrest
   },
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
@@ -294,6 +299,8 @@ function frame(now) {
       if (typeof TACT !== "undefined") TACT.update(G, step);
       if (typeof UNITS !== "undefined") UNITS.update(G, step);
       if (typeof LIAISON !== "undefined") LIAISON.update(G, step);
+      if (typeof TRANSPORT !== "undefined") TRANSPORT.update(G, step);
+      if (typeof METERS !== "undefined") METERS.update(G, step);
       if (typeof NIGHT !== "undefined") NIGHT.update(G, step);
       if (typeof DEBRIEF !== "undefined") DEBRIEF.update(G, step);
       if (typeof ORDERS !== "undefined") ORDERS.update(G, step);
@@ -339,6 +346,7 @@ function restartGame(newCity) {
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
   if (typeof Art !== "undefined") Art.init(G);
@@ -371,6 +379,7 @@ function initGame() {
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
   if (typeof Art !== "undefined") Art.init(G);

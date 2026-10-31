@@ -7,8 +7,13 @@ var ORDERS = (function () {
     if (!G) return;
     G.orders = [];
     G.ordersInit = true;
-    var i, s, cx, cy, rec;
-    for (i = 0; i < CONFIG.squadCount; i++) {
+    for (var i = 0; i < CONFIG.squadCount; i++) G.orders.push(makeRec(G, i));
+  }
+
+  /* One squad's record (all "hold"); reinforcement squads get theirs lazily. */
+  function makeRec(G, i) {
+    var s, cx, cy, rec;
+    {
       s = squadCenter(G, i);
       cx = s ? s.x : 0; cy = s ? s.y : 0;
       rec = {
@@ -29,13 +34,14 @@ var ORDERS = (function () {
         lastShopX: 0, lastShopY: 0,
         nextLiaison: 0
       };
-      G.orders.push(rec);
     }
+    return rec;
   }
 
   function ensure(G) {
     if (!G) return false;
     if (!G.orders || !G.orders.length) init(G);
+    while (G.orders.length < CONFIG.squadCount) G.orders.push(makeRec(G, G.orders.length));
     return !!G.orders;
   }
 

@@ -53,6 +53,7 @@ function uiLabel(ctx, text, tx, ty, col, font) {
 
 function uiSelectKey(k) {
   var n = parseInt(k, 10);
+  if (k === "0") n = 10;   /* reinforcement squads 7-10 use keys 7, 8, 9, 0 */
   if (n >= 1 && n <= CONFIG.squadCount) { UI.selected = n - 1; return true; }
   return false;
 }
@@ -109,7 +110,19 @@ UI.init = function (g, game) {
     if (uiOrderKey(e, k)) { /* standing orders */ }
     else if (uiSelectKey(k)) { /* squad selected */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
+    else if ((k === "e" || k === "E") && typeof TRANSPORT !== "undefined") {
+      var tr = TRANSPORT.toggle(G, UI.selected);
+      UI.say(tr === "novehicle" ? "Squad " + (UI.selected + 1) + " has no vehicle to ride in"
+        : (tr === "boarding" ? "Squad " + (UI.selected + 1) + " getting in - click a destination to drive"
+        : (tr === "dismount" ? "Squad " + (UI.selected + 1) + " gets out" : "Boarding cancelled")));
+    }
+    else if ((k === "u" || k === "U") && typeof TRANSPORT !== "undefined") {
+      UI.say(TRANSPORT.sendToStation(G, UI.selected) ? "Taking the arrested people to the station" : "No arrested people in this vehicle");
+    }
     else if (k === "b" || k === "B") { UI.mode = "barrier"; }
+    else if ((k === "l" || k === "L" || k === "w" || k === "W") && typeof METERS !== "undefined") {
+      if (!e.repeat && UI.hover) uiMeterStart(UI.hover);   /* hold the key to keep using it */
+    }
     else if (k === "l" || k === "L") { UI.mode = "loudspeaker"; }
     else if (k === "w" || k === "W") { UI.mode = "water"; }
     else if ((k === "g" || k === "G") && typeof GAS !== "undefined") { UI.mode = "gas"; }
@@ -126,6 +139,12 @@ UI.init = function (g, game) {
       else if (sr === "none") UI.say("No free officers in that squad");
     }
     else if (k === "Escape") { UI.mode = null; }
+  });
+
+  /* releasing W / L stops the held water cannon / loudspeaker */
+  window.addEventListener("keyup", function (e) {
+    var k = e.key;
+    if ((k === "w" || k === "W" || k === "l" || k === "L") && typeof METERS !== "undefined") METERS.stop(G);
   });
 
   var cv = game.canvas;
@@ -147,6 +166,7 @@ UI.init = function (g, game) {
     }
   });
   window.addEventListener("mousemove", function (e) {
+    if (typeof METERS !== "undefined" && METERS.using(G)) { var mt = UI.toTile(e); METERS.aim(G, mt.x + 0.5, mt.y + 0.5); }
     /* tear gas aiming: range circle and target cross */
     if (typeof TACT !== "undefined") {
       if (UI.mode === "kettle") { var kt = UI.toTile(e); TACT.preview = { mode: "kettle", x: kt.x + 0.5, y: kt.y + 0.5 }; }
@@ -169,6 +189,7 @@ UI.init = function (g, game) {
     }
   });
   window.addEventListener("mouseup", function (e) {
+    if (e.button === 2 && typeof METERS !== "undefined") METERS.stop(G);
     if (e.button !== 0 || !UI._press) return;
     var wasDrag = UI._press.drag;
     UI._press = null;
@@ -307,7 +328,9 @@ function uiLeftClick(e) {
   else if (UI.mode === "arrest") uiArrest(e);
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
   else {
-    Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
+    /* a squad sitting in its vehicle drives there and gets out on arrival */
+    if (!(typeof TRANSPORT !== "undefined" && TRANSPORT.drive(G, UI.selected, t.x + 0.5, t.y + 0.5)))
+      Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
     if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
   }
   UI.mode = null;
@@ -391,14 +414,25 @@ function uiRightClick(e) {
   if (UI.screen !== "playing" || UI.Game.paused) return;
   if (UI.mode) { UI.mode = null; return; }
   var t = UI.toTile(e), lo = Police.getLoadout(G, UI.selected);
-  if (lo === "watertruck") uiWater(t);
+  if (typeof METERS !== "undefined" && (lo === "watertruck" || lo === "car" || lo === "van" || lo === "truck")) {
+    uiMeterStart(t);   /* hold right button: spray / broadcast until released or empty */
+  }
+  else if (lo === "watertruck") uiWater(t);
   else if (lo === "car") uiLoud(t);
   else if (lo === "barriertruck") uiBarrier(t);
   else if (UI.pickAgent(e)) uiArrest(e);
   else if (Police.isWalkable(G, t.x, t.y)) {
-    Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, true);
+    if (!(typeof TRANSPORT !== "undefined" && TRANSPORT.drive(G, UI.selected, t.x + 0.5, t.y + 0.5)))
+      Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, true);
     if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
   }
+}
+
+/* Start the selected squad's held tool (water cannon or loudspeaker) at tile t. */
+function uiMeterStart(t) {
+  var r = METERS.start(G, UI.selected, t.x + 0.5, t.y + 0.5);
+  if (r === "none") UI.say("Squad " + (UI.selected + 1) + " has no water cannon or loudspeaker");
+  else if (r === "empty") UI.say("Empty - wait for the bar to refill");
 }
 
 /* Called once per frame before simulating. */
@@ -460,12 +494,15 @@ var UI_CONTROLS = [
 function uiSquadDesc(g, s) {
   var n = 0, i, txt;
   for (i = 0; i < g.officers.length; i++) if (g.officers[i].squad === s) n++;
+  if (typeof TRANSPORT !== "undefined") n += TRANSPORT.crewCount(g, s);   /* riding officers */
   var lo = Police.getLoadout(g, s);
   txt = n + (lo === "mounted" ? " officers on horseback" : (lo === "liaison" ? " liaison officers (talk, never arrest)" : " officers"));
   for (i = 0; i < g.vehicles.length; i++) {
     if (g.vehicles[i].squad === s) {
-      txt += " + " + (g.vehicles[i].type === "car" ? "police car"
-        : (g.vehicles[i].type === "barriertruck" ? "barrier truck" : "water truck"));
+      var vt = g.vehicles[i].type;
+      txt += " + " + (vt === "car" ? "sedan" : (vt === "van" ? "van" : (vt === "truck" ? "riot truck"
+        : (vt === "barriertruck" ? "barrier truck" : (vt === "ambulance" ? "ambulance" : "water truck")))));
+      if (typeof TRANSPORT !== "undefined" && UI.screen === "playing") txt += " (" + TRANSPORT.status(g, s) + ")";
     }
   }
   return txt;
@@ -613,6 +650,39 @@ function uiPlanningLayer(ctx, g) {
   uiLoadoutPanel(ctx, g);
 }
 
+/* Big match clock in the top-left corner (sized for the screen, not the canvas). */
+function uiClock(ctx, g) {
+  var lw = MAP.width * CONFIG.tileSize, cw = parseFloat(UI.Game.canvas.style.width);
+  var k = (cw > 0 && isFinite(cw)) ? lw / cw : 1;            /* logical px per CSS px */
+  var left = Math.max(0, CONFIG.matchSeconds - g.time);
+  var big = Math.round(26 * k), small = Math.round(11 * k), pad = Math.round(8 * k);
+  var sub = "time left";
+  if (typeof NIGHT !== "undefined" && CONFIG.nightCycle) {
+    var t0 = (CONFIG.duskStart !== undefined ? CONFIG.duskStart : 0.4) * CONFIG.matchSeconds;
+    if (g.time < t0) sub = "dusk in " + uiMmss(t0 - g.time);
+    else sub = NIGHT.darkness(g) > 0.5 ? "night" : "dusk";
+  }
+  ctx.save();
+  ctx.font = "bold " + big + "px Consolas, monospace";
+  var txt = uiMmss(left), w = Math.max(ctx.measureText(txt).width, 0) + pad * 2;
+  ctx.font = small + "px Consolas, monospace";
+  w = Math.max(w, ctx.measureText(sub).width + pad * 2);
+  var x = 8, y = 30, h = big + small + pad * 2;
+  ctx.fillStyle = "rgba(8,10,16,0.78)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = left < 60 ? "#ff5d5d" : "#3a4a60";
+  ctx.lineWidth = Math.max(1, k);
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.font = "bold " + big + "px Consolas, monospace";
+  ctx.fillStyle = left < 60 ? (Math.floor(g.time * 2) % 2 ? "#ff5d5d" : "#ffd0d0") : "#ffffff";
+  ctx.fillText(txt, x + w / 2, y + pad * 0.6);
+  ctx.font = small + "px Consolas, monospace";
+  ctx.fillStyle = "#9fb0c4";
+  ctx.fillText(sub, x + w / 2, y + pad * 0.6 + big + 2);
+  ctx.restore();
+}
+
 UI.draw = function (ctx, g) {
   var ts = CONFIG.tileSize, w = MAP.width * ts, h = MAP.height * ts, i;
 
@@ -708,16 +778,8 @@ UI.draw = function (ctx, g) {
       "  | click squad = select | click green street = place | V loadout | right-click/B barrier (" + left + " left) | N new city | Enter START" +
       (UI.mode ? "  [click to place: " + UI.mode.toUpperCase() + "]" : "");
   } else {
-    var loud = Math.max(0, g.loudspeakerReadyAt - g.time);
-    var truck = uiTruck(g);
-    var water = "";
-    if (truck) {
-      var wl = Math.max(0, truck.readyAt - g.time);
-      water = "  Water " + (wl > 0 ? wl.toFixed(0) + "s" : "READY");
-    }
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
-      "  Barriers left " + left +
-      "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water + uiGasHud(g) + uiOrderHud(g) +
+      "  Barriers left " + left + uiGasHud(g) + uiOrderHud(g) +
       "  " + UI.Game.speed + "x" +
       "  | right-click = tool  A arrest  F shove  G gas  K kettle  X snatch" +
       (UI.mode ? "  [click: " + UI.mode.toUpperCase() + "]" : "");
@@ -731,6 +793,19 @@ UI.draw = function (ctx, g) {
     ctx.textAlign = "center";
     ctx.fillStyle = "#ff8a80";
     ctx.fillText(UI.msg, w / 2, h - 40);
+  }
+
+  if (UI.screen === "playing") uiClock(ctx, g);
+  if (UI.screen === "playing" && typeof METERS !== "undefined") {
+    /* the selected squad's water tank / loudspeaker battery, above the bottom bar */
+    var mk = (MAP.width * CONFIG.tileSize) / (parseFloat(UI.Game.canvas.style.width) || (MAP.width * CONFIG.tileSize));
+    ctx.save();
+    ctx.translate(10, h - 24 - 24 * mk);
+    ctx.scale(mk, mk);
+    ctx.fillStyle = "rgba(8,10,16,0.7)";
+    if (METERS.level(g, UI.selected)) ctx.fillRect(-4, -2, 470, 22);
+    METERS.drawHud(ctx, g, UI.selected, 0, 0, 460);
+    ctx.restore();
   }
 
   if (typeof HELP !== "undefined" && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {

@@ -748,6 +748,28 @@ var Art = (function () {
       obox(ctx, x, y, c, sn, -0.9, 0.9, 0.42, 0.12, 0.48, "#f5f7fa", C_WHITE, [42, 93, 176, 0.24, 0.34]);
       obox(ctx, x, y, c, sn, -0.45, 0.35, 0.36, 0.48, 0.76, "#dde6f0", [110, 140, 180]);
       obox(ctx, x, y, c, sn, -0.18, 0.06, 0.3, 0.76, 0.84, on ? "#ff3b3b" : "#3b7dff", on ? [200, 40, 40] : [40, 90, 210]);
+    } else if (v.type === "ambulance") {
+      /* ambulance: white box with red stripe and cross, blue lights */
+      obox(ctx, x, y, c, sn, -1.0, 1.0, 0.44, 0, 0.15, "#2a2f38", C_DARK);
+      obox(ctx, x, y, c, sn, -1.05, 0.5, 0.46, 0.13, 0.9, "#fbfbfb", C_WHITE, [220, 38, 38, 0.4, 0.52]);
+      obox(ctx, x, y, c, sn, 0.5, 1.05, 0.46, 0.13, 0.7, "#f1f3f5", C_WHITE, [220, 38, 38, 0.4, 0.52]);
+      obox(ctx, x, y, c, sn, -0.45, -0.05, 0.12, 0.9, 0.95, "#dc2626", [190, 30, 30]);
+      obox(ctx, x, y, c, sn, -0.6, 0.1, 0.05, 0.9, 0.95, "#dc2626", [190, 30, 30]);
+      obox(ctx, x, y, c, sn, 0.3, 0.5, 0.3, 0.9, 0.98, on ? "#3b7dff" : "#bcd4ff", [40, 90, 210]);
+    } else if (v.type === "van") {
+      /* police van: tall white box with a blue band, light bar on the cab */
+      obox(ctx, x, y, c, sn, -1.05, 1.05, 0.45, 0, 0.15, "#2a2f38", C_DARK);
+      obox(ctx, x, y, c, sn, -1.1, 0.55, 0.47, 0.13, 0.92, "#f2f5f9", C_WHITE, [42, 93, 176, 0.36, 0.5]);
+      obox(ctx, x, y, c, sn, 0.55, 1.1, 0.47, 0.13, 0.72, "#e8eef6", C_WHITE, [42, 93, 176, 0.36, 0.5]);
+      obox(ctx, x, y, c, sn, 0.62, 0.95, 0.4, 0.5, 0.7, "#cfdcec", [110, 140, 180]);
+      obox(ctx, x, y, c, sn, 0.3, 0.55, 0.32, 0.92, 1.0, on ? "#ff3b3b" : "#3b7dff", on ? [200, 40, 40] : [40, 90, 210]);
+    } else if (v.type === "truck") {
+      /* riot truck: long dark-blue armoured body with mesh windows */
+      obox(ctx, x, y, c, sn, -1.4, 1.4, 0.52, 0, 0.18, "#22262e", C_DARK);
+      obox(ctx, x, y, c, sn, -1.45, 0.75, 0.54, 0.16, 1.05, "#2b4a7a", [36, 64, 110], [230, 236, 245, 0.62, 0.7]);
+      obox(ctx, x, y, c, sn, 0.75, 1.45, 0.54, 0.16, 0.9, "#355a92", [44, 76, 128]);
+      obox(ctx, x, y, c, sn, 0.85, 1.3, 0.45, 0.62, 0.86, "#9fb3cf", [120, 140, 170]);
+      obox(ctx, x, y, c, sn, 0.95, 1.25, 0.3, 0.9, 0.98, on ? "#ff3b3b" : "#3b7dff", on ? [200, 40, 40] : [40, 90, 210]);
     } else if (v.type === "watertruck") {
       obox(ctx, x, y, c, sn, -1.25, 1.25, 0.48, 0, 0.16, "#2a2f38", C_DARK);
       obox(ctx, x, y, c, sn, -1.3, 0.55, 0.5, 0.14, 0.95, "#3b8ae0", [30, 111, 208]);
@@ -1223,7 +1245,7 @@ var Art = (function () {
     if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
       P(v.x, v.y, 1.55);
-      var nm = v.type === "car" ? "CAR" : (v.type === "watertruck" ? "WATER" : "BARRIER");
+      var nm = v.type === "car" ? "SEDAN" : (v.type === "watertruck" ? "WATER" : (v.type === "van" ? "VAN" : (v.type === "truck" ? "TRUCK" : (v.type === "ambulance" ? "AMBULANCE" : "BARRIER"))));
       badge(ctx, _px, _py - 4, (v.squad + 1) + " " + nm, sqCol(v.squad), v.squad === sel);
     }
   }
@@ -1310,6 +1332,8 @@ var Art = (function () {
     if (typeof TACT !== "undefined") TACT.draw(ctx, G);
     if (typeof UNITS !== "undefined") UNITS.draw(ctx, G);
     if (typeof LIAISON !== "undefined") LIAISON.draw(ctx, G);
+    if (typeof TRANSPORT !== "undefined") TRANSPORT.draw(ctx, G);
+    if (typeof METERS !== "undefined") METERS.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
     if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");
