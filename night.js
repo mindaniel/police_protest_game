@@ -222,14 +222,40 @@ var NIGHT = (function () {
         if (nb) candidates.push({ x: x, y: y });
       }
     }
+    /* street width through a tile: the shorter of its horizontal and vertical open runs */
+    function open(x, y) {
+      if (x < 0 || y < 0 || x >= W || y >= H) return false;
+      var ch = (rows[y] || "").charAt(x);
+      return ch === "." || ch === "P" || ch === "a" || ch === "G";
+    }
+    function run(x, y, dx, dy) { var n = 0; while (n < 8 && open(x + dx * (n + 1), y + dy * (n + 1))) n++; return n; }
+    function widthAt(x, y) {
+      var hr = run(x, y, -1, 0) + run(x, y, 1, 0) + 1, vr = run(x, y, 0, -1) + run(x, y, 0, 1) + 1;
+      return Math.min(hr, vr);
+    }
+    function hsh(x, y) { var n = (x * 73856093) ^ (y * 19349663); n = (n ^ (n >>> 13)) * 1274126177; return ((n ^ (n >>> 16)) >>> 0) % 1000 / 1000; }
+    /* lanes get small dim lamps too */
+    for (var ly = 0; ly < H; ly++) for (var lx = 0; lx < W; lx++) {
+      if ((rows[ly] || "").charAt(lx) === "a" && (lx + ly) % 5 === 0) candidates.push({ x: lx, y: ly });
+    }
     var kept = [];
-    for (var i = 0; i < candidates.length && kept.length < 140; i++) {
+    for (var i = 0; i < candidates.length && kept.length < 200; i++) {
       var c = candidates[i];
+      var wdt = widthAt(c.x, c.y), lane = (rows[c.y] || "").charAt(c.x) === "a";
+      var plaza = (rows[c.y] || "").charAt(c.x) === "P";
+      var wide = plaza || wdt >= 3;
+      /* wide streets: lamps every 3 tiles, bright white LED; normal streets: every 5, warm */
+      var gap = lane ? 5 : (wide ? 4 : 6);
       var ok = true;
       for (var k = 0; k < kept.length; k++) {
-        if (Math.abs(kept[k].x - c.x) <= 5 && Math.abs(kept[k].y - c.y) <= 5) { ok = false; break; }
+        if (Math.abs(kept[k].x - 0.5 - c.x) < gap && Math.abs(kept[k].y - 0.5 - c.y) < gap) { ok = false; break; }
       }
-      if (ok) kept.push({ x: c.x + 0.5, y: c.y + 0.5 });
+      if (!ok) continue;
+      var vary = 0.85 + hsh(c.x, c.y) * 0.3;     /* each lamp a little different */
+      kept.push({ x: c.x + 0.5, y: c.y + 0.5,
+        r: (lane ? 2.4 : (wide ? 5.2 : 3.8)) * vary,
+        peak: Math.min(1, (lane ? 0.6 : (wide ? 1.0 : 0.85)) * vary),
+        col: wide ? "205,215,240" : "255,170,95" });
     }
     lightList = kept;
   }
@@ -276,7 +302,7 @@ var NIGHT = (function () {
     if (!grid || grid.length !== gridW * gridH) grid = new Float32Array(gridW * gridH);
     else { for (var z = 0; z < grid.length; z++) grid[z] = 0; }
     var i;
-    for (i = 0; i < lightList.length; i++) addSource(lightList[i].x, lightList[i].y, 3.5, 0.85);
+    for (i = 0; i < lightList.length; i++) addSource(lightList[i].x, lightList[i].y, lightList[i].r * 0.9, lightList[i].peak);
     if (G.fireBlocked && G.fireBlocked.forEach) {
       G.fireBlocked.forEach(function (key) {
         var parts = key.split(",");
@@ -355,8 +381,11 @@ var NIGHT = (function () {
     var c = document.createElement("canvas");
     c.width = c.height = 64;
     var x = c.getContext("2d");
+    /* bright core, smooth soft edge (no hard rim) */
     var g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
     g.addColorStop(0, "rgba(" + rgb + ",1)");
+    g.addColorStop(0.35, "rgba(" + rgb + ",0.85)");
+    g.addColorStop(0.7, "rgba(" + rgb + ",0.32)");
     g.addColorStop(1, "rgba(" + rgb + ",0)");
     x.fillStyle = g;
     x.fillRect(0, 0, 64, 64);
@@ -404,13 +433,13 @@ var NIGHT = (function () {
       return { x: pt.x * rs, y: pt.y * rs };
     }
 
-    // streetlights
+    // streetlights (size and brightness depend on the street)
     for (i = 0; i < lightList.length; i++) {
       var L = lightList[i];
       p = projTile(L.x, L.y);
-      radDev = 3.5 * tileDev;
+      radDev = L.r * tileDev;
       if (p.x < -margin || p.y < -margin || p.x > cw + margin || p.y > ch + margin) continue;
-      drawLightPool(octx, p, radDev, 0.85, 1);
+      drawLightPool(octx, p, radDev, L.peak, 1);
     }
     // fires
     if (G.fireBlocked && G.fireBlocked.forEach) {
@@ -469,6 +498,15 @@ var NIGHT = (function () {
     var glowA = 0.55 * d;
     rs = rs0; cw = fullW; ch = fullH; margin = 400 * rs;
     var lampP, hv;
+    // coloured light on the ground: white LED on wide streets, warm sodium elsewhere
+    for (i = 0; i < lightList.length; i++) {
+      var L3 = lightList[i];
+      var gp3 = Art.project(L3.x, L3.y, 0);
+      var gr3 = L3.r * 0.85 * 32 * S;
+      if (gp3.x * rs < -margin || gp3.y * rs < -margin || gp3.x * rs > cw + margin || gp3.y * rs > ch + margin) continue;
+      ctx.globalAlpha = Math.min(1, 0.11 * d * L3.peak / 0.6);
+      ctx.drawImage(sprite(L3.col), gp3.x - gr3, gp3.y - gr3, gr3 * 2, gr3 * 2);
+    }
     // streetlight lamp heads
     ctx.globalAlpha = glowA;
     for (i = 0; i < lightList.length; i++) {
@@ -477,9 +515,9 @@ var NIGHT = (function () {
       var lx = pt.x, ly = pt.y;
       // screen test
       if (lx * rs < -margin || ly * rs < -margin || lx * rs > cw + margin || ly * rs > ch + margin) continue;
-      var rg = 0.6 * 32 * S;
-      ctx.globalAlpha = Math.min(1, 0.9 * d);
-      ctx.drawImage(sprite("255,211,138"), lx - rg, ly - rg, rg * 2, rg * 2);
+      var rg = (L2.r > 4.5 ? 0.42 : 0.32) * 32 * S;
+      ctx.globalAlpha = Math.min(1, 0.7 * d);
+      ctx.drawImage(sprite(L2.col || "255,211,138"), lx - rg, ly - rg, rg * 2, rg * 2);
     }
     // fires
     if (G.fireBlocked && G.fireBlocked.forEach) {

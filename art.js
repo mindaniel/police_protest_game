@@ -774,7 +774,7 @@ var Art = (function () {
     var pal = agentPal(a);
     var base = revealed ? "#ff2338" : pal.base, dark = revealed ? "#b3121f" : pal.dark;
     var hid = hash2(a.id | 0, 3);
-    var placard = Q_PLACARDS && !revealed && hid % 4 === 0;
+    var placard = Q_PLACARDS && !revealed && hid % 4 === 0 && typeof PEOPLE === "undefined";   /* people.js draws its own signs */
     if (placard) {
       var wob = a.mood > 65 ? Math.sin(t * 9 + a.id) * 1.5 * s : 0;
       var px = bx + r * 1.1 + wob, top = by - hb - 7 * s;
@@ -785,7 +785,24 @@ var Art = (function () {
       ctx.fillStyle = "rgba(60,40,10,0.55)";
       ctx.fillRect(px - 2.4 * s, top - 0.4 * s, 4.8 * s, 0.8 * s);
     }
-    var sp = revealed ? agentSprite("R", dark, base, "#ff6b78") : agentSprite(pal.id, dark, base, pal.light);
+    var sp;
+    if (typeof PEOPLE !== "undefined") {
+      /* realistic person sprite: 24 outfit types, shirt colour shows the mood */
+      var shirt = revealed ? "#ff2338" : base;
+      var sk = (a.blocDressed ? "b" : "c") + shirt;
+      var specs = a._ppl || (a._ppl = {});
+      var spec = specs[sk];
+      if (!spec) {
+        spec = PEOPLE.civSpec(hash2(a.id | 0, 11) % 24, shirt);
+        if (a.blocDressed) { spec.hat = "hood"; spec.top = "hoodie"; spec.pants = "#1d1f24"; spec.sign = null; }
+        specs[sk] = spec;
+      }
+      var fr = Q_BOB ? PEOPLE.frameFor(a.id | 0, Math.sqrt(sp2), t) : 0;
+      sp = PEOPLE.sprite(spec, fr, Math.round(_rs * s * 100) / 100);
+      by = _py;   /* the sprite has its own walk bob */
+    } else {
+      sp = revealed ? agentSprite("R", dark, base, "#ff6b78") : agentSprite(pal.id, dark, base, pal.light);
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(sp.c, _rs * bx - sp.ax, _rs * by - sp.ay);
     setScreen(ctx);
@@ -822,6 +839,7 @@ var Art = (function () {
     ctx.stroke();
   }
 
+  var OFF_SPECS = {};
   function drawOfficer(ctx, o, t) {
     var s = cam.S, ang = officerAng(o), c = Math.cos(ang), sn = Math.sin(ang);
     var firm = o.stance === "firm", bike = o.baseSpeed >= CONFIG.motorbikeSpeed;
@@ -842,14 +860,26 @@ var Art = (function () {
     if (firm && !front) drawShield(ctx, o, c, sn);
     P(o.x, o.y, bike ? 0.25 : 0);
     var bx = _px, by = _py - (horse ? 11 * s : 0), r = 3.2 * s, hb = 9 * s;
-    capsule(ctx, bx, by, r, hb, firm ? "#151a22" : "#16294a");
-    capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, firm ? "#2a323f" : "#24406e");
-    var liaison = typeof LIAISON !== "undefined" && Police.getLoadout(_G, o.squad) === "liaison";
-    if (liaison) { ctx.fillStyle = LIAISON.vestColor; ctx.fillRect(bx - r, by - hb * 0.75, r * 2, hb * 0.5); }
-    else if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
-    disc(ctx, bx, by - hb - 2 * s, 2.6 * s, firm ? "#0f1218" : "#1b2c4a");
-    if (firm) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
-    disc(ctx, bx, by - hb - 4 * s, Math.max(1, 1.2 * s), sqCol(o.squad));
+    var lo = Police.getLoadout(_G, o.squad);
+    var liaison = typeof LIAISON !== "undefined" && lo === "liaison";
+    if (typeof PEOPLE !== "undefined") {
+      /* officer sprites: patrol uniform, riot gear (firm), medic, liaison vest */
+      var kind = lo === "ambulance" ? "medic" : (liaison ? "liaison" : (firm ? "riot" : "officer"));
+      var ospec = OFF_SPECS[kind] || (OFF_SPECS[kind] = { kind: kind, hat: kind === "riot" ? "riothelmet" : (kind === "officer" ? "cap" : null) });
+      var spd = Math.sqrt((o.tx - o.x) * (o.tx - o.x) + (o.ty - o.y) * (o.ty - o.y)) > 0.1 ? o.speed || 1.5 : 0;
+      var osp = PEOPLE.sprite(ospec, Q_BOB && !horse && !bike ? PEOPLE.frameFor(o.id | 0, spd, t) : 0, Math.round(_rs * s * 100) / 100);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(osp.c, _rs * bx - osp.ax, _rs * by - osp.ay);
+      setScreen(ctx);
+    } else {
+      capsule(ctx, bx, by, r, hb, firm ? "#151a22" : "#16294a");
+      capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, firm ? "#2a323f" : "#24406e");
+      if (liaison) { ctx.fillStyle = LIAISON.vestColor; ctx.fillRect(bx - r, by - hb * 0.75, r * 2, hb * 0.5); }
+      else if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
+      disc(ctx, bx, by - hb - 2 * s, 2.6 * s, firm ? "#0f1218" : "#1b2c4a");
+      if (firm) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
+    }
+    disc(ctx, bx, by - hb - 6 * s, Math.max(1, 1.3 * s), sqCol(o.squad));   /* squad colour dot */
     if (firm && front) drawShield(ctx, o, c, sn);
     if (typeof o.stamina === "number" && o.stamina < 100) {
       var bw = 9 * s, frac = clamp(o.stamina / 100, 0, 1), yb = by - hb - 8 * s;
