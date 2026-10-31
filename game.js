@@ -16,7 +16,7 @@ var CONFIG = {
   // Reserved for later steps (crowd mood, police, tools)
   squadCount: 6,
   baseSquadCount: 6,         // squads at the start; reinforcements add more
-  maxSquads: 10,
+  maxSquads: 14,             // planned squads (up to 10) + 4 reinforcement calls
   officersPerSquad: 4,
   barrierCount: 4,
   barriersPerTruck: 3,       // stock carried by one barrier truck
@@ -301,6 +301,7 @@ function frame(now) {
       if (typeof LIAISON !== "undefined") LIAISON.update(G, step);
       if (typeof TRANSPORT !== "undefined") TRANSPORT.update(G, step);
       if (typeof METERS !== "undefined") METERS.update(G, step);
+      if (typeof REINFORCE !== "undefined") REINFORCE.update(G, step);
       if (typeof NIGHT !== "undefined") NIGHT.update(G, step);
       if (typeof DEBRIEF !== "undefined") DEBRIEF.update(G, step);
       if (typeof ORDERS !== "undefined") ORDERS.update(G, step);
@@ -346,6 +347,7 @@ function restartGame(newCity) {
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof REINFORCE !== "undefined") REINFORCE.init(G);
   if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
@@ -379,6 +381,7 @@ function initGame() {
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof REINFORCE !== "undefined") REINFORCE.init(G);
   if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);

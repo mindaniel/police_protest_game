@@ -1334,6 +1334,7 @@ var Art = (function () {
     if (typeof LIAISON !== "undefined") LIAISON.draw(ctx, G);
     if (typeof TRANSPORT !== "undefined") TRANSPORT.draw(ctx, G);
     if (typeof METERS !== "undefined") METERS.draw(ctx, G);
+    if (typeof REINFORCE !== "undefined") REINFORCE.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
     if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");

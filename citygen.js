@@ -370,6 +370,7 @@ var CityGen = (function () {
     CONFIG.shopBreakSeconds = 15;       /* one rioter on plain open glass */
     CONFIG.nightCycle = true;           /* dusk falls partway through the match */
     if (typeof LEVELS !== "undefined") { LEVELS.apply(); CONFIG._levelId = LEVELS.current().id; }
+    if (typeof REINFORCE !== "undefined") REINFORCE.placeStation();   /* police station building */
     return m;
   }
 

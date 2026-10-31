@@ -105,6 +105,19 @@ UI.init = function (g, game) {
     }
     // playing
     if (e.code === "Space") { UI.Game.paused = !UI.Game.paused; e.preventDefault(); return; }
+    /* reinforcements menu: R opens, 1-4 picks, then click a destination */
+    if (typeof REINFORCE !== "undefined" && !UI.Game.paused) {
+      if (k === "r" || k === "R") { REINFORCE.toggleMenu(); return; }
+      if (REINFORCE.menuOpen()) {
+        if (k === "Escape") { REINFORCE.cancel(); return; }
+        var rn = parseInt(k, 10);
+        if (rn >= 1 && rn <= 4) {
+          var cr = REINFORCE.choose(rn);
+          UI.say(cr === "pick" ? "Click on the map where they should go" : (cr === "points" ? "Not enough reinforcement points" : "No more squads available"));
+          return;
+        }
+      }
+    }
     if (k === "t" || k === "T") { UI.Game.speed = UI.Game.speed === 1 ? 2 : 1; return; }
     if (UI.Game.paused) return;
     if (uiOrderKey(e, k)) { /* standing orders */ }
@@ -284,6 +297,12 @@ function uiLeftClick(e) {
   }
   if (UI.screen === "title" || UI.screen === "over") return;
   var t = UI.toTile(e);
+  if (UI.screen === "playing" && typeof REINFORCE !== "undefined" && REINFORCE.pending()) {
+    var ro = REINFORCE.order(G, t.x, t.y);
+    UI.say(ro === "ok" ? "Reinforcements on the way" : (ro === "points" ? "Not enough reinforcement points"
+      : (ro === "max" ? "No more squads can be called" : "They cannot go there - pick a street")));
+    return;
+  }
   if (UI.screen === "planning") {
     var sq0 = UI.mode ? -1 : UI.pickSquad(e);
     if (sq0 >= 0) { UI.selected = sq0; return; }
@@ -780,6 +799,7 @@ UI.draw = function (ctx, g) {
   } else {
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
       "  Barriers left " + left + uiGasHud(g) + uiOrderHud(g) +
+      (typeof REINFORCE !== "undefined" ? "  " + REINFORCE.hud(g) : "") +
       "  " + UI.Game.speed + "x" +
       "  | right-click = tool  A arrest  F shove  G gas  K kettle  X snatch" +
       (UI.mode ? "  [click: " + UI.mode.toUpperCase() + "]" : "");
@@ -814,6 +834,17 @@ UI.draw = function (ctx, g) {
       loadout: Police.getLoadout(g, UI.selected),
       order: (typeof ORDERS !== "undefined") ? ORDERS.get(g, UI.selected).order : "hold"
     });
+  }
+
+  if (UI.screen === "playing" && typeof REINFORCE !== "undefined" && REINFORCE.menuOpen()) {
+    /* scale the panel to the screen like the other overlays */
+    var rk = (MAP.width * CONFIG.tileSize) / (parseFloat(UI.Game.canvas.style.width) || (MAP.width * CONFIG.tileSize));
+    ctx.save();
+    ctx.translate(w / 2, h - 24);
+    ctx.scale(rk, rk);
+    ctx.translate(-w / 2, -(h - 24));
+    REINFORCE.drawPanel(ctx, g, w, h);
+    ctx.restore();
   }
 
   if (UI.Game.paused && UI.screen === "playing") {
