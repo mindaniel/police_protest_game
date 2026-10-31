@@ -344,7 +344,7 @@ var CityGen = (function () {
   }
 
   /* Map size: the screen layout stays 1600 x 1024 logical px, so tiles get smaller on bigger maps. */
-  var SIZES = { normal: [100, 64, "Normal"], large: [140, 90, "Large"], huge: [180, 115, "Huge"], district: [320, 200, "District"] };
+  var SIZES = { normal: [100, 64, "Normal"], large: [140, 90, "Large"], huge: [180, 115, "Huge"], district: [320, 205, "District"] };
   var sizeId = "normal";
   try { var ss = localStorage.getItem("ppg_mapsize"); if (SIZES[ss]) sizeId = ss; } catch (e0) { /* storage blocked */ }
   function nextSize() {

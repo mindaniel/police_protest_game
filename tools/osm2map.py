@@ -779,8 +779,8 @@ def step14_sites(ctx, elements):
     # streets and squares are not buildings; police HQs are government
     street = ("street", "square", "road", "place ", "rue ", "avenue", "boulevard", "quai ", "phố", "đường")
     merged = [r for r in merged if not any(k in r[1].lower() for k in street) or r[0] in ("statue", "column")]
-    merged = [(("gov",) + tuple(r[1:])) if "scotland yard" in r[1].lower() or "police" in r[1].lower() else r for r in merged]
-    famous = lambda n: any(k in n for k in ("Column", "Colonne", "Tower", "Tour", "Parliament", "Palace", "Notre", "Cathedral", "Downing"))
+    merged = [(("gov",) + tuple(r[1:])) if "scotland yard" in r[1].lower() else r for r in merged]
+    famous = lambda n: any(k in n for k in ("Column", "Colonne", "Tower", "Tour", "Parliament", "Palace", "Notre", "Cathedral", "Downing", "Hôtel de Ville", "City Hall", "Committee", "Palais", "Opéra", "Statue of"))
     merged.sort(key=lambda r: (-weights[r[0]], not famous(r[1]), -(r[2][2] * r[2][3])))
 
     kept = []

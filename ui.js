@@ -201,6 +201,10 @@ UI.init = function (g, game) {
   /* Left button: click = select / command, hold and drag = pan the map. */
   cv.addEventListener("mousedown", function (e) {
     if (e.button === 0) {
+      if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
+        var mml = UI.toLogical(e);
+        if (MINIMAP.mouseDown(mml.x, mml.y)) { UI._mini = true; return; }   /* minimap: jump / drag the view */
+      }
       UI._press = { x: e.clientX, y: e.clientY, drag: false };
     } else if (e.button === 2) {
       e.preventDefault();
@@ -208,6 +212,7 @@ UI.init = function (g, game) {
     }
   });
   window.addEventListener("mousemove", function (e) {
+    if (UI._mini) { var mmv = UI.toLogical(e); MINIMAP.mouseMove(mmv.x, mmv.y); return; }
     if (typeof METERS !== "undefined" && METERS.using(G)) { var mt = UI.toTile(e); METERS.aim(G, mt.x + 0.5, mt.y + 0.5); }
     /* tear gas aiming: range circle and target cross */
     if (typeof TACT !== "undefined") {
@@ -232,6 +237,7 @@ UI.init = function (g, game) {
   });
   window.addEventListener("mouseup", function (e) {
     if (e.button === 2 && typeof METERS !== "undefined") METERS.stop(G);
+    if (UI._mini && e.button === 0) { UI._mini = false; MINIMAP.mouseUp(); return; }
     if (e.button !== 0 || !UI._press) return;
     var wasDrag = UI._press.drag;
     UI._press = null;
@@ -979,6 +985,8 @@ UI.draw = function (ctx, g) {
     METERS.drawHud(ctx, g, UI.selected, 0, 0, 460);
     ctx.restore();
   }
+
+  if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) MINIMAP.draw(ctx, g);
 
   if (typeof HELP !== "undefined" && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {
     HELP.draw(ctx, {
