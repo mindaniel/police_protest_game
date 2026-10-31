@@ -312,6 +312,7 @@ function frame(now) {
       if (typeof LINES !== "undefined") LINES.update(G, step);
       if (typeof DISPERSE !== "undefined") DISPERSE.update(G, step);
       if (typeof LANDMARKS !== "undefined") LANDMARKS.update(G, step);
+      if (typeof MARCHES !== "undefined") MARCHES.update(G, step);
       if (typeof NIGHT !== "undefined") NIGHT.update(G, step);
       if (typeof DEBRIEF !== "undefined") DEBRIEF.update(G, step);
       if (typeof ORDERS !== "undefined") ORDERS.update(G, step);
@@ -363,6 +364,7 @@ function restartGame(newCity) {
   if (typeof LINES !== "undefined") LINES.init(G);
   if (typeof DISPERSE !== "undefined") DISPERSE.init(G);
   if (typeof LANDMARKS !== "undefined") LANDMARKS.init(G);
+  if (typeof MARCHES !== "undefined") MARCHES.init(G);
   if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
@@ -402,6 +404,7 @@ function initGame() {
   if (typeof LINES !== "undefined") LINES.init(G);
   if (typeof DISPERSE !== "undefined") DISPERSE.init(G);
   if (typeof LANDMARKS !== "undefined") LANDMARKS.init(G);
+  if (typeof MARCHES !== "undefined") MARCHES.init(G);
   if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);

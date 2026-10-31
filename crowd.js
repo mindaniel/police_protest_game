@@ -357,6 +357,7 @@ var Crowd = (function () {
   /* Keep a protester's area field fresh, and now and then march elsewhere. */
   function tendZone(G, a) {
     if (a._leaving) return;   /* going home after a dispersal order */
+    if (a._march !== null && a._march !== undefined) return;   /* marching (marches.js steers) */
     if (a._zone >= 0 && a._flowVer !== G.flowVersion) {
       a._flow = zoneField(G, a._zone);
       a._flowVer = G.flowVersion;
@@ -1305,6 +1306,7 @@ var Crowd = (function () {
 
   return {
     init: init,
+    assignZone: assignZone,
     update: update,
     draw: draw,
     rebuildFlow: rebuildFlow,
