@@ -72,7 +72,11 @@ UI.init = function (g, game) {
       return;
     }
     if (UI.screen === "planning") {
-      if (e.code === "Enter") { UI.screen = "playing"; UI.mode = null; e.preventDefault(); }
+      if (e.code === "Enter") {
+        UI.screen = "playing"; UI.mode = null; e.preventDefault();
+        if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
+      }
+      else if (uiOrderKey(e, k)) { /* standing orders */ }
       else if (uiSelectKey(k)) { /* squad selected */ }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
@@ -84,7 +88,8 @@ UI.init = function (g, game) {
     if (e.code === "Space") { UI.Game.paused = !UI.Game.paused; e.preventDefault(); return; }
     if (k === "t" || k === "T") { UI.Game.speed = UI.Game.speed === 1 ? 2 : 1; return; }
     if (UI.Game.paused) return;
-    if (uiSelectKey(k)) { /* squad selected */ }
+    if (uiOrderKey(e, k)) { /* standing orders */ }
+    else if (uiSelectKey(k)) { /* squad selected */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
     else if (k === "b" || k === "B") { UI.mode = "barrier"; }
     else if (k === "l" || k === "L") { UI.mode = "loudspeaker"; }
@@ -228,10 +233,12 @@ function uiLeftClick(e) {
   if (UI.screen === "planning") {
     var sq0 = UI.mode ? -1 : UI.pickSquad(e);
     if (sq0 >= 0) { UI.selected = sq0; return; }
+    if (uiOrderClick(t)) return;
     if (UI.mode === "barrier") { uiBarrier(t); UI.mode = null; }
     else if (!Police.deploySquad(G, UI.selected, t.x + 0.5, t.y + 0.5)) {
       UI.say("Place squads on street tiles (green), away from the crowd entry");
     }
+    else if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
     return;
   }
   if (UI.Game.paused) return;
@@ -239,6 +246,7 @@ function uiLeftClick(e) {
     var sq = UI.pickSquad(e);
     if (sq >= 0) { UI.selected = sq; return; }
   }
+  if (uiOrderClick(t)) return;
   if (UI.mode === "barrier") uiBarrier(t);
   else if (UI.mode === "loudspeaker") uiLoud(t);
   else if (UI.mode === "water") uiWater(t);
@@ -265,8 +273,64 @@ function uiLeftClick(e) {
   }
   else if (UI.mode === "arrest") uiArrest(e);
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
-  else Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
+  else {
+    Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
+    if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
+  }
   UI.mode = null;
+}
+
+/* Standing orders (orders.js): O cycles the selected squad's order, Y adds
+ * patrol points, Z sets its trigger zone, Shift+H/G/R/A orders every squad. */
+function uiOrderKey(e, k) {
+  if (typeof ORDERS === "undefined") return false;
+  var s = UI.selected;
+  if (e.shiftKey) {
+    var all = { H: "hold", G: "guard", R: "retreat", A: "auto" }[k.toUpperCase()];
+    if (all) { ORDERS.setAll(G, all); UI.say("All squads: " + all.toUpperCase()); return true; }
+    if (k === "Y" || k === "y") { ORDERS.clearWaypoints(G, s); UI.say("Squad " + (s + 1) + " patrol route cleared"); return true; }
+    if (k === "Z" || k === "z") { ORDERS.clearTrigger(G, s); UI.say("Squad " + (s + 1) + " trigger zone removed"); return true; }
+    return false;
+  }
+  if (k === "o" || k === "O") {
+    var name = ORDERS.cycle(G, s);
+    if (name === "push") { UI.mode = "pushTarget"; UI.say("Squad " + (s + 1) + " PUSH: click the line to push to"); }
+    else if (name === "patrol" && ORDERS.get(G, s).waypoints.length < 2) { UI.mode = "waypoint"; UI.say("Squad " + (s + 1) + " PATROL: click 2-6 route points, Esc when done"); }
+    else UI.say("Squad " + (s + 1) + " order: " + name.toUpperCase());
+    return true;
+  }
+  if (k === "y" || k === "Y") { UI.mode = "waypoint"; UI.say("Click patrol points for squad " + (s + 1) + " (Esc when done, Shift+Y clears)"); return true; }
+  if (k === "z" || k === "Z") { UI.mode = "trigger"; UI.say("Click the centre of squad " + (s + 1) + "'s trigger zone: it responds to trouble there"); return true; }
+  return false;
+}
+/* Returns true when the click was used by an order mode. */
+function uiOrderClick(t) {
+  if (typeof ORDERS === "undefined") return false;
+  var s = UI.selected, x = t.x + 0.5, y = t.y + 0.5;
+  if (UI.mode === "pushTarget") {
+    if (!Police.isWalkable(G, t.x, t.y)) { UI.say("Pick a street tile to push to"); return true; }
+    ORDERS.setTarget(G, s, x, y); UI.mode = null; UI.say("Squad " + (s + 1) + " pushing forward (firm, shoves when packed)");
+    return true;
+  }
+  if (UI.mode === "waypoint") {
+    if (!Police.isWalkable(G, t.x, t.y)) { UI.say("Patrol points must be on the street"); return true; }
+    ORDERS.addWaypoint(G, s, x, y);
+    var n = ORDERS.get(G, s).waypoints.length;
+    if (n >= 2 && ORDERS.get(G, s).order !== "patrol") ORDERS.set(G, s, "patrol");
+    UI.say("Patrol point " + n + " set" + (n < 2 ? " - add at least one more" : " (Esc when done)"));
+    return true;
+  }
+  if (UI.mode === "trigger") {
+    ORDERS.setTrigger(G, s, x, y, 6); UI.mode = null;
+    UI.say("Squad " + (s + 1) + " will respond to shop attacks, violence or barricades in this zone");
+    return true;
+  }
+  return false;
+}
+function uiOrderHud(g) {
+  if (typeof ORDERS === "undefined") return "";
+  var o = ORDERS.get(g, UI.selected);
+  return "  Order " + o.order.toUpperCase() + (o.responding ? " (responding)" : "") + " [O]";
 }
 
 function uiDroneHud(g) {
@@ -298,7 +362,10 @@ function uiRightClick(e) {
   else if (lo === "car") uiLoud(t);
   else if (lo === "barriertruck") uiBarrier(t);
   else if (UI.pickAgent(e)) uiArrest(e);
-  else if (Police.isWalkable(G, t.x, t.y)) Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, true);
+  else if (Police.isWalkable(G, t.x, t.y)) {
+    Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, true);
+    if (typeof ORDERS !== "undefined") ORDERS.onManualMove(G, UI.selected, t.x + 0.5, t.y + 0.5);
+  }
 }
 
 /* Called once per frame before simulating. */
@@ -346,6 +413,9 @@ var UI_CONTROLS = [
   "L then click : loudspeaker (needs a car)",
   "W then click : water cannon (needs the water truck)",
   "Esc : cancel B / L / W / A",
+  "O : cycle the squad's standing order (hold, guard, patrol, push, retreat, auto)",
+  "Y then clicks : patrol route   Z then click : trigger zone (Shift+Y / Shift+Z clear)",
+  "Shift+H / G / R / A : every squad holds / guards / retreats / goes auto",
   "Space : pause     T : speed 1x / 2x     N (planning) : new random city",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
   "H : low buildings (see behind blocks)"
@@ -594,7 +664,7 @@ UI.draw = function (ctx, g) {
   var left = Police.barrierStock(g, UI.selected);
   var bot;
   if (UI.screen === "planning") {
-    bot = "Squad " + (UI.selected + 1) + " (" + Police.getLoadout(g, UI.selected) + "): " + uiSquadDesc(g, UI.selected) +
+    bot = "Squad " + (UI.selected + 1) + " (" + Police.getLoadout(g, UI.selected) + "): " + uiSquadDesc(g, UI.selected) + uiOrderHud(g) +
       "  | click squad = select | click green street = place | V loadout | right-click/B barrier (" + left + " left) | N new city | Enter START" +
       (UI.mode ? "  [click to place: " + UI.mode.toUpperCase() + "]" : "");
   } else {
@@ -607,7 +677,7 @@ UI.draw = function (ctx, g) {
     }
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
       "  Barriers left " + left +
-      "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water + uiGasHud(g) +
+      "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water + uiGasHud(g) + uiOrderHud(g) +
       "  " + UI.Game.speed + "x" +
       "  | right-click = tool  A arrest  F shove  G gas  K kettle  X snatch" +
       (UI.mode ? "  [click: " + UI.mode.toUpperCase() + "]" : "");

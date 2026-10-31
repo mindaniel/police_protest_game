@@ -293,6 +293,7 @@ function frame(now) {
       if (typeof LIAISON !== "undefined") LIAISON.update(G, step);
       if (typeof NIGHT !== "undefined") NIGHT.update(G, step);
       if (typeof DEBRIEF !== "undefined") DEBRIEF.update(G, step);
+      if (typeof ORDERS !== "undefined") ORDERS.update(G, step);
     }
   }
 

@@ -1128,6 +1128,7 @@ var Art = (function () {
     if (typeof LIAISON !== "undefined") LIAISON.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
+    if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
     ctx.globalAlpha = 1;
