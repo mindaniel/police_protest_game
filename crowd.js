@@ -868,6 +868,7 @@ var Crowd = (function () {
           for (i = 0; C.lootJoinChance && i < nb.length && joined < 2; i++) {
             var by = nb[i], bdx = by.x - r.x, bdy = by.y - r.y;
             if (!by.active || by.role !== "peaceful" || by.mood < 50 || bdx * bdx + bdy * bdy > 16) continue;
+            if (by.calmedUntil > G.time) continue;   /* talked down by liaison officers */
             if (Math.random() >= C.lootJoinChance) continue;
             by.role = "rioter";
             by.state = "march";
@@ -884,7 +885,7 @@ var Crowd = (function () {
     }
 
     /* vanguard: a small chance per second to break off and go for a shop now */
-    if (Math.random() < C.vanguardChance * dt) {
+    if (Math.random() < C.vanguardChance * (typeof NIGHT !== "undefined" ? NIGHT.boldness(G) : 1) * dt) {
       var vt = pickTargetShop(G, r);
       if (vt) {
         r.state = "attackShop";

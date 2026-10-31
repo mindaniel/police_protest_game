@@ -25,7 +25,8 @@ var CONFIG = {
     watertruck:   { cost: 3 },
     barriertruck: { cost: 2 },
     motorbike:    { cost: 2 },
-    mounted:      { cost: 3 }    // 4 officers on horseback: fast, push the crowd, panic in gas/fire
+    mounted:      { cost: 3 },   // 4 officers on horseback: fast, push the crowd, panic in gas/fire
+    liaison:      { cost: 1 }    // 3 liaison officers: talk people down, never arrest
   },
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
@@ -289,6 +290,9 @@ function frame(now) {
       if (typeof MEDIA !== "undefined") MEDIA.update(G, step);
       if (typeof TACT !== "undefined") TACT.update(G, step);
       if (typeof UNITS !== "undefined") UNITS.update(G, step);
+      if (typeof LIAISON !== "undefined") LIAISON.update(G, step);
+      if (typeof NIGHT !== "undefined") NIGHT.update(G, step);
+      if (typeof DEBRIEF !== "undefined") DEBRIEF.update(G, step);
     }
   }
 
@@ -324,6 +328,9 @@ function restartGame(newCity) {
   if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
+  if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof NIGHT !== "undefined") NIGHT.init(G);
+  if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
   if (typeof Art !== "undefined") Art.init(G);
   Game.paused = false;
   Game.speed = 1;
@@ -349,6 +356,9 @@ function initGame() {
   if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof TACT !== "undefined") TACT.init(G);
   if (typeof UNITS !== "undefined") UNITS.init(G);
+  if (typeof LIAISON !== "undefined") LIAISON.init(G);
+  if (typeof NIGHT !== "undefined") NIGHT.init(G);
+  if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
   if (typeof Art !== "undefined") Art.init(G);
 
   if (typeof UI !== "undefined") {

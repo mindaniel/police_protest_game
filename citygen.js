@@ -294,6 +294,7 @@ var CityGen = (function () {
     CONFIG.vehiclesBlock = true;        /* vehicles are solid; parked ones cut narrow streets */
     CONFIG.shopDefense = true;          /* glass grades, roller shutters, police deterrence */
     CONFIG.shopBreakSeconds = 15;       /* one rioter on plain open glass */
+    CONFIG.nightCycle = true;           /* dusk falls partway through the match */
     return m;
   }
 

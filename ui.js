@@ -353,7 +353,8 @@ var UI_CONTROLS = [
 function uiSquadDesc(g, s) {
   var n = 0, i, txt;
   for (i = 0; i < g.officers.length; i++) if (g.officers[i].squad === s) n++;
-  txt = n + (Police.getLoadout(g, s) === "mounted" ? " officers on horseback" : " officers");
+  var lo = Police.getLoadout(g, s);
+  txt = n + (lo === "mounted" ? " officers on horseback" : (lo === "liaison" ? " liaison officers (talk, never arrest)" : " officers"));
   for (i = 0; i < g.vehicles.length; i++) {
     if (g.vehicles[i].squad === s) {
       txt += " + " + (g.vehicles[i].type === "car" ? "police car"
@@ -625,7 +626,8 @@ UI.draw = function (ctx, g) {
     uiOverlay(ctx, "PAUSED", UI_CONTROLS, "Press Space to resume");
   }
 
-  if (UI.screen === "over") {
+  if (UI.screen === "over" && typeof DEBRIEF !== "undefined") DEBRIEF.draw(ctx, g, w, h);
+  else if (UI.screen === "over") {
     var s = g.stats;
     uiOverlay(ctx, "Debrief", [
       "Match ended: " + g.endReason,
