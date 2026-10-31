@@ -39,6 +39,7 @@ var Police = (function () {
     return type === "car" ? CONFIG.carSpeed : CONFIG.truckSpeed;
   }
   function officersPerSquadFor(loadout) {
+    if (loadout === "liaison") return 3;
     return loadout === "motorbike" ? 2 : CONFIG.officersPerSquad;
   }
   function officerSpeedFor(loadout) {
@@ -94,11 +95,12 @@ var Police = (function () {
   }
 
   /* Formation slot for officer k of n: a block two officers wide. */
-  function slotOffset(k, n) {
+  function slotOffset(k, n, gap) {
     var cols = 2, rows = Math.ceil(n / cols);
+    gap = gap || 0.8;
     return {
-      x: ((k % cols) - 0.5) * 0.8,
-      y: (Math.floor(k / cols) - (rows - 1) / 2) * 0.8
+      x: ((k % cols) - 0.5) * gap,
+      y: (Math.floor(k / cols) - (rows - 1) / 2) * gap
     };
   }
 
@@ -314,33 +316,39 @@ var Police = (function () {
     for (s = 0; s < CONFIG.squadCount; s++) {
       var loadout = G.squadLoadouts[s];
       var c = defaultCenter(s);
-      var per = officersPerSquadFor(loadout);
-      var spd = officerSpeedFor(loadout);
-      for (k = 0; k < per; k++) {
-        var so = slotOffset(k, per);
-        G.officers.push({
-          id: id++,
-          squad: s,
-          x: c.x + so.x,
-          y: c.y + so.y,
-          ox: so.x,
-          oy: so.y,
-          stance: "calm",
-          tx: c.x,
-          ty: c.y,
-          homeX: c.x,
-          homeY: c.y,
-          speed: spd,
-          baseSpeed: spd,
-          stamina: 100,
-          _exhausted: false,
-          busy: false,
-          arrestTarget: null,
-          arrestHold: 0
-        });
-      }
+      id = addSquadOfficers(G, s, loadout, c.x, c.y, id, "calm");
     }
     for (s = 0; s < CONFIG.squadCount; s++) addVehicleFor(G, s);
+  }
+
+  /* Create a squad's officers for its loadout around (cx, cy); returns the next free id. */
+  function addSquadOfficers(G, s, loadout, cx, cy, id, stance) {
+    var per = officersPerSquadFor(loadout);
+    var spd = officerSpeedFor(loadout);
+    for (var k = 0; k < per; k++) {
+      var so = slotOffset(k, per, loadout === "mounted" ? 1.3 : 0.8);   /* horses need room */
+      G.officers.push({
+        id: id++,
+        squad: s,
+        x: cx + so.x,
+        y: cy + so.y,
+        ox: so.x,
+        oy: so.y,
+        stance: stance,
+        tx: cx,
+        ty: cy,
+        homeX: cx,
+        homeY: cy,
+        speed: spd,
+        baseSpeed: spd,
+        stamina: 100,
+        _exhausted: false,
+        busy: false,
+        arrestTarget: null,
+        arrestHold: 0
+      });
+    }
+    return id;
   }
 
   /* Add the single big vehicle (if any) that a squad's loadout provides. */
@@ -670,6 +678,7 @@ var Police = (function () {
     if (!agent || !agent.active) return false;
     var leader = leaderForSquad(G, squadIndex);
     if (!leader) return false;
+    if (loadoutOf(G, squadIndex) === "liaison") return false;   /* liaison officers never arrest */
     leader.arrestTarget = agent;
     leader.arrestManual = true;
     leader.arrestHold = 0;
@@ -753,6 +762,11 @@ var Police = (function () {
         /* thick smoke hides people from the police */
         if (typeof FX !== "undefined" && FX.smokeAt(G, a.x, a.y) >= 0.5) continue;
         if (typeof GAS !== "undefined" && GAS.densityAt(G, a.x, a.y) >= 0.5) continue;
+        /* after dark, someone in an unlit spot is only seen from closer */
+        if (typeof NIGHT !== "undefined") {
+          var vr = squadObs[off.squad] * NIGHT.visibility(G, a.x, a.y), vdx = a.x - off.x, vdy = a.y - off.y;
+          if (vdx * vdx + vdy * vdy > vr * vr) continue;
+        }
         seen[a.id] = true;
         var rise = 0;
         if (a.hasTool || a.revealedUntil > G.time || a.violentUntil > G.time) rise = 15;
@@ -784,6 +798,7 @@ var Police = (function () {
       }
       var leader = squad[0];
       if (!leader) continue;
+      if (loadoutOf(G, s) === "liaison") continue;
 
       if (leader.arrestTarget && leader.arrestManual) {
         updateManualArrest(G, s, squad, dt);
@@ -1112,6 +1127,20 @@ var Police = (function () {
       if (v.squad !== squadIndex) continue;
       v.x = cx + v.ox; v.y = cy + v.oy;
       v.tx = cx; v.ty = cy;
+    }
+
+    /* a new loadout can change the head count and spacing: rebuild the squad
+     * (unless someone is escorting a detainee, then keep the officers) */
+    var rest = [], stance = "calm", maxId = 0, busy = false;
+    for (i = 0; i < G.officers.length; i++) {
+      var q = G.officers[i];
+      if (q.id > maxId) maxId = q.id;
+      if (q.squad !== squadIndex) rest.push(q);
+      else { stance = q.stance; if (q.escorting) busy = true; }
+    }
+    if (!busy) {
+      G.officers = rest;
+      addSquadOfficers(G, squadIndex, name, cx, cy, maxId + 1, stance);
     }
 
     var spd = officerSpeedFor(name);

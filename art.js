@@ -540,13 +540,15 @@ var Art = (function () {
     }
     var front = c + sn > 0;
     var horse = typeof Police !== "undefined" && Police.getLoadout(_G, o.squad) === "mounted";
-    if (horse && typeof UNITS !== "undefined") { P(o.x, o.y, 0); UNITS.drawHorse(ctx, _px, _py, ang, s, t, o.panicUntil > _G.time); }
+    if (horse && typeof UNITS !== "undefined") { P(o.x, o.y, 0); UNITS.drawHorse(ctx, _px, _py, ang, s * 1.9, t, o.panicUntil > _G.time); }
     if (firm && !front) drawShield(ctx, o, c, sn);
     P(o.x, o.y, bike ? 0.25 : 0);
-    var bx = _px, by = _py - (horse ? 7 * s : 0), r = 3.2 * s, hb = 9 * s;
+    var bx = _px, by = _py - (horse ? 11 * s : 0), r = 3.2 * s, hb = 9 * s;
     capsule(ctx, bx, by, r, hb, firm ? "#151a22" : "#16294a");
     capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, firm ? "#2a323f" : "#24406e");
-    if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
+    var liaison = typeof LIAISON !== "undefined" && Police.getLoadout(_G, o.squad) === "liaison";
+    if (liaison) { ctx.fillStyle = LIAISON.vestColor; ctx.fillRect(bx - r, by - hb * 0.75, r * 2, hb * 0.5); }
+    else if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
     disc(ctx, bx, by - hb - 2 * s, 2.6 * s, firm ? "#0f1218" : "#1b2c4a");
     if (firm) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
     disc(ctx, bx, by - hb - 4 * s, Math.max(1, 1.2 * s), sqCol(o.squad));
@@ -1123,7 +1125,9 @@ var Art = (function () {
     if (typeof MEDIA !== "undefined") MEDIA.draw(ctx, G);
     if (typeof TACT !== "undefined") TACT.draw(ctx, G);
     if (typeof UNITS !== "undefined") UNITS.draw(ctx, G);
+    if (typeof LIAISON !== "undefined") LIAISON.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
+    if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
     ctx.globalAlpha = 1;
