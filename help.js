@@ -47,7 +47,7 @@ var HELP = (function () {
     if (pl) {
       sec("Squad");
       ln("1-6 / click", "select a squad", 1);
-      ln("click green street", "place it", 1);
+      ln("click a street", "place it (not on red)", 1);
       ln("V", "show / hide force panel", 1);
       ln("+ / - (panel)", "how many of each unit", 1);
       ln("O", "standing order", 1);

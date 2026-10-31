@@ -746,10 +746,11 @@ function uiPlanningLayer(ctx, g) {
   var bs = CONFIG.blockSites || [], bi, zi, cs;
   uiGround(ctx, true);
   if (UI.mode !== "barrier") {
-    ctx.fillStyle = "rgba(60,190,100,0.22)";
+    /* roads keep their normal look; only street tiles where squads may NOT be placed get a faint red */
+    ctx.fillStyle = "rgba(220,60,60,0.14)";
     for (y = 0; y < MAP.height; y++) {
       for (x = 0; x < MAP.width; x++) {
-        if (Police.canDeploy(g, x, y)) ctx.fillRect(x * ts, y * ts, ts, ts);
+        if (Police.isWalkable(g, x, y) && !Police.canDeploy(g, x, y)) ctx.fillRect(x * ts, y * ts, ts, ts);
       }
     }
   }
@@ -762,7 +763,7 @@ function uiPlanningLayer(ctx, g) {
     ctx.strokeRect(cs.x * ts + 1, cs.y * ts + 1, cs.w * ts - 2, cs.h * ts - 2);
   }
   var rz = CONFIG.rallyZones || [], ri, rt;
-  ctx.fillStyle = "rgba(240,140,0,0.16)";
+  ctx.fillStyle = "rgba(240,140,0,0.09)";
   for (ri = 0; ri < rz.length; ri++) {
     if (rz[ri].plaza) continue;
     for (rt = 0; rt < rz[ri].tiles.length; rt++) ctx.fillRect(rz[ri].tiles[rt].x * ts, rz[ri].tiles[rt].y * ts, ts, ts);
@@ -777,6 +778,8 @@ function uiPlanningLayer(ctx, g) {
     var ok = (UI.mode === "barrier")
       ? Police.isWalkable(g, UI.hover.x, UI.hover.y)
       : Police.canDeploy(g, UI.hover.x, UI.hover.y);
+    ctx.fillStyle = ok ? "rgba(31,174,75,0.35)" : "rgba(224,49,49,0.35)";
+    ctx.fillRect(UI.hover.x * ts, UI.hover.y * ts, ts, ts);
     ctx.strokeStyle = ok ? "#1fae4b" : "#e03131";
     ctx.lineWidth = 2.5;
     ctx.strokeRect(UI.hover.x * ts + 1, UI.hover.y * ts + 1, ts - 2, ts - 2);
@@ -937,7 +940,7 @@ UI.draw = function (ctx, g) {
   var bot;
   if (UI.screen === "planning") {
     bot = "Squad " + (UI.selected + 1) + " (" + Police.getLoadout(g, UI.selected) + "): " + uiSquadDesc(g, UI.selected) + uiOrderHud(g) +
-      "  | click squad = select | click green street = place | " + (typeof FORCE !== "undefined" ? "V force panel" : "V loadout") + " | right-click/B barrier (" + left + " left) | N new city | Enter START" +
+      "  | click squad = select | click a street = place (red = not allowed) | " + (typeof FORCE !== "undefined" ? "V force panel" : "V loadout") + " | right-click/B barrier (" + left + " left) | N new city | Enter START" +
       (UI.mode ? "  [click to place: " + UI.mode.toUpperCase() + "]" : "");
   } else {
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
