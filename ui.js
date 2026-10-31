@@ -68,6 +68,7 @@ UI.init = function (g, game) {
     }
     if (UI.screen === "over") {
       if (k === "r" || k === "R") restartGame();
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("New random city"); }
       return;
     }
     if (UI.screen === "planning") {
