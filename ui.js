@@ -93,6 +93,7 @@ UI.init = function (g, game) {
       if (TACT.kettleActive()) { TACT.release(G); UI.mode = null; }
       else { UI.mode = "kettle"; UI.say("Click the centre of the group to kettle (needs 2 squads with 3+ officers nearby)"); }
     }
+    else if ((k === "d" || k === "D") && typeof UNITS !== "undefined") { UI.mode = "drone"; UI.say("Click where the drone should watch (spots violent people from above)"); }
     else if ((k === "x" || k === "X") && typeof TACT !== "undefined") { UI.mode = "snatch"; UI.say("Click a person: 2 officers dash in and grab them"); }
     else if (k === "a" || k === "A") { UI.mode = "arrest"; }
     else if (k === "f" || k === "F") {
@@ -241,6 +242,10 @@ function uiLeftClick(e) {
   else if (UI.mode === "loudspeaker") uiLoud(t);
   else if (UI.mode === "water") uiWater(t);
   else if (UI.mode === "gas") uiGas(t);
+  else if (UI.mode === "drone") {
+    var dr = UNITS.droneTo(G, t.x + 0.5, t.y + 0.5);
+    if (dr === "cooldown") UI.say("Drone is recharging");
+  }
   else if (UI.mode === "kettle") {
     var kr = TACT.kettle(G, t.x + 0.5, t.y + 0.5);
     if (kr === "few") UI.say("Kettling needs at least 2 squads with 3+ foot officers within reach");
@@ -263,10 +268,17 @@ function uiLeftClick(e) {
   UI.mode = null;
 }
 
+function uiDroneHud(g) {
+  if (typeof UNITS === "undefined") return "";
+  var d = UNITS.droneState(g);
+  if (d.state === "ready") return "  Drone READY [D]";
+  if (d.state === "hover" || d.state === "cooldown") return "  Drone " + Math.ceil(d.left) + "s";
+  return "  Drone flying";
+}
 function uiGasHud(g) {
   if (typeof GAS === "undefined") return "";
   var n = GAS.stock(g, UI.selected), cd = GAS.cooldownLeft(g, UI.selected);
-  return "  Gas " + n + (n > 0 && cd > 0 ? " (" + cd.toFixed(0) + "s)" : "") + " [G]";
+  return uiDroneHud(g) + "  Gas " + n + (n > 0 && cd > 0 ? " (" + cd.toFixed(0) + "s)" : "") + " [G]";
 }
 
 /* Right click = the selected squad's tool: water truck sprays, car uses the
@@ -341,7 +353,7 @@ var UI_CONTROLS = [
 function uiSquadDesc(g, s) {
   var n = 0, i, txt;
   for (i = 0; i < g.officers.length; i++) if (g.officers[i].squad === s) n++;
-  txt = n + " officers";
+  txt = n + (Police.getLoadout(g, s) === "mounted" ? " officers on horseback" : " officers");
   for (i = 0; i < g.vehicles.length; i++) {
     if (g.vehicles[i].squad === s) {
       txt += " + " + (g.vehicles[i].type === "car" ? "police car"

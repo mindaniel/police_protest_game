@@ -539,9 +539,11 @@ var Art = (function () {
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(_px, _py); ctx.stroke();
     }
     var front = c + sn > 0;
+    var horse = typeof Police !== "undefined" && Police.getLoadout(_G, o.squad) === "mounted";
+    if (horse && typeof UNITS !== "undefined") { P(o.x, o.y, 0); UNITS.drawHorse(ctx, _px, _py, ang, s, t, o.panicUntil > _G.time); }
     if (firm && !front) drawShield(ctx, o, c, sn);
     P(o.x, o.y, bike ? 0.25 : 0);
-    var bx = _px, by = _py, r = 3.2 * s, hb = 9 * s;
+    var bx = _px, by = _py - (horse ? 7 * s : 0), r = 3.2 * s, hb = 9 * s;
     capsule(ctx, bx, by, r, hb, firm ? "#151a22" : "#16294a");
     capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, firm ? "#2a323f" : "#24406e");
     if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
@@ -1120,6 +1122,7 @@ var Art = (function () {
     if (typeof BAR !== "undefined") BAR.draw(ctx, G);
     if (typeof MEDIA !== "undefined") MEDIA.draw(ctx, G);
     if (typeof TACT !== "undefined") TACT.draw(ctx, G);
+    if (typeof UNITS !== "undefined") UNITS.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);

@@ -42,6 +42,7 @@ var Police = (function () {
     return loadout === "motorbike" ? 2 : CONFIG.officersPerSquad;
   }
   function officerSpeedFor(loadout) {
+    if (loadout === "mounted") return CONFIG.mountedSpeed || 3.0;
     return loadout === "motorbike" ? CONFIG.motorbikeSpeed : CONFIG.officerSpeed;
   }
   var nextDetaineeId = 1;
@@ -169,12 +170,26 @@ var Police = (function () {
     if (!G._policeFlow) G._policeFlow = [];
     var cached = G._policeFlow[squadIndex];
     if (cached && cached.key === key) return cached.dist;
+    var dist = bfsFrom(G, home.x, home.y);
+    G._policeFlow[squadIndex] = { key: key, dist: dist };
+    return dist;
+  }
+
+  /* Field toward any tile (kettle slots); a small cache, emptied when it fills. */
+  function tileFlowField(G, sx, sy) {
+    var key = sx + "," + sy;
+    if (!G._tileFlow || G._tileFlowN > 48) { G._tileFlow = {}; G._tileFlowN = 0; }
+    if (!G._tileFlow[key]) { G._tileFlow[key] = bfsFrom(G, sx, sy); G._tileFlowN++; }
+    return G._tileFlow[key];
+  }
+
+  function bfsFrom(G, sx, sy) {
     var W = MAP.width, H = MAP.height;
     var dist = new Int16Array(W * H);
     for (var i = 0; i < dist.length; i++) dist[i] = -1;
-    if (home.x >= 0 && home.y >= 0 && home.x < W && home.y < H &&
-        !isSolidPolice(G, home.x, home.y)) {
-      var start = home.y * W + home.x;
+    if (sx >= 0 && sy >= 0 && sx < W && sy < H &&
+        !isSolidPolice(G, sx, sy)) {
+      var start = sy * W + sx;
       dist[start] = 0;
       var q = [start];
       var head = 0;
@@ -196,7 +211,6 @@ var Police = (function () {
         }
       }
     }
-    G._policeFlow[squadIndex] = { key: key, dist: dist };
     return dist;
   }
 
@@ -250,6 +264,10 @@ var Police = (function () {
 
     /* Farther than 2 tiles from a goal that is the squad's home: follow the
      * per-squad flow field so units get around building columns. */
+    if (d > 2 && typeof off.kettleX === "number" && !isVehicle(off)) {
+      var kf = tileFlowField(G, Math.floor(goal.x), Math.floor(goal.y));
+      if (stepByField(G, off, dt, kf)) return;
+    }
     if (d > 2) {
       var hx = (typeof off.homeX === "number") ? off.homeX : off.tx;
       var hy = (typeof off.homeY === "number") ? off.homeY : off.ty;
@@ -697,7 +715,7 @@ var Police = (function () {
     /* Per-squad observe radius: a car adds a bonus. */
     var squadObs = [];
     var s, i, j;
-    for (s = 0; s < CONFIG.squadCount; s++) squadObs[s] = CONFIG.observeRadiusTiles;
+    for (s = 0; s < CONFIG.squadCount; s++) squadObs[s] = CONFIG.observeRadiusTiles + (loadoutOf(G, s) === "mounted" ? 1.5 : 0);   /* riders see over the crowd */
     for (i = 0; i < G.vehicles.length; i++) {
       if (G.vehicles[i].type === "car") squadObs[G.vehicles[i].squad] += CONFIG.carObserveBonus;
     }
@@ -725,7 +743,8 @@ var Police = (function () {
       var keepSp = off.speed;
       if (off.gasSlowUntil > G.time) off.speed *= 0.6;
       /* snatch-squad officers are moved by tactics.js */
-      if (!(off.stunUntil > G.time) && !off.snatch) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
+      /* a bolting horse is moved by units.js */
+      if (!(off.stunUntil > G.time) && !off.snatch && !(off.panicUntil > G.time)) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
       off.speed = keepSp;
       var nb = Crowd.neighbors(G, off.x, off.y, squadObs[off.squad]);
       for (j = 0; j < nb.length; j++) {

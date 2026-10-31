@@ -24,7 +24,8 @@ var CONFIG = {
     car:          { cost: 2 },
     watertruck:   { cost: 3 },
     barriertruck: { cost: 2 },
-    motorbike:    { cost: 2 }
+    motorbike:    { cost: 2 },
+    mounted:      { cost: 3 }    // 4 officers on horseback: fast, push the crowd, panic in gas/fire
   },
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
@@ -287,6 +288,7 @@ function frame(now) {
       if (typeof BAR !== "undefined") BAR.update(G, step);
       if (typeof MEDIA !== "undefined") MEDIA.update(G, step);
       if (typeof TACT !== "undefined") TACT.update(G, step);
+      if (typeof UNITS !== "undefined") UNITS.update(G, step);
     }
   }
 
@@ -321,6 +323,7 @@ function restartGame(newCity) {
   if (typeof BAR !== "undefined") BAR.init(G);
   if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof TACT !== "undefined") TACT.init(G);
+  if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof Art !== "undefined") Art.init(G);
   Game.paused = false;
   Game.speed = 1;
@@ -345,6 +348,7 @@ function initGame() {
   if (typeof BAR !== "undefined") BAR.init(G);
   if (typeof MEDIA !== "undefined") MEDIA.init(G);
   if (typeof TACT !== "undefined") TACT.init(G);
+  if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof Art !== "undefined") Art.init(G);
 
   if (typeof UI !== "undefined") {
