@@ -323,7 +323,11 @@ function citySeed() {
 
 /* newCity: true = generate another random city, false = replay the same one. */
 function restartGame(newCity) {
-  if (typeof CityGen !== "undefined") CityGen.apply(newCity ? Math.floor(Math.random() * 1e9) : MAP.seed);
+  if (typeof CityGen !== "undefined") {
+    /* real maps: N steps to the next one; random cities get a new seed */
+    var real = CityGen.getStyle && CityGen.getStyle() === "real";
+    CityGen.apply(newCity ? (real ? (MAP.seed || 0) + 1 : Math.floor(Math.random() * 1e9)) : MAP.seed);
+  }
   G = makeG();
   Crowd.init(G);
   Crowd.rebuildFlow(G);

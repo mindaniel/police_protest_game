@@ -80,7 +80,7 @@ UI.init = function (g, game) {
     if (UI.screen === "over") {
       if (k === "r" || k === "R") restartGame();
       else if (k === "m" || k === "M") { UI.screen = "title"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("New random city"); }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say(MAP.realName ? "Real map: " + MAP.realName : "New random city"); }
       return;
     }
     if (UI.screen === "planning") {
@@ -92,11 +92,12 @@ UI.init = function (g, game) {
       else if (uiSelectKey(k)) { /* squad selected */ }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("New random city"); }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say(MAP.realName ? "Real map: " + MAP.realName : "New random city"); }
       else if ((k === "c" || k === "C") && typeof CityGen !== "undefined" && CityGen.setStyle) {
-        CityGen.setStyle(CityGen.getStyle() === "paris" ? "grid" : "paris");
+        CityGen.nextStyle();
         try { localStorage.setItem("ppg_style", CityGen.getStyle()); } catch (e2) { /* storage blocked */ }
-        restartGame(false); UI.say(CityGen.getStyle() === "paris" ? "City style: Paris" : "City style: grid town");
+        restartGame(false);
+        UI.say(CityGen.getStyle() === "paris" ? "City style: random Paris" : (CityGen.getStyle() === "real" ? "Real map: " + MAP.realName : "City style: grid town"));
       }
       else if (k === "Escape") { UI.mode = null; }
       return;
@@ -675,7 +676,8 @@ UI.draw = function (ctx, g) {
   var top;
   if (UI.screen === "planning") {
     top = "PLANNING - the match has not started, time is frozen" +
-      (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city, C = " + (MAP.style === "paris" ? "Paris" : "grid") + " style)" : "") +
+      (MAP.realName ? "   " + MAP.realName + " (" + MAP.attribution + ")  N = next map, C = style"
+        : (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city, C = " + (MAP.style === "paris" ? "Paris" : "grid") + " style)" : "")) +
       (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : "");
   } else {
     var mood = (typeof Crowd !== "undefined") ? Crowd.averageMood(g) : 0;

@@ -294,14 +294,52 @@ var CityGen = (function () {
     return m;
   }
 
-  /* City style: "paris" (default when paris.js is loaded) or "grid". */
+  /* A real neighbourhood baked from OpenStreetMap (maps/*.js, REALMAPS). */
+  function generateReal(seed, w, h) {
+    var rm = REALMAPS[((seed % REALMAPS.length) + REALMAPS.length) % REALMAPS.length], i, x, y;
+    W = w; H = h; R = mulberry(seed ^ 0x27d4eb2f);
+    g = [];
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) g.push((rm.rows[y] || "").charAt(x) || "#");
+    var doorC = [], dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    for (y = 1; y < H - 1; y++) for (x = 1; x < W - 1; x++) {
+      if (get(x, y) !== "#") continue;
+      for (i = 0; i < 4; i++) {
+        var ox = x + dirs[i][0], oy = y + dirs[i][1], c = get(ox, oy);
+        if (c === "." || c === "a") { doorC.push({ x: ox, y: oy, hx: x, hy: y }); break; }
+      }
+    }
+    var shops = [];
+    for (i = 0; i < rm.shops.length; i++) shops.push({ id: rm.shops[i].id, name: rm.shops[i].name, x: rm.shops[i].x, y: rm.shops[i].y });
+    var m = finish({ x: rm.plaza.x, y: rm.plaza.y }, rm.plaza.r, shops, [], doorC);
+    /* Paris neighbourhoods get the Paris look */
+    m.style = rm.id.indexOf("paris") === 0 ? "paris" : "real";
+    m.decor = rm.decor; m.landmarks = []; m.river = null;
+    m.realName = rm.name; m.attribution = rm.attribution;
+    return m;
+  }
+
+  /* City style: "paris" (default when paris.js is loaded), "grid" or "real". */
   var style = "paris";
-  function setStyle(s) { style = s === "grid" ? "grid" : "paris"; }
-  function getStyle() { return (style === "paris" && typeof ParisGen !== "undefined") ? "paris" : "grid"; }
+  function setStyle(s) { style = (s === "grid" || s === "real") ? s : "paris"; }
+  function getStyle() {
+    if (style === "real" && typeof REALMAPS !== "undefined" && REALMAPS.length) return "real";
+    if (style === "paris" && typeof ParisGen !== "undefined") return "paris";
+    return "grid";
+  }
+  function nextStyle() {
+    var s = getStyle();
+    setStyle(s === "paris" ? "grid" : (s === "grid" ? "real" : "paris"));
+    if (getStyle() === "real" && s === "real") setStyle("paris");
+    return getStyle();
+  }
 
   /* Replace the fixed map with a generated one and set the city-mode tuning. */
   function apply(seed) {
-    var m = getStyle() === "paris" ? generateParis(seed, MAP.width, MAP.height) : generate(seed, MAP.width, MAP.height);
+    var st = getStyle();
+    var m = st === "real" ? generateReal(seed, MAP.width, MAP.height)
+      : (st === "paris" ? generateParis(seed, MAP.width, MAP.height) : generate(seed, MAP.width, MAP.height));
+    MAP.realName = m.realName || null;
+    MAP.attribution = m.attribution || null;
     MAP.style = m.style || "grid";
     MAP.decor = m.decor || null;
     MAP.landmarks = m.landmarks || null;
@@ -333,7 +371,7 @@ var CityGen = (function () {
     return m;
   }
 
-  return { generate: generate, generateParis: generateParis, apply: apply, setStyle: setStyle, getStyle: getStyle };
+  return { generate: generate, generateParis: generateParis, generateReal: generateReal, apply: apply, setStyle: setStyle, getStyle: getStyle, nextStyle: nextStyle };
 })();
 
 if (typeof module !== "undefined" && module.exports) {
