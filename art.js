@@ -1519,7 +1519,8 @@ var Art = (function () {
     b = buckets[ND];
     if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
     drawWater(ctx, G, t);
-    drawSmoke(ctx, G, t);
+    if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);   /* fire glow, drifting smoke, wet streets */
+    else drawSmoke(ctx, G, t);
     if (typeof FX !== "undefined") FX.draw(ctx, G);
     if (typeof BAR !== "undefined") BAR.draw(ctx, G);
     if (typeof MEDIA !== "undefined") MEDIA.draw(ctx, G);
@@ -1531,6 +1532,7 @@ var Art = (function () {
     if (typeof REINFORCE !== "undefined") REINFORCE.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
+    if (typeof ATMO !== "undefined") ATMO.drawNight(ctx, G);   /* headlights, police lights, fires through the dark */
     if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");
     if (Q_GHOSTS) {
       ctx.globalAlpha = 0.28;

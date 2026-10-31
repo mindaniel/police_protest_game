@@ -519,8 +519,8 @@ var NIGHT = (function () {
       ctx.globalAlpha = Math.min(1, 0.7 * d);
       ctx.drawImage(sprite(L2.col || "255,211,138"), lx - rg, ly - rg, rg * 2, rg * 2);
     }
-    // fires
-    if (G.fireBlocked && G.fireBlocked.forEach) {
+    // fires (atmosphere.js draws its own fire glow when loaded)
+    if (G.fireBlocked && G.fireBlocked.forEach && typeof ATMO === "undefined") {
       G.fireBlocked.forEach(function (key) {
         var parts = key.split(",");
         var fx = parseFloat(parts[0]) + 0.5, fy = parseFloat(parts[1]) + 0.5;
@@ -535,8 +535,8 @@ var NIGHT = (function () {
         ctx.fill();
       });
     }
-    // police vehicle flashing lights
-    if (G.vehicles) {
+    // police vehicle flashing lights (atmosphere.js has headlights + flashing lights)
+    if (G.vehicles && typeof ATMO === "undefined") {
       var phase = Math.floor(G.time / 0.25) % 2;
       for (i = 0; i < G.vehicles.length; i++) {
         var vv = G.vehicles[i];
