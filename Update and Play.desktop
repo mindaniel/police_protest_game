@@ -1,0 +1,11 @@
+# First use: right-click this file and choose "Allow Launching" (GNOME) or mark it
+# executable (chmod +x "Update and Play.desktop"). update_and_play.sh must also be
+# executable: chmod +x update_and_play.sh
+[Desktop Entry]
+Type=Application
+Name=Police vs Protestors (update and play)
+Comment=Update the game from GitHub and open it in the browser
+Exec=bash -c 'cd "$(dirname "$1")" && ./update_and_play.sh' launcher %k
+Terminal=false
+Icon=applications-games
+Categories=Game;

@@ -7,6 +7,18 @@ modules, no bundler), so it runs straight from disk.
 
 Double-click `index.html`. There is no build step and no server needed.
 
+## Update and play in one click
+
+These files get the newest version from GitHub, then open the game. If there's no internet, they open the version you already have.
+
+- **Linux:** double-click `Update and Play.desktop`. The first time, right-click it and choose "Allow Launching". You can also run `./update_and_play.sh` in a terminal.
+- **Windows:** double-click `update_and_play.bat`.
+- **macOS:** run `./update_and_play.sh` in a terminal.
+
+They work both in a git clone and in a folder unzipped from GitHub. In a git clone with local changes, they skip the update instead of overwriting your work. They never delete files.
+
+Real-city maps (in `maps/`) are built from OpenStreetMap data, (c) OpenStreetMap contributors, ODbL. `tools/osm2map.py` converts an Overpass download into a map.
+
 Tests run headless with node:
 
 ```
