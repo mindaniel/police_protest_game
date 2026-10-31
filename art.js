@@ -198,6 +198,152 @@ var Art = (function () {
     if (showS) quad(ps, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1);
   }
 
+  /* ---------- staircase smoothing: wedges in the inner corners of diagonal edges ---------- */
+  function tri(p, x0, y0, z0, x1, y1, z1, x2, y2, z2) {
+    p.moveTo(ix(x0, y0), iy(x0, y0, z0));
+    p.lineTo(ix(x1, y1), iy(x1, y1, z1));
+    p.lineTo(ix(x2, y2), iy(x2, y2, z2));
+    p.closePath();
+  }
+
+  /* Returns corner code for open tile (x,y) or 0.
+     Codes: 1=NW, 2=NE, 3=SW, 4=SE.
+     Corner requires two orthogonal building neighbours (>0 h, not shop, h<=2),
+     the diagonal between them solid, and the staircase to continue. */
+  function cornerAt(x, y) {
+    var hN = hAt(x, y - 1), hS = hAt(x, y + 1);
+    var hW = hAt(x - 1, y), hE = hAt(x + 1, y);
+    var bN = hN > 0 && hN <= 2 && tints[(y - 1) * W + x] !== 3;
+    var bS = hS > 0 && hS <= 2 && tints[(y + 1) * W + x] !== 3;
+    var bW = hW > 0 && hW <= 2 && tints[y * W + x - 1] !== 3;
+    var bE = hE > 0 && hE <= 2 && tints[y * W + x + 1] !== 3;
+    /* NW: N+W buildings, S+E not solid, diagonal (x-1,y-1) building */
+    if (bN && bW && !solidCh(tile(x, y + 1)) && !solidCh(tile(x + 1, y)) &&
+        hAt(x - 1, y - 1) > 0 &&
+        (!solidCh(tile(x + 1, y + 1)) || hAt(x + 1, y - 1) > 0 || hAt(x - 1, y + 1) > 0))
+      return 1;
+    /* NE: N+E buildings, S+W not solid, diagonal (x+1,y-1) building */
+    if (bN && bE && !solidCh(tile(x, y + 1)) && !solidCh(tile(x - 1, y)) &&
+        hAt(x + 1, y - 1) > 0 &&
+        (!solidCh(tile(x - 1, y + 1)) || hAt(x - 1, y - 1) > 0 || hAt(x + 1, y + 1) > 0))
+      return 2;
+    /* SW: S+W buildings, N+E not solid, diagonal (x-1,y+1) building */
+    if (bS && bW && !solidCh(tile(x, y - 1)) && !solidCh(tile(x + 1, y)) &&
+        hAt(x - 1, y + 1) > 0 &&
+        (!solidCh(tile(x + 1, y - 1)) || hAt(x - 1, y - 1) > 0 || hAt(x + 1, y + 1) > 0))
+      return 3;
+    /* SE: S+E buildings, N+W not solid, diagonal (x+1,y+1) building */
+    if (bS && bE && !solidCh(tile(x, y - 1)) && !solidCh(tile(x - 1, y)) &&
+        hAt(x + 1, y + 1) > 0 &&
+        (!solidCh(tile(x - 1, y - 1)) || hAt(x + 1, y - 1) > 0 || hAt(x - 1, y + 1) > 0))
+      return 4;
+    return 0;
+  }
+
+  /* 1 window quad centred on slanted wall segment (ax,ay)-(bx,by) in tile coords. */
+  function wedgeWins(p, ax, ay, bx, by, h) {
+    var mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+    var dx = bx - ax, dy = by - ay;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return;
+    var ux = dx / len, uy = dy / len;      /* along wall */
+    var vx = uy, vy = -ux;                 /* inward (toward tile centre) */
+    if (vx * (0.5 - mx) + vy * (0.5 - my) < 0) { vx = -vx; vy = -vy; }
+    var half = 0.12;                       /* window half-width along wall */
+    var depth = 0.06;                      /* push inward slightly */
+    var z;
+    for (z = 0.28; z + 0.22 < h - 0.12; z += 0.45) {
+      var x0 = mx - ux * half + vx * depth, y0 = my - uy * half + vy * depth;
+      var x1 = mx + ux * half + vx * depth, y1 = my + uy * half + vy * depth;
+      quad(p, x0, y0, z, x1, y1, z, x1, y1, z + 0.22, x0, y0, z + 0.22);
+    }
+  }
+
+  function addWedges() {
+    var x, y;
+    for (y = 0; y < H; y++) {
+      for (x = 0; x < W; x++) {
+        if (solidCh(tile(x, y))) continue;
+        var c = cornerAt(x, y);
+        if (!c) continue;
+        var hN = hAt(x, y - 1), hS = hAt(x, y + 1);
+        var hW = hAt(x - 1, y), hE = hAt(x + 1, y);
+        var h, t, set;
+        if (c === 1) {                       /* NW: tri (x,y)-(x+1,y)-(x,y+1) */
+          h = Math.min(hN, hW);
+          t = tints[(y - 1) * W + x];
+          if (t > 2) t = tints[y * W + x - 1];
+          if (t > 2) t = 0;
+          set = diags[y] || (diags[y] = newSet());
+          tri(set.tops[t], x, y, h, x + 1, y, h, x, y + 1, h);
+          /* slanted wall (x+1,y)->(x,y+1) faces SE, visible */
+          quad(set.sw, x + 1, y, 0, x, y + 1, 0, x, y + 1, h, x + 1, y, h);
+          if (!lowMode) wedgeWins(set.winS, x + 1, y, x, y + 1, h);
+        } else if (c === 2) {                /* NE: tri (x,y)-(x+1,y)-(x+1,y+1) */
+          h = Math.min(hN, hE);
+          t = tints[(y - 1) * W + x];
+          if (t > 2) t = tints[y * W + x + 1];
+          if (t > 2) t = 0;
+          set = diags[y] || (diags[y] = newSet());
+          tri(set.tops[t], x, y, h, x + 1, y, h, x + 1, y + 1, h);
+          /* slanted wall (x,y)->(x+1,y+1) faces SW, visible */
+          quad(set.sw, x, y, 0, x + 1, y + 1, 0, x + 1, y + 1, h, x, y, h);
+          if (!lowMode) wedgeWins(set.winS, x, y, x + 1, y + 1, h);
+        } else if (c === 3) {                /* SW: tri (x,y)-(x,y+1)-(x+1,y+1) */
+          h = Math.min(hS, hW);
+          t = tints[(y + 1) * W + x];
+          if (t > 2) t = tints[y * W + x - 1];
+          if (t > 2) t = 0;
+          set = diags[y] || (diags[y] = newSet());
+          tri(set.tops[t], x, y, h, x, y + 1, h, x + 1, y + 1, h);
+          /* slanted wall (x,y)->(x+1,y+1) looks N, hidden: top only */
+        } else {                             /* SE: tri (x+1,y)-(x+1,y+1)-(x,y+1) */
+          h = Math.min(hS, hE);
+          t = tints[(y + 1) * W + x];
+          if (t > 2) t = tints[y * W + x + 1];
+          if (t > 2) t = 0;
+          set = diags[y] || (diags[y] = newSet());
+          tri(set.tops[t], x + 1, y, h, x + 1, y + 1, h, x, y + 1, h);
+          /* slanted wall (x+1,y)->(x,y+1) looks NE, hidden: top only */
+        }
+      }
+    }
+  }
+
+  /* pavement follows the diagonal on the ground too */
+  function groundWedges(g, t) {
+    var x, y;
+    for (y = 0; y < H; y++) {
+      for (x = 0; x < W; x++) {
+        if (solidCh(tile(x, y))) continue;
+        var c = cornerAt(x, y);
+        if (!c) continue;
+        var ax, ay, bx, by, cx, cy;
+        if (c === 1) { ax = x; ay = y; bx = x + 1; by = y; cx = x; cy = y + 1; }
+        else if (c === 2) { ax = x; ay = y; bx = x + 1; by = y; cx = x + 1; cy = y + 1; }
+        else if (c === 3) { ax = x; ay = y; bx = x; by = y + 1; cx = x + 1; cy = y + 1; }
+        else { ax = x + 1; ay = y; bx = x + 1; by = y + 1; cx = x; cy = y + 1; }
+        g.beginPath();
+        g.moveTo(ax * t, ay * t);
+        g.lineTo(bx * t, by * t);
+        g.lineTo(cx * t, cy * t);
+        g.closePath();
+        g.fillStyle = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7";
+        g.fill();
+        /* kerb along hypotenuse: the two non-origin pts of the right angle corner */
+        var hx0, hy0, hx1, hy1;
+        if (c === 1) { hx0 = bx; hy0 = by; hx1 = cx; hy1 = cy; }
+        else { hx0 = ax; hy0 = ay; hx1 = cx; hy1 = cy; }
+        g.beginPath();
+        g.moveTo(hx0 * t, hy0 * t);
+        g.lineTo(hx1 * t, hy1 * t);
+        g.strokeStyle = "#c6ceda";
+        g.lineWidth = 1.5;
+        g.stroke();
+      }
+    }
+  }
+
   function buildCity() {
     computeHeights();
     cityVer++;
@@ -238,6 +384,7 @@ var Art = (function () {
         }
       }
     }
+    if (!lowMode) addWedges();
   }
 
   /* ---------- ground texture ---------- */
@@ -329,6 +476,7 @@ var Art = (function () {
     g.strokeStyle = "#b9c3d0"; g.lineWidth = 2;
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
     if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
+    if (!lowMode) groundWedges(g, t);
   }
 
   function buildProps() {
