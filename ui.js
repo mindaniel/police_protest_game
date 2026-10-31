@@ -89,6 +89,11 @@ UI.init = function (g, game) {
     else if (k === "l" || k === "L") { UI.mode = "loudspeaker"; }
     else if (k === "w" || k === "W") { UI.mode = "water"; }
     else if ((k === "g" || k === "G") && typeof GAS !== "undefined") { UI.mode = "gas"; }
+    else if ((k === "k" || k === "K") && typeof TACT !== "undefined") {
+      if (TACT.kettleActive()) { TACT.release(G); UI.mode = null; }
+      else { UI.mode = "kettle"; UI.say("Click the centre of the group to kettle (needs 2 squads with 3+ officers nearby)"); }
+    }
+    else if ((k === "x" || k === "X") && typeof TACT !== "undefined") { UI.mode = "snatch"; UI.say("Click a person: 2 officers dash in and grab them"); }
     else if (k === "a" || k === "A") { UI.mode = "arrest"; }
     else if (k === "f" || k === "F") {
       var sr = Police.shove(G, UI.selected);
@@ -118,6 +123,11 @@ UI.init = function (g, game) {
   });
   window.addEventListener("mousemove", function (e) {
     /* tear gas aiming: range circle and target cross */
+    if (typeof TACT !== "undefined") {
+      if (UI.mode === "kettle") { var kt = UI.toTile(e); TACT.preview = { mode: "kettle", x: kt.x + 0.5, y: kt.y + 0.5 }; }
+      else if (UI.mode === "snatch") TACT.preview = { mode: "snatch", s: UI.selected };
+      else TACT.preview = null;
+    }
     if (typeof GAS !== "undefined") {
       if (UI.mode === "gas") { var gt = UI.toTile(e); GAS.preview = { s: UI.selected, x: gt.x + 0.5, y: gt.y + 0.5 }; }
       else GAS.preview = null;
@@ -231,6 +241,22 @@ function uiLeftClick(e) {
   else if (UI.mode === "loudspeaker") uiLoud(t);
   else if (UI.mode === "water") uiWater(t);
   else if (UI.mode === "gas") uiGas(t);
+  else if (UI.mode === "kettle") {
+    var kr = TACT.kettle(G, t.x + 0.5, t.y + 0.5);
+    if (kr === "few") UI.say("Kettling needs at least 2 squads with 3+ foot officers within reach");
+    else if (kr === "ok") UI.say("Squads moving to encircle - mood inside will rise. K again to release");
+  }
+  else if (UI.mode === "snatch") {
+    var sa = UI.pickAgent(e);
+    if (!sa) UI.say("Click right on a person to snatch them");
+    else {
+      var sr2 = TACT.snatch(G, UI.selected, sa);
+      if (sr2 === "none") UI.say("Squad " + (UI.selected + 1) + " needs 2 free foot officers for a snatch");
+      else if (sr2 === "busy") UI.say("Squad " + (UI.selected + 1) + " already has a snatch running");
+      else if (sr2 === "far") UI.say("Too far for a snatch from squad " + (UI.selected + 1));
+      else UI.say("Snatch squad going in (a peaceful person = wrong arrest)");
+    }
+  }
   else if (UI.mode === "arrest") uiArrest(e);
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
   else Police.moveSquad(G, UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
@@ -569,7 +595,7 @@ UI.draw = function (ctx, g) {
       "  Barriers left " + left +
       "  Loudspeaker " + (loud > 0 ? loud.toFixed(0) + "s" : "READY") + water + uiGasHud(g) +
       "  " + UI.Game.speed + "x" +
-      "  | right-click = tool  A arrest  F shove" +
+      "  | right-click = tool  A arrest  F shove  G gas  K kettle  X snatch" +
       (UI.mode ? "  [click: " + UI.mode.toUpperCase() + "]" : "");
   }
   ctx.fillStyle = "rgba(0,0,0,0.7)";

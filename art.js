@@ -1119,6 +1119,7 @@ var Art = (function () {
     if (typeof FX !== "undefined") FX.draw(ctx, G);
     if (typeof BAR !== "undefined") BAR.draw(ctx, G);
     if (typeof MEDIA !== "undefined") MEDIA.draw(ctx, G);
+    if (typeof TACT !== "undefined") TACT.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     ctx.globalAlpha = 0.28;
     for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);

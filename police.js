@@ -139,6 +139,7 @@ var Police = (function () {
   }
 
   function goalOf(G, e) {
+    if (typeof e.kettleX === "number") return { x: e.kettleX, y: e.kettleY };   /* kettle ring slot */
     var gx = e.tx, gy = e.ty;
     if (e.ox || e.oy) {
       var cx = e.tx + e.ox, cy = e.ty + e.oy;
@@ -723,7 +724,8 @@ var Police = (function () {
       /* tear gas: masked officers move at 60% speed */
       var keepSp = off.speed;
       if (off.gasSlowUntil > G.time) off.speed *= 0.6;
-      if (!(off.stunUntil > G.time)) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
+      /* snatch-squad officers are moved by tactics.js */
+      if (!(off.stunUntil > G.time) && !off.snatch) stepThroughCrowd(G, off, dt, 0.9, 0.1, 0.2);
       off.speed = keepSp;
       var nb = Crowd.neighbors(G, off.x, off.y, squadObs[off.squad]);
       for (j = 0; j < nb.length; j++) {
@@ -966,6 +968,7 @@ var Police = (function () {
     G.squadRun[squadIndex] = !!run;
     for (var i = 0; i < G.officers.length; i++) {
       if (G.officers[i].squad === squadIndex) {
+        G.officers[i].kettleX = G.officers[i].kettleY = undefined;   /* a move order leaves the kettle */
         if (G.officers[i].arrestManual) {
           /* a new move order cancels a player-ordered arrest */
           G.officers[i].arrestTarget = null;
