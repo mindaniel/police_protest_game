@@ -402,6 +402,9 @@ var THEME_PARIS = (function () {
            isBuilding(tileAt(x, y - 1)) || isBuilding(tileAt(x, y + 1));
   }
 
+  /* terraces and metro entrances only (repainted on top of street textures) */
+  function decor(g, GT, tile) { drawTerraces(g, GT, tile); drawMetro(g, GT, tile); }
+
   var colors = COLORS;
 
   return {
@@ -411,7 +414,8 @@ var THEME_PARIS = (function () {
     props: props,
     drawProp: drawProp,
     isLandmarkTile: isLandmarkTile,
-    night: night
+    night: night,
+    decor: decor
   };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = THEME_PARIS;

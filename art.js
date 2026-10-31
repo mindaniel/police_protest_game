@@ -10,7 +10,7 @@ var Art = (function () {
 
   var TS = 32, ZU = 18;                  // world units per tile, per height unit
   var SQUAD_COLORS = ["#e63946", "#f4a261", "#2a9d8f", "#e9c46a", "#9b5de5", "#00b4d8"];
-  var GT = 24;                           // ground texture pixels per tile
+  var GT = 32;                           // ground texture pixels per tile
 
   var cam = { cx: 50, cy: 32, zoom: 1, S: 1, OX: 0, OY: 0, fit: 1 };
   var W = 0, H = 0, LW = 1600, LH = 1024, ND = 0;
@@ -602,6 +602,11 @@ var Art = (function () {
     g.strokeStyle = "#b9c3d0"; g.lineWidth = 2;
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
     if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
+    if (typeof STREETS !== "undefined") {
+      /* realistic asphalt, markings, crossings, paving and shadows */
+      STREETS.paint(g, W, H, t, tile, paris() ? "paris" : "grid");
+      if (paris()) THEME_PARIS.decor(g, t, tile);
+    }
     if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
   }
 
