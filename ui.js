@@ -126,6 +126,8 @@ UI.init = function (g, game) {
     if (uiOrderKey(e, k)) { /* standing orders */ }
     else if (uiSelectKey(k)) { /* squad selected */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
+    else if ((k === "p" || k === "P") && typeof LINES !== "undefined") { UI.mode = "line"; UI.say("Click across a street: squad " + (UI.selected + 1) + " forms a police line there (max 7 tiles wide)"); }
+    else if ((k === "c" || k === "C") && typeof LINES !== "undefined") { UI.mode = "checkpoint"; UI.say("Click a street: squad " + (UI.selected + 1) + " stops and searches people passing there"); }
     else if ((k === "e" || k === "E") && typeof TRANSPORT !== "undefined") {
       var tr = TRANSPORT.toggle(G, UI.selected);
       UI.say(tr === "novehicle" ? "Squad " + (UI.selected + 1) + " has no vehicle to ride in"
@@ -290,6 +292,7 @@ function uiArrest(e) {
 /* Send squad s to (x, y): drive alone if only its vehicle is selected, ride if the squad
  * is aboard, get in and drive when the trip is long, otherwise walk (the vehicle follows). */
 function uiSquadGo(s, x, y, run) {
+  if (typeof LINES !== "undefined") LINES.onManualMove(G, s);   /* a move order releases a line / checkpoint */
   if (typeof TRANSPORT !== "undefined") {
     if (TRANSPORT.drive(G, s, x, y)) return;
     if (UI.selVehicle && TRANSPORT.driveEmpty(G, s, x, y)) return;
@@ -391,6 +394,15 @@ function uiLeftClick(e) {
     }
   }
   else if (UI.mode === "arrest") uiArrest(e);
+  else if (UI.mode === "line" && typeof LINES !== "undefined") {
+    var lr = LINES.formLine(G, UI.selected, t.x, t.y);
+    UI.say(lr === "ok" ? "Squad " + (UI.selected + 1) + " moving into a police line" : (lr === "wide" ? "Too wide to seal - pick a narrower street"
+      : (lr === "role" ? "This squad cannot form a line" : "Pick a street tile")));
+  }
+  else if (UI.mode === "checkpoint" && typeof LINES !== "undefined") {
+    var cr2 = LINES.checkpoint(G, UI.selected, t.x, t.y);
+    UI.say(cr2 === "ok" ? "Squad " + (UI.selected + 1) + " sets up a checkpoint" : (cr2 === "role" ? "This squad cannot run a checkpoint" : "Pick a street tile"));
+  }
   else if (!Police.isWalkable(G, t.x, t.y)) UI.say("Squad cannot go there");
   else {
     uiSquadGo(UI.selected, t.x + 0.5, t.y + 0.5, !!e.shiftKey);
