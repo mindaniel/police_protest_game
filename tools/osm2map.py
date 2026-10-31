@@ -231,11 +231,12 @@ def step5_roads(ctx, elements):
         if not cls: continue
         ch, wm, is_road = cls
         pts = ctx.geom_to_tiles(e['geometry'])
-        # minimum widths so traffic works: real roads fit two cars side by side (3 tiles),
+        # minimum widths so traffic works: real roads fit two cars plus pavements (4 tiles),
         # alleys/service roads and pedestrian streets one car (2), footpaths stay 1
         hw = t.get('highway')
         if ch == 'a': mt = 1
         elif hw in ('service', 'track', 'pedestrian') or ch == 'P': mt = 2
+        elif hw in ('trunk', 'primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link'): mt = 4
         else: mt = 3
         if ch == 'P':
             raster_stroke(ctx, pts, wm, 'P', is_road=True, min_tiles=mt)
@@ -463,9 +464,10 @@ def step11_shops(ctx, elements):
             cands.append((pts[0][0], pts[0][1], nm))
     chosen = []
     placed = []
+    cap = max(22, (w * h) // 1100)   # bigger maps get more shops
     cands.sort(key=lambda c: (c[0]-w/2)**2 + (c[1]-h/2)**2)
     for cx, cy, name in cands:
-        if len(chosen) >= 22 and len(cands) > 22:
+        if len(chosen) >= cap and len(cands) > cap:
             if any((cx - px)**2 + (cy - py)**2 < 25 for px, py in placed):
                 continue
         front = find_shop_front(ctx, cx, cy)
@@ -483,13 +485,13 @@ def step11_shops(ctx, elements):
         if fx+1 < w: ctx.grid[fy][fx+1] = 'S'
         chosen.append({'id': len(chosen)+1, 'name': name, 'x': fx, 'y': fy})
         placed.append((fx, fy))
-        if len(chosen) >= 22: break
+        if len(chosen) >= cap: break
     osm_count = len(chosen)
     # generic fill
     generic_names = ['Cafe', 'Bakery', 'Newsagent', 'Corner Shop', 'Pub', 'Bookshop',
                      'Florist', 'Deli', 'Barber', 'Chemist', 'Phone Shop', 'Clothes']
     attempts = 0
-    while len(chosen) < 16 and attempts < 2000:
+    while len(chosen) < max(16, cap * 2 // 3) and attempts < 6000:
         attempts += 1
         x = 1 + (attempts * 37) % (w - 3)
         y = 1 + (attempts * 53) % (h - 2)
@@ -581,9 +583,222 @@ def write_js(ctx, name, mid, out):
     lines.append('  ],')
     lines.append('  shops: %s,' % json.dumps(shops))
     lines.append('  plaza: %s,' % json.dumps(ctx.plaza))
+    lines.append('  sites: %s,' % json.dumps(getattr(ctx, 'sites', []), ensure_ascii=False))
     lines.append('  decor: { trees: %s, terraces: [], metro: [] } });' % json.dumps(ctx.trees))
     with open(out, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
+
+def step14_sites(ctx, elements):
+    import math
+    W, H = ctx.w, ctx.h
+
+    def tags_of(e):
+        return e.get("tags") or {}
+
+    def name_of(t):
+        return t.get("name:en") or t.get("name")
+
+    def inside_ratio_and_box(pts):
+        if not pts:
+            return None
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        x0, y0 = math.floor(min(xs)), math.floor(min(ys))
+        x1, y1 = math.ceil(max(xs)), math.ceil(max(ys))
+        w, h = x1 - x0, y1 - y0
+        if w <= 0 or h <= 0:
+            return None
+        # clamp/overlap with map
+        cx0, cy0 = max(0, x0), max(0, y0)
+        cx1, cy1 = min(W, x1), min(H, y1)
+        if cx1 <= cx0 or cy1 <= cy0:
+            return None
+        total = w * h
+        inter = (cx1 - cx0) * (cy1 - cy0)
+        if inter * 2 < total:
+            return None
+        return (x0, y0, w, h)
+
+    def classify(t):
+        g = t.get
+        name = name_of(t) or ""
+        nl = name.lower()
+        b = g("building", "")
+        a = g("amenity", "")
+        # gov
+        if a == "townhall" or b == "government" or g("office") == "government" or g("government") or a == "courthouse":
+            return "gov"
+        if b == "public" and any(k in nl for k in ["palais", "hall", "parliament", "ministry", "hôtel de ville", "hotel de ville", "tribunal", "court", "banque"]):
+            return "gov"
+        # church
+        if a == "place_of_worship" or b in ("church", "cathedral", "chapel", "mosque", "temple", "synagogue"):
+            return "church"
+        # theatre
+        if a in ("theatre", "arts_centre") or g("tourism") == "museum" or b == "civic":
+            return "theatre"
+        # column
+        if g("historic") == "monument" or g("man_made") == "tower" or g("memorial") == "column" or g("obelisk") is not None or g("memorial") == "obelisk":
+            return "column"
+        if g("tourism") == "attraction" and any(k in nl for k in ["column", "colonne", "tower", "tour"]):
+            return "column"
+        # statue
+        if g("historic") == "memorial" and g("memorial") == "statue":
+            return "statue"
+        if g("tourism") == "artwork" and g("artwork_type") in ("statue", "sculpture"):
+            return "statue"
+        if g("historic") == "monument":
+            return "statue"
+        return None
+
+    def hash_tight_box(box):
+        x0, y0, w, h = box
+        cells = []
+        for yy in range(max(0, y0), min(H, y0 + h)):
+            row = ctx.grid[yy]
+            for xx in range(max(0, x0), min(W, x0 + w)):
+                if row[xx] == '#':
+                    cells.append((xx, yy))
+        if len(cells) < 6:
+            return None
+        xs = [c[0] for c in cells]
+        ys = [c[1] for c in cells]
+        nx0, ny0 = min(xs), min(ys)
+        nx1, ny1 = max(xs) + 1, max(ys) + 1
+        return (nx0, ny0, nx1 - nx0, ny1 - ny0)
+
+    def grow_node_hash(tx, ty):
+        if not (0 <= ty < H and 0 <= tx < W) or ctx.grid[ty][tx] != '#':
+            return None
+        x0, y0, x1, y1 = tx, ty, tx + 1, ty + 1  # exclusive
+        # grow right/left while full column is '#'
+        def col_all(x, ya, yb):
+            return 0 <= x < W and all(0 <= yy < H and ctx.grid[yy][x] == '#' for yy in range(ya, yb))
+        def row_all(y, xa, xb):
+            return 0 <= y < H and all(0 <= xx < W and ctx.grid[y][xx] == '#' for xx in range(xa, xb))
+        changed = True
+        while changed:
+            changed = False
+            if x1 - x0 < 12 and col_all(x1, y0, y1):
+                x1 += 1; changed = True
+            elif x1 - x0 < 12 and col_all(x0 - 1, y0, y1):
+                x0 -= 1; changed = True
+            if y1 - y0 < 10 and row_all(y1, x0, x1):
+                y1 += 1; changed = True
+            elif y1 - y0 < 10 and row_all(y0 - 1, x0, x1):
+                y0 -= 1; changed = True
+        return (x0, y0, x1 - x0, y1 - y0)
+
+    def clamp_box(b):
+        x, y, w, h = b
+        x0, y0 = max(0, x), max(0, y)
+        x1, y1 = min(W, x + w), min(H, y + h)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return (x0, y0, x1 - x0, y1 - y0)
+
+    found = []  # (type, name, box)
+
+    for e in elements:
+        t = tags_of(e)
+        typ = classify(t)
+        if not typ:
+            continue
+        name = name_of(t)
+        if not name:
+            continue
+        et = e.get("type")
+        if et == "node":
+            if "lat" not in e:
+                continue
+            tx, ty = ctx.to_tile(e["lat"], e["lon"])
+            tx, ty = int(math.floor(tx)), int(math.floor(ty))
+            if typ in ("statue", "column"):
+                box = (tx, ty, 1, 1)
+            else:
+                box = grow_node_hash(tx, ty)
+                if not box:
+                    continue
+            box = clamp_box(box)
+            if box:
+                found.append((typ, name, box))
+        else:
+            geoms = []
+            if et == "way":
+                g = e.get("geometry")
+                if g:
+                    geoms.append(g)
+            elif et == "relation":
+                for m in e.get("members", []):
+                    if m.get("role") == "outer" and m.get("geometry"):
+                        geoms.append(m["geometry"])
+            if not geoms:
+                continue
+            pts = []
+            for g in geoms:
+                pts.extend(ctx.geom_to_tiles(g))
+            box = inside_ratio_and_box(pts)
+            if not box:
+                continue
+            if typ in ("gov", "church", "theatre"):
+                box = hash_tight_box(box)
+                if not box:
+                    continue
+            elif typ in ("statue", "column"):
+                x, y, w, h = box
+                if w > 3 or h > 3:
+                    cx, cy = x + w // 2, y + h // 2
+                    box = (cx - 1, cy - 1, 2, 2)
+            box = clamp_box(box)
+            if box:
+                found.append((typ, name, box))
+
+    # merge duplicates / overlaps of same type: keep larger
+    merged = []
+    for typ, name, box in found:
+        x, y, w, h = box
+        area = w * h
+        keep = True
+        for i, (t2, n2, b2) in enumerate(merged):
+            if t2 != typ:
+                continue
+            bx, by, bw, bh = b2
+            overlap = not (x + w <= bx or bx + bw <= x or y + h <= by or by + bh <= y)
+            if n2 == name or overlap:
+                a2 = bw * bh
+                if area > a2 or (area == a2 and name < n2):
+                    merged[i] = (typ, name, box)
+                keep = False
+                break
+        if keep:
+            merged.append((typ, name, box))
+
+    weights = {"gov": 5, "column": 4, "church": 3, "statue": 3, "theatre": 1}
+    merged.sort(key=lambda r: (-weights[r[0]], -(r[2][2] * r[2][3])))
+
+    kept = []
+    counts = {"theatre": 0, "church": 0, "gov": 0}
+    limits = {"theatre": 2, "church": 3, "gov": 3}
+    for typ, name, (x, y, w, h) in merged:
+        if len(kept) >= 9:
+            break
+        if typ in counts and counts[typ] >= limits[typ]:
+            continue
+        cx, cy = x + w / 2.0, y + h / 2.0
+        too_close = False
+        for _, _, (kx, ky, kw, kh) in kept:
+            kcx, kcy = kx + kw / 2.0, ky + kh / 2.0
+            if math.hypot(cx - kcx, cy - kcy) < 8:
+                too_close = True
+                break
+        if too_close:
+            continue
+        if typ in counts:
+            counts[typ] += 1
+        kept.append((typ, name, (x, y, w, h)))
+
+    return [{"type": t, "name": n, "x": int(b[0]), "y": int(b[1]),
+             "w": int(b[2]), "h": int(b[3])} for t, n, b in kept]
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -592,7 +807,7 @@ def main():
     ap.add_argument('--id', required=True)
     ap.add_argument('--lat', type=float, required=True)
     ap.add_argument('--lon', type=float, required=True)
-    ap.add_argument('--mpt', type=float, default=4.0)
+    ap.add_argument('--mpt', type=float, default=3.5)
     ap.add_argument('--w', type=int, default=100)
     ap.add_argument('--h', type=int, default=64)
     ap.add_argument('--rotate', default='auto', help="'auto' (align the main street grid), 'none', or degrees")
@@ -620,6 +835,11 @@ def main():
     osm_shops = step11_shops(ctx, elements)
     ctx.plaza = step12_plaza(ctx)
     step13_trees(ctx, elements)
+    ctx.sites = step14_sites(ctx, elements)
+    for s in ctx.sites:   # a landmark is one building, not a whole block: at most 12 x 9 tiles, centred
+        for k, kk, m in (('x', 'w', 12), ('y', 'h', 9)):
+            if s[kk] > m: s[k] += (s[kk] - m) // 2; s[kk] = m
+    print('Sites: %s' % ', '.join('%s:%s' % (s['type'], s['name']) for s in ctx.sites))
     write_js(ctx, a.name, a.id, a.out)
 
     # summary
