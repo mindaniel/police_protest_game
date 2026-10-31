@@ -1,5 +1,5 @@
 var ParisGen = (function () {
-  var W, H, grid, rnd, river, places, blvds, shops, landmarks, decor, plaza, keep;
+  var W, H, grid, rnd, river, places, blvds, shops, landmarks, decor, plaza, keep, lock;
 
   function mulberry(seed) {
     var s = seed >>> 0;
@@ -14,7 +14,14 @@ var ParisGen = (function () {
   function idx(x, y) { return y * W + x; }
   function inb(x, y) { return x >= 0 && y >= 0 && x < W && y < H; }
   function get(x, y) { return inb(x, y) ? grid[idx(x, y)] : '#'; }
-  function set(x, y, c) { if (inb(x, y)) grid[idx(x, y)] = c; }
+  function set(x, y, c) { if (inb(x, y) && !(lock && lock[idx(x, y)])) grid[idx(x, y)] = c; }
+  /* landmark tiles are locked once placed, so later steps cannot cut into them */
+  function lockLandmarks() {
+    for (var i = 0; i < landmarks.length; i++) {
+      var L = landmarks[i];
+      for (var y = L.y; y < L.y + L.h; y++) for (var x = L.x; x < L.x + L.w; x++) if (inb(x, y)) { grid[idx(x, y)] = '#'; lock[idx(x, y)] = 1; }
+    }
+  }
   function isWalk(c) { return c === '.' || c === 'a' || c === 'P' || c === 'G'; }
   function riverY(x) {
     return river.cy + river.amp * Math.sin((x / W) * Math.PI * 1.1 + river.phase);
@@ -58,114 +65,170 @@ var ParisGen = (function () {
       cy: H * (0.55 + rnd() * 0.20),
       amp: 2.5 + rnd() * 3,
       phase: rnd() * Math.PI * 2,
-      width: 4 + Math.floor(rnd() * 2)
+      width: 4 + Math.floor(rnd() * 2),
+      hasIsland: rnd() < 0.5,
+      island: null
     };
-    var hasIsland = rnd() < 0;  // island arms need more work; off for now
-    river.hasIsland = hasIsland;
-    var islCX = W * (0.35 + rnd() * 0.3);
-    var islHalfW = 11, islHalfH = 3;
-    river.island = hasIsland ? { cx: islCX, halfW: islHalfW, halfH: islHalfH } : null;
-    var hw = river.width / 2; // 1.5 -> 3 wide
-    var x, y, cy, top, bot, dx, hh;
+    var icx = W * (0.3 + rnd() * 0.4);
+    var ihw = 10 + Math.floor(rnd() * 3);
+    var IH = 3.5;
+    if (river.hasIsland) river.island = { cx: icx, halfW: ihw, halfH: IH };
+    var hw = river.width / 2;
+    var x, y, cy, d;
+    // water + island land per column
     for (x = 0; x < W; x++) {
       cy = riverY(x);
-      top = Math.floor(cy - hw + 0.5);
-      bot = top + river.width - 1;
-      if (hasIsland) {
-        dx = (x - islCX) / islHalfW;
-        if (Math.abs(dx) < 1) {
-          hh = islHalfH * Math.sqrt(1 - dx * dx);
-          // upper arm 3 wide, island, lower arm 3 wide
-          for (y = top; y <= bot; y++) if (inb(x, y)) set(x, y, 'W');
-          var iTop = Math.floor(cy - hh + 0.5), iBot = iTop + 2 * Math.round(hh) - 1;
-          // clear island band back to land later (do not write W inside it)
-          for (y = Math.floor(cy - hh - 0.5); y <= Math.ceil(cy + hh); y++) {
-            if (inb(x, y) && get(x, y) === 'W') set(x, y, '#');
-          }
-          for (y = iBot + 1; y <= iBot + 3; y++) if (inb(x, y)) set(x, y, 'W');
-          continue;
-        }
+      var dx = (x - icx) / ihw;
+      var onSpan = river.hasIsland && Math.abs(dx) < 1;
+      var hh = onSpan ? IH * Math.sqrt(1 - dx * dx) : -1;
+      var eo = onSpan ? Math.max(hw, hh + 3) : hw;
+      for (y = 0; y < H; y++) {
+        d = Math.abs(y + 0.5 - cy);
+        if (onSpan) {
+          if (d <= hh) set(x, y, '#');
+          else if (d <= eo) set(x, y, 'W');
+        } else if (d <= hw) set(x, y, 'W');
       }
-      for (y = top; y <= bot; y++) if (inb(x, y)) set(x, y, 'W');
     }
-    // 2-tile quay each side, marked keep
+    // outer quays: 2 rows just outside water, follow eo
     for (x = 0; x < W; x++) {
       cy = riverY(x);
-      top = Math.floor(cy - hw + 0.5);
-      bot = top + river.width - 1;
-      if (hasIsland) {
-        dx = (x - islCX) / islHalfW;
-        if (Math.abs(dx) < 1) {
-          hh = islHalfH * Math.sqrt(1 - dx * dx);
-          var iTop = Math.floor(cy - hh + 0.5), iBot = iTop + 2 * Math.round(hh) - 1;
-          for (var q = 1; q <= 2; q++) {
-            if (iTop - q >= 0 && get(x, iTop - q) !== 'W') { set(x, iTop - q, '.'); keep[(iTop - q) * W + x] = 1; }
-            if (iBot + q < H && get(x, iBot + q) !== 'W') { set(x, iBot + q, '.'); keep[(iBot + q) * W + x] = 1; }
-          }
-          continue;
-        }
-      }
-      for (var q2 = 1; q2 <= 2; q2++) {
-        if (top - q2 >= 0 && get(x, top - q2) !== 'W') { set(x, top - q2, '.'); keep[(top - q2) * W + x] = 1; }
-        if (bot + q2 < H && get(x, bot + q2) !== 'W') { set(x, bot + q2, '.'); keep[(bot + q2) * W + x] = 1; }
+      var dx2 = (x - icx) / ihw;
+      var onSpan2 = river.hasIsland && Math.abs(dx2) < 1;
+      var hh2 = onSpan2 ? IH * Math.sqrt(1 - dx2 * dx2) : -1;
+      var eo2 = onSpan2 ? Math.max(hw, hh2 + 3) : hw;
+      var topW = Math.floor(cy - eo2 + 0.5);
+      var botW = Math.floor(cy + eo2 + 0.5);
+      for (var q = 1; q <= 2; q++) {
+        var yt = topW - q, yb = botW + q;
+        if (inb(x, yt) && get(x, yt) !== 'W') { set(x, yt, '.'); keep[idx(x, yt)] = 1; }
+        if (inb(x, yb) && get(x, yb) !== 'W') { set(x, yb, '.'); keep[idx(x, yb)] = 1; }
       }
     }
-    // island ends: cap the two arms with quay so island is enclosed
-    if (hasIsland) {
-      for (x = Math.max(1, Math.floor(islCX - islHalfW - 2)); x <= Math.min(W - 2, Math.ceil(islCX + islHalfW + 2)); x++) {
+    // island quay ring: island tiles touching water
+    if (river.hasIsland) {
+      var ring = [];
+      for (x = 0; x < W; x++) {
         cy = riverY(x);
-        for (y = Math.floor(cy - 6); y <= Math.ceil(cy + 6); y++) {
-          if (inb(x, y) && (get(x, y) === '#' || get(x, y) === '.')) {
-            var nearW = false;
-            for (var yy = y - 1; yy <= y + 1 && !nearW; yy++)
-              for (var xx = x - 1; xx <= x + 1 && !nearW; xx++)
-                if (inb(xx, yy) && get(xx, yy) === 'W') nearW = true;
-            if (nearW) { set(x, y, '.'); keep[y * W + x] = 1; }
-          }
+        var dx3 = (x - icx) / ihw;
+        if (Math.abs(dx3) >= 1) continue;
+        var hh3 = IH * Math.sqrt(1 - dx3 * dx3);
+        for (y = 0; y < H; y++) {
+          if (get(x, y) !== '#') continue;
+          d = Math.abs(y + 0.5 - cy);
+          if (d > hh3) continue;
+          var touchesW = false;
+          if (get(x - 1, y) === 'W' || get(x + 1, y) === 'W' || get(x, y - 1) === 'W' || get(x, y + 1) === 'W') touchesW = true;
+          if (touchesW) ring.push([x, y]);
+        }
+      }
+      for (var r = 0; r < ring.length; r++) {
+        set(ring[r][0], ring[r][1], '.');
+        keep[idx(ring[r][0], ring[r][1])] = 1;
+      }
+      // thin island columns (all-quay)
+      for (x = 0; x < W; x++) {
+        cy = riverY(x);
+        var dx4 = (x - icx) / ihw;
+        if (Math.abs(dx4) >= 1) continue;
+        var hh4 = IH * Math.sqrt(1 - dx4 * dx4);
+        var cnt = 0, minY = H, maxY = -1;
+        for (y = 0; y < H; y++) {
+          d = Math.abs(y + 0.5 - cy);
+          if (d <= hh4 && inb(x, y)) { cnt++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+        }
+        if (cnt > 0 && cnt < 3) {
+          for (y = minY; y <= maxY; y++) { set(x, y, '.'); keep[idx(x, y)] = 1; }
+        }
+      }
+      // cathedral
+      var cw = 6, ch = 3;
+      var cx0 = Math.round(icx - cw / 2), cy0 = Math.round(riverY(icx) - ch / 2);
+      var fits = true;
+      for (var yy = cy0; yy < cy0 + ch; yy++)
+        for (var xx = cx0; xx < cx0 + cw; xx++)
+          if (get(xx, yy) !== '#') fits = false;
+      if (!fits) { cw = 4; ch = 2; cx0 = Math.round(icx - cw / 2); cy0 = Math.round(riverY(icx) - ch / 2); }
+      for (var yy2 = cy0; yy2 < cy0 + ch; yy2++)
+        for (var xx2 = cx0; xx2 < cx0 + cw; xx2++) {
+          if (inb(xx2, yy2)) { set(xx2, yy2, '#'); keep[idx(xx2, yy2)] = 1; }
+        }
+      landmarks.push({ type: 'cathedral', x: cx0, y: cy0, w: cw, h: ch });
+    }
+  }
+
+  function buildBridges() {
+    var xs = [];
+    var isl = river.island;
+    var margin = 6, maxX = W - 9;
+    function overlap(bx) {
+      for (var j = 0; j < xs.length; j++) if (Math.abs(xs[j] - bx) < 16) return true;
+      return false;
+    }
+    if (isl) {
+      var c = landmarks.length ? landmarks[landmarks.length - 1] : null;
+      var b1 = Math.round(isl.cx - isl.halfW * 0.45);
+      var b2 = Math.round(isl.cx + isl.halfW * 0.45);
+      if (c && c.type === 'cathedral') {
+        for (var s = 0; s <= 2; s++) {
+          if (b1 >= c.x && b1 <= c.x + c.w - 1) b1 -= 1;
+          if (b2 >= c.x && b2 <= c.x + c.w - 1) b2 += 1;
+        }
+      }
+      if (b1 < margin) b1 = margin;
+      if (b2 > maxX) b2 = maxX;
+      xs.push(b1);
+      if (Math.abs(b2 - b1) >= 16) xs.push(b2);
+      else if (b1 - 16 >= margin) xs.push(b1 - 16);
+      else if (b1 + 16 <= maxX) xs.push(b1 + 16);
+    }
+    var n = 3 + Math.floor(rnd() * 2);
+    var tries, bx;
+    while (xs.length < n) {
+      tries = 0;
+      do {
+        bx = margin + Math.floor(rnd() * (maxX - margin + 1));
+        tries++;
+        if (!overlap(bx)) break;
+      } while (tries < 200);
+      if (overlap(bx)) {
+        // scan for any free slot
+        var found = false;
+        for (var xx = margin; xx <= maxX; xx++) if (!overlap(xx)) { bx = xx; found = true; break; }
+        if (!found) break;
+      }
+      xs.push(bx);
+    }
+    xs.sort(function (a, b) { return a - b; });
+    for (var k = 0; k < xs.length; k++) {
+      var x0 = xs[k];
+      var cy = riverY(x0);
+      var hw = river.width / 2;
+      var dx = (x0 - (isl ? isl.cx : 0)) / (isl ? isl.halfW : 1);
+      var onSpan = isl && Math.abs(dx) < 1;
+      var hh = onSpan ? isl.halfH * Math.sqrt(1 - dx * dx) : -1;
+      var eo = onSpan ? Math.max(hw, hh + 3) : hw;
+      var top = Math.floor(cy - eo) - 3;
+      var bot = Math.ceil(cy + eo) + 3;
+      for (var y = top; y <= bot; y++) {
+        for (var dxi = 0; dxi < 3; dxi++) {
+          var xx = x0 + dxi;
+          if (!inb(xx, y)) continue;
+          var c = get(xx, y);
+          if (inCathedral(xx, y)) continue;
+          if (c === 'W' || c === '#') { set(xx, y, '.'); keep[idx(xx, y)] = 1; }
         }
       }
     }
   }
 
-  function buildBridges() {
-    var n = 3 + Math.floor(rnd() * 2);
-    var margin = 6;
-    var span = W - margin * 2;
-    var xs = [];
-    for (var i = 0; i < n; i++) {
-      var tries = 0, bx;
-      do {
-        bx = margin + Math.floor(rnd() * span);
-        tries++;
-        var ok = true;
-        for (var j = 0; j < xs.length; j++) {
-          if (Math.abs(xs[j] - bx) < 18) { ok = false; break; }
-        }
-        if (ok) break;
-      } while (tries < 100);
-      xs.push(bx);
+  /* true inside the cathedral rectangle (bridges must not cut through it) */
+  function inCathedral(x, y) {
+    for (var i = 0; i < landmarks.length; i++) {
+      var L = landmarks[i];
+      if (L.type === 'cathedral' && x >= L.x && x < L.x + L.w && y >= L.y && y < L.y + L.h) return true;
     }
-    xs.sort(function (a, b) { return a - b; });
-    var islandBridges = [];
-    for (var k = 0; k < xs.length; k++) {
-      var x0 = xs[k];
-      // find top and bottom of water at this x
-      var cy = riverY(x0);
-      var hw = river.width / 2;
-      var top = Math.floor(cy - hw) - 4;
-      var bot = Math.ceil(cy + hw) + 4;
-      for (var y = top; y <= bot; y++) {
-        for (var dx = 0; dx < 3; dx++) {
-          var xx = x0 + dx;
-          if (!inb(xx, y)) continue;
-          var c = get(xx, y);
-          if (c === 'W' || c === '#') { set(xx, y, '.'); keep[idx(xx, y)] = 1; }
-        }
-      }
-      if (river.hasIsland && Math.abs(x0 - river.island.cx) < river.island.halfW + 10) {
-        islandBridges.push(x0);
-      }
-    }
+    return false;
   }
 
   function buildPlaces() {
@@ -410,6 +473,7 @@ var ParisGen = (function () {
       var other = side === 0 || side === 1 ? get(x + 1, y + (side === 0 ? -1 : 1)) :
         (side === 2 ? get(x - 1, y) : get(x + 2, y));
       if (other !== '.') continue;
+      if (lock[idx(x, y)] || lock[idx(x + 1, y)]) continue;  // never on a landmark
       // gap check: don't put next to existing shops
       var near = false;
       for (var dy = -2; dy <= 2; dy++)
@@ -434,10 +498,15 @@ var ParisGen = (function () {
     if (!plaza) return;
     var start = idx(Math.round(plaza.x), Math.round(plaza.y));
     if (start < 0 || start >= W * H || !isWalk(grid[start])) {
-      // find any walkable
-      start = -1;
-      for (var i = 0; i < grid.length; i++) if (isWalk(grid[i])) { start = i; break; }
-      if (start < 0) return;
+      // the centre may be a monument: start from the nearest walkable tile
+      var best = -1, bd = 1e9, px = Math.round(plaza.x), py = Math.round(plaza.y);
+      for (var i = 0; i < grid.length; i++) {
+        if (!isWalk(grid[i])) continue;
+        var ddx = (i % W) - px, ddy = ((i / W) | 0) - py, dd = ddx * ddx + ddy * ddy;
+        if (dd < bd) { bd = dd; best = i; }
+      }
+      if (best < 0) return;
+      start = best;
     }
     var visited = new Uint8Array(W * H);
     var stack = [start];
@@ -691,15 +760,19 @@ var ParisGen = (function () {
     grid = new Array(W * H);
     for (var i = 0; i < grid.length; i++) grid[i] = '#';
     shops = []; landmarks = []; decor = { trees: [], terraces: [], metro: [] };
-    places = []; blvds = []; plaza = null; keep = new Uint8Array(W * H);
+    places = []; blvds = []; plaza = null; keep = new Uint8Array(W * H); lock = null;
 
+    lock = new Uint8Array(W * H);
     buildRiver();
+    lockLandmarks();
     buildBridges();
     buildPlaces();
+    lockLandmarks();
     buildBoulevards();
     buildRues();
     buildGardens();
     buildMainSquare();
+    lockLandmarks();
     placeShops();
     cleanSlivers();
     addLanes();

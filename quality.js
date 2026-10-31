@@ -10,7 +10,7 @@ var QUALITY = (function () {
       smoke: 4, nightLights: "full", agentBob: true
     },
     low: {
-      pixelScale: 0.65, dprCap: 1, fpsCap: 30, placards: false, ghosts: false,
+      pixelScale: 0.8, dprCap: 1, fpsCap: 30, placards: false, ghosts: false,
       smoke: 2, nightLights: "simple", agentBob: false
     }
   };
@@ -92,8 +92,8 @@ var QUALITY = (function () {
     _setting = v;
     saveSetting(v);
     if (v === "auto") {
-      // auto starts at medium unless already stepped
-      applyLevel("medium");
+      // auto starts at high and steps down only if needed
+      applyLevel("high");
     } else {
       applyLevel(v);
     }
@@ -104,7 +104,7 @@ var QUALITY = (function () {
 
   // init
   _setting = loadSetting();
-  _level = (_setting === "auto") ? "medium" : _setting;
+  _level = (_setting === "auto") ? "high" : _setting;
 
   // ---- public API ----
   function setting() { return _setting; }
@@ -224,7 +224,8 @@ var QUALITY = (function () {
           highThresh = 29.5;
           workOk = _hasWork && _avgWork < 12;
         } else {
-          lowThresh = 38;
+          /* medium -> low only when really struggling (low is blurrier) */
+          lowThresh = _level === "medium" ? 24 : 34;
           highThresh = 57;
           workOk = true;
         }
