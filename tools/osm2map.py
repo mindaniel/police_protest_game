@@ -21,9 +21,14 @@ class MapCtx:
         self.shops_osm = []
         self.trees = []
 
+    rot = 0.0   # radians: map rotated so the main street grid is axis-aligned
+
     def to_tile(self, lat, lon):
         xm = (lon - self.lon0) * self.coslat * 111320.0
         ym = (self.lat0 - lat) * 110574.0
+        if self.rot:
+            c, s = math.cos(self.rot), math.sin(self.rot)
+            xm, ym = xm * c - ym * s, xm * s + ym * c
         return xm / self.mpt + self.w / 2.0, ym / self.mpt + self.h / 2.0
 
     def geom_to_tiles(self, geom):
@@ -117,7 +122,7 @@ def classify_highway(tags):
         try: w = float(str(tags['width']).replace('m', '').strip())
         except: pass
     if tags.get('service') == 'alley':
-        return ('a', 3, False)
+        return ('.', 6, True)   # alleys: one car fits (min 2 tiles, see step5)
     if hw in ('footway', 'path', 'steps', 'cycleway'):
         wt = w / 4.0
         return ('a' if wt <= 1.0 else '.', w, False)
@@ -195,6 +200,29 @@ def step4_water(ctx, elements):
         elif ww == 'canal':
             raster_stroke(ctx, ctx.geom_to_tiles(e['geometry']), 4 * ctx.mpt, 'W', is_road=False, min_tiles=2)
 
+def dominant_rotation(ctx, elements):
+    """Length-weighted histogram of road directions (mod 90 deg) near the centre;
+    returns the rotation that turns the strongest direction onto the x/y axes."""
+    bins = [0.0] * 90
+    rmax = max(ctx.w, ctx.h) * ctx.mpt * 0.6
+    for e in elements:
+        t = e.get('tags') or {}
+        if e.get('type') != 'way' or 'geometry' not in e or not classify_highway(t): continue
+        g = e['geometry']
+        for i in range(len(g) - 1):
+            x0 = (g[i]['lon'] - ctx.lon0) * ctx.coslat * 111320.0; y0 = (ctx.lat0 - g[i]['lat']) * 110574.0
+            x1 = (g[i + 1]['lon'] - ctx.lon0) * ctx.coslat * 111320.0; y1 = (ctx.lat0 - g[i + 1]['lat']) * 110574.0
+            if math.hypot((x0 + x1) / 2, (y0 + y1) / 2) > rmax: continue
+            L = math.hypot(x1 - x0, y1 - y0)
+            if L < 1: continue
+            ang = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 90.0
+            bins[int(ang) % 90] += L
+    # smooth over +-3 degrees and pick the peak
+    sm = [sum(bins[(i + k) % 90] for k in range(-3, 4)) for i in range(90)]
+    peak = max(range(90), key=lambda i: sm[i]) + 0.5
+    if peak > 45: peak -= 90          # rotate by the smaller amount
+    return -math.radians(peak)
+
 def step5_roads(ctx, elements):
     for e in elements:
         t = e.get('tags') or {}
@@ -203,7 +231,12 @@ def step5_roads(ctx, elements):
         if not cls: continue
         ch, wm, is_road = cls
         pts = ctx.geom_to_tiles(e['geometry'])
-        mt = 2 if ch in ('.', 'P') else 1
+        # minimum widths so traffic works: real roads fit two cars side by side (3 tiles),
+        # alleys/service roads and pedestrian streets one car (2), footpaths stay 1
+        hw = t.get('highway')
+        if ch == 'a': mt = 1
+        elif hw in ('service', 'track', 'pedestrian') or ch == 'P': mt = 2
+        else: mt = 3
         if ch == 'P':
             raster_stroke(ctx, pts, wm, 'P', is_road=True, min_tiles=mt)
         else:
@@ -562,11 +595,17 @@ def main():
     ap.add_argument('--mpt', type=float, default=4.0)
     ap.add_argument('--w', type=int, default=100)
     ap.add_argument('--h', type=int, default=64)
+    ap.add_argument('--rotate', default='auto', help="'auto' (align the main street grid), 'none', or degrees")
     ap.add_argument('--out', required=True)
     a = ap.parse_args()
 
     elements = load(a.input)
     ctx = MapCtx(a.lat, a.lon, a.mpt, a.w, a.h)
+    if a.rotate == 'auto':
+        ctx.rot = dominant_rotation(ctx, elements)
+    elif a.rotate != 'none':
+        ctx.rot = math.radians(float(a.rotate))
+    print('rotation: %.1f deg' % math.degrees(ctx.rot))
     add_named_ways(ctx, elements)
 
     step2_parks(ctx, elements)
