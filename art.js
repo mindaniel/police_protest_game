@@ -17,7 +17,7 @@ var Art = (function () {
   var heights = null, tints = null, shopIdx = null;
   var diags = null, shopTiles = null;
   var groundCv = null, _dirty = true, lowMode = false;
-  var trees = [], lamps = [];
+  var trees = [], lamps = [], tprops = [];
   var buckets = [], ghosts = [];
   var palettes = null;
   var _G = null, _rs = 1, _px = 0, _py = 0;
@@ -40,6 +40,8 @@ var Art = (function () {
     return MAP.rows[y].charAt(x);
   }
   function solidCh(ch) { return ch === "#" || ch === "S"; }
+  /* Paris look (theme_paris.js) for Paris-style cities */
+  function paris() { return typeof THEME_PARIS !== "undefined" && typeof MAP !== "undefined" && MAP.style === "paris"; }
   function hAt(x, y) {
     if (x < 0 || y < 0 || x >= W || y >= H) return 0;
     return heights[y * W + x];
@@ -153,7 +155,7 @@ var Art = (function () {
   function computeHeights() {
     heights = new Float32Array(W * H);
     tints = new Uint8Array(W * H);
-    var x, y;
+    var x, y, isParis = paris();
     for (y = 0; y < H; y++) {
       for (x = 0; x < W; x++) {
         var ch = tile(x, y), i = y * W + x;
@@ -162,8 +164,13 @@ var Art = (function () {
           var r = rnd(hash2(lx * 7 + 3, ly * 5 + 11));
           heights[i] = lowMode ? 0.3 : 0.7 + r * 1.0;
           tints[i] = hash2(lx, ly) % 3;
+          if (isParis) {
+            /* landmarks are drawn as props; their tiles stay flat */
+            if (THEME_PARIS.isLandmarkTile(x, y)) heights[i] = 0;
+            else if (!lowMode) heights[i] = THEME_PARIS.height(x, y, ch, r);
+          }
         } else if (ch === "S") {
-          heights[i] = lowMode ? 0.3 : 0.8;
+          heights[i] = lowMode ? 0.3 : (isParis ? THEME_PARIS.height(x, y, ch, 0.5) : 0.8);
           tints[i] = 3;
         }
       }
@@ -321,10 +328,12 @@ var Art = (function () {
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 2.6, 0, Math.PI * 2); g.fill();
     g.strokeStyle = "#b9c3d0"; g.lineWidth = 2;
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
+    if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
   }
 
   function buildProps() {
     trees = []; lamps = [];
+    tprops = paris() ? THEME_PARIS.props() : [];
     var x, y;
     for (y = 0; y < H; y++) {
       for (x = 0; x < W; x++) {
@@ -377,6 +386,7 @@ var Art = (function () {
     if (!heights) { cam.cx = W / 2; cam.cy = H / 2; }
     updateCamera();
     mapShops(G);
+    pickColors();
     buildCity();
     buildGround();
     buildProps();
@@ -653,6 +663,7 @@ var Art = (function () {
     else if (it.k === 3) drawBarrier(ctx, it.o);
     else if (it.k === 4) drawDetainee(ctx, it.o);
     else if (it.k === 5) drawTree(ctx, it.o);
+    else if (it.k === 7) THEME_PARIS.drawProp(ctx, it.o, t);
     else drawLamp(ctx, it.o);
   }
 
@@ -673,6 +684,7 @@ var Art = (function () {
     for (i = 0; i < buckets.length; i++) if (buckets[i]) buckets[i].length = 0;
     for (i = 0; i < trees.length; i++) push(5, trees[i], trees[i].x, trees[i].y);
     for (i = 0; i < lamps.length; i++) push(6, lamps[i], lamps[i].x, lamps[i].y);
+    for (i = 0; i < tprops.length; i++) push(7, tprops[i], tprops[i].x, tprops[i].y);
     if (!G) return;
     /* people outside the visible screen are skipped (cheap projection test) */
     var cx0 = -24, cx1 = LW + 24, cy0 = -16, cy1 = LH + 48;
@@ -896,19 +908,29 @@ var Art = (function () {
   }
 
   /* Fill one row's building paths in the current (world-unit) transform. */
+  var COL_DEFAULT = { wall: "#9fb0c4", window: "#8193aa", tops: ["#c5d0dd", "#bccad9", "#cbd5e1"],
+    shopWall: "#eadfc9", shopTop: "#f3ece0", roofSide: "#b3c0cf", roofTop: "#e6ebf1" };
+  var COL = COL_DEFAULT;
+  function pickColors() {
+    COL = COL_DEFAULT;
+    if (!paris()) return;
+    var c = THEME_PARIS.colors;
+    COL = { wall: c.wall, window: c.window, tops: c.tops, shopWall: c.shopWall, shopTop: c.shopTop,
+      roofSide: c.roofBoxSide || "#7d8a99", roofTop: c.roofBoxTop || "#b0bac6" };
+  }
   function fillPaths(ctx, p) {
-    ctx.fillStyle = "#9fb0c4"; ctx.fill(p.sw);
-    ctx.fillStyle = "#8193aa"; ctx.fill(p.winS);
-    ctx.fillStyle = "#c5d0dd"; ctx.fill(p.tops[0]);
-    ctx.fillStyle = "#bccad9"; ctx.fill(p.tops[1]);
-    ctx.fillStyle = "#cbd5e1"; ctx.fill(p.tops[2]);
+    ctx.fillStyle = COL.wall; ctx.fill(p.sw);
+    ctx.fillStyle = COL.window; ctx.fill(p.winS);
+    ctx.fillStyle = COL.tops[0]; ctx.fill(p.tops[0]);
+    ctx.fillStyle = COL.tops[1]; ctx.fill(p.tops[1]);
+    ctx.fillStyle = COL.tops[2]; ctx.fill(p.tops[2]);
     if (p.shop) {
-      ctx.fillStyle = "#eadfc9"; ctx.fill(p.shS);
-      ctx.fillStyle = "#f3ece0"; ctx.fill(p.shTop);
+      ctx.fillStyle = COL.shopWall; ctx.fill(p.shS);
+      ctx.fillStyle = COL.shopTop; ctx.fill(p.shTop);
     }
     if (p.roof) {
-      ctx.fillStyle = "#b3c0cf"; ctx.fill(p.rS);
-      ctx.fillStyle = "#e6ebf1"; ctx.fill(p.rTop);
+      ctx.fillStyle = COL.roofSide; ctx.fill(p.rS);
+      ctx.fillStyle = COL.roofTop; ctx.fill(p.rTop);
     }
   }
 
