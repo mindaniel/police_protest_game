@@ -651,14 +651,11 @@ var Crowd = (function () {
       /* choking on tear gas: run away from the cloud (gas.js sets the heading) */
       vx = a._gasFx; vy = a._gasFy;
     } else if (mill) {
-      /* Mill about the plaza instead of freezing. */
-      a._wanderT -= dt;
-      if (a._wanderT <= 0) {
-        a._wanderT = 1 + Math.random() * 2;
-        a._wanderA = Math.random() * Math.PI * 2;
-      }
-      vx = Math.cos(a._wanderA) * C.wanderSpeed;
-      vy = Math.sin(a._wanderA) * C.wanderSpeed;
+      /* Mill about: turn the wander heading gradually, walk slower. */
+      if (typeof a._wanderA !== "number") a._wanderA = Math.random() * Math.PI * 2;
+      a._wanderA += (Math.random() - 0.5) * 1.2 * dt;
+      vx = Math.cos(a._wanderA) * C.wanderSpeed * 0.6;
+      vy = Math.sin(a._wanderA) * C.wanderSpeed * 0.6;
       /* milling about is walking: recover stamina */
       if (typeof a.stamina !== "number") a.stamina = 100;
       a.stamina = Math.min(100, a.stamina + C.staminaRegen * dt);
@@ -693,9 +690,19 @@ var Crowd = (function () {
         vx = dir.x * sp;
         vy = dir.y * sp;
         if (a.state === "agitated") {
-          /* reduced obedience: random jitter, occasional pull toward police */
-          vx += (Math.random() - 0.5) * C.agitJitter;
-          vy += (Math.random() - 0.5) * C.agitJitter;
+          /* reduced obedience: slowly drifting jitter, occasional pull toward police */
+          if (typeof a._jx !== "number") { a._jx = 0; a._jy = 0; a._jT = 0; a._jtx = 0; a._jty = 0; }
+          a._jT -= dt;
+          if (a._jT <= 0) {
+            a._jT = 1.5;
+            a._jtx = (Math.random() - 0.5) * C.agitJitter;
+            a._jty = (Math.random() - 0.5) * C.agitJitter;
+          }
+          var je = Math.min(1, 2 * dt);
+          a._jx += (a._jtx - a._jx) * je;
+          a._jy += (a._jty - a._jy) * je;
+          vx += a._jx;
+          vy += a._jy;
           if (G.officers.length && Math.random() < 0.02) {
             var off = G.officers[Math.floor(Math.random() * G.officers.length)];
             var odx = off.x - a.x, ody = off.y - a.y;
@@ -711,9 +718,9 @@ var Crowd = (function () {
       }
     }
 
-    /* separation from close neighbours */
+    /* smooth separation from close neighbours: weight (1-d/R)^2, summed */
     var sepR = C.sepRadius;
-    var sx = 0, sy = 0, cnt = 0;
+    var sx = 0, sy = 0;
     for (var i = 0; i < nbrs.length; i++) {
       var o = nbrs[i];
       if (o === a || !o.active) continue;
@@ -722,12 +729,14 @@ var Crowd = (function () {
       if (d2 > sepR * sepR) continue;
       if (d2 < 0.0001) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = dx * dx + dy * dy + 0.0001; }
       var d = Math.sqrt(d2);
-      sx += dx / d; sy += dy / d;
-      cnt++;
+      var w = 1 - d / sepR; w *= w;
+      sx += (dx / d) * w; sy += (dy / d) * w;
     }
-    if (cnt) {
-      vx += (sx / cnt) * C.sepStrength;
-      vy += (sy / cnt) * C.sepStrength;
+    var smag = Math.sqrt(sx * sx + sy * sy);
+    if (smag > 0.04) {
+      var k = C.sepStrength * 1.6;
+      vx += sx * k;
+      vy += sy * k;
     }
 
     /* police lines: foot officers slow nearby protesters (firm more than calm)
@@ -784,10 +793,19 @@ var Crowd = (function () {
       vx = a.vx + (vx - a.vx) * ek; vy = a.vy + (vy - a.vy) * ek;
     }
 
+    /* cap step distance (mainly for LOD agents stepping with dt*4) */
+    var maxStep = 0.12;
+    var sdx = vx * dt, sdy = vy * dt;
+    var sd2 = sdx * sdx + sdy * sdy;
+    if (sd2 > maxStep * maxStep) {
+      var sd = Math.sqrt(sd2);
+      sdx = sdx / sd * maxStep; sdy = sdy / sd * maxStep;
+    }
+
     /* per-axis collision so agents slide along walls instead of sticking */
-    var nx = a.x + vx * dt;
+    var nx = a.x + sdx;
     if (!collides(G, nx, a.y)) a.x = nx;
-    var ny = a.y + vy * dt;
+    var ny = a.y + sdy;
     if (!collides(G, a.x, ny)) a.y = ny;
 
     /* vehicles are solid obstacles in random city mode */
@@ -1043,6 +1061,10 @@ var Crowd = (function () {
 
     var queryR = Math.max(CONFIG.moodSpreadRadius, CONFIG.sepRadius);
 
+    /* LOD: agents deep in a settled crowd only refresh every 4th step */
+    G._lodTick = ((G._lodTick || 0) + 1) & 3;
+    var inner = 0;
+
     /* mood changes slowly: each agent updates it every 4th step (staggered),
      * with the time since its last update; neighbour lists stay per step */
     G._moodTick = ((G._moodTick || 0) + 1) & 3;
@@ -1053,17 +1075,50 @@ var Crowd = (function () {
       am._moodDt = (am._moodDt || 0) + dt;
       if (((i + G._moodTick) & 3) === 0) { updateMood(G, am, am._nbrs, am._moodDt); am._moodDt = 0; }
     }
+
     for (i = 0; i < agents.length; i++) {
       var sa = agents[i];
       if (!sa.active || sa.role !== "peaceful") continue;
       if (zoneMode) tendZone(G, sa);
       else if (sa._site >= 0) applySite(G, sa);
     }
+
     for (i = 0; i < agents.length; i++) {
       var mv = agents[i];
       if (!mv.active) continue;
-      moveAgent(G, mv, mv._nbrs || [], dt);
+      var ownStep = ((i + G._lodTick) & 3) === 0;
+
+      /* decide INNER on the agent's own 4th step */
+      if (ownStep) {
+        var isInner = false;
+        if (mv.role === "peaceful" && !mv._leaving &&
+            !(mv._gasUntil > G.time) && !mv._push &&
+            !mv.arrested && !mv.escorting && mv.mood < 70) {
+          var mmill;
+          if (mv._zone >= 0 && mv._flow) {
+            mmill = mv._flow[Math.floor(mv.y) * MAP.width + Math.floor(mv.x)] === 0;
+          } else {
+            mmill = tileChar(Math.floor(mv.x), Math.floor(mv.y)) === "P";
+          }
+          if (mmill && (mv._nbrs ? mv._nbrs.length : 0) >= 7) isInner = true;
+        }
+        mv._inner = isInner;
+      }
+
+      if (mv._inner) {
+        if (ownStep) {
+          /* refresh neighbours and move with dt*4 */
+          mv._nbrs = neighbors(G, mv.x, mv.y, queryR);
+          moveAgent(G, mv, mv._nbrs || [], dt * 4);
+        }
+        inner++;
+      } else {
+        moveAgent(G, mv, mv._nbrs || [], dt);
+      }
     }
+
+    G.stats.innerAgents = inner;
+
     for (i = 0; i < agents.length; i++) {
       var a = agents[i];
       if (a.active && a.role === "rioter") updateRioter(G, a, dt);
