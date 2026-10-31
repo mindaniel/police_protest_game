@@ -16,6 +16,7 @@ class MapCtx:
         self.coslat = math.cos(math.radians(lat0))
         self.grid = [['#'] * w for _ in range(h)]
         self.roads = [[' '] * w for _ in range(h)]  # road strokes mask
+        self.built = [[False] * w for _ in range(h)]  # tiles covered by a real building outline
         self.named_ways = []
         self.shops_osm = []
         self.trees = []
@@ -57,6 +58,7 @@ def raster_poly(ctx, rings, ch, allow_over_road=False):
                 if not allow_over_road and ctx.roads[ty][tx] == 'R':
                     continue
                 ctx.grid[ty][tx] = ch
+                if ch == '#': ctx.built[ty][tx] = True
 
 def seg_dist(px, py, ax, ay, bx, by):
     dx, dy = bx - ax, by - ay
@@ -225,6 +227,19 @@ def step6_buildings(ctx, elements):
                 if m.get('role') == 'inner': inners.append(ring)
                 else: outers.append(ring)
             if outers: raster_poly(ctx, outers + inners, '#')
+
+def step7_waterfront(ctx, dist=3):
+    # unmapped land next to water is a walkable promenade, not a building
+    g = ctx.grid
+    for y in range(ctx.h):
+        for x in range(ctx.w):
+            if g[y][x] != '#' or ctx.built[y][x]: continue
+            near = False
+            for yy in range(max(0, y - dist), min(ctx.h, y + dist + 1)):
+                for xx in range(max(0, x - dist), min(ctx.w, x + dist + 1)):
+                    if g[yy][xx] == 'W': near = True; break
+                if near: break
+            if near: g[y][x] = 'G'
 
 def step8_connectivity(ctx):
     w, h = ctx.w, ctx.h
@@ -559,6 +574,7 @@ def main():
     step4_water(ctx, elements)
     step5_roads(ctx, elements)
     step6_buildings(ctx, elements)
+    step7_waterfront(ctx)
     step8_connectivity(ctx)
     step9_thin(ctx)
     openings = edge_openings(ctx)
