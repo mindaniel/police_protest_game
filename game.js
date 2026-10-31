@@ -288,8 +288,14 @@ function frame(now) {
   if (hasUI) UI.tick(G);
 
   if (!Game.paused && (!hasUI || UI.screen === "playing")) {
-    var step = Math.min(dt, 0.05);
-    for (var i = 0; i < Game.speed; i++) {
+    /* fixed-rate simulation (30 steps per game second), independent of the frame rate:
+     * at 60 fps the crowd is simulated every other frame, which halves its cost */
+    var step = 1 / (CONFIG.simHz || 30);
+    Game.simAcc = (Game.simAcc || 0) + dt * Game.speed;
+    var nSteps = 0;
+    while (Game.simAcc >= step && nSteps < 8 * Game.speed) { Game.simAcc -= step; nSteps++; }
+    if (nSteps >= 8 * Game.speed) Game.simAcc = 0;   /* far behind (slow machine): drop the backlog */
+    for (var i = 0; i < nSteps; i++) {
       Crowd.update(G, step);
       if (typeof Police !== "undefined") Police.update(G, step);
       if (typeof FX !== "undefined") FX.update(G, step);

@@ -233,7 +233,7 @@ var ParisGen = (function () {
 
   function buildPlaces() {
     places = [];
-    var n = W >= 90 ? 3 : 2;
+    var n = W >= 90 ? Math.max(3, Math.round(3 * W * H / 6400)) : 2;   /* more squares on bigger maps */
     var attempts = 0;
     while (places.length < n && attempts < 200) {
       attempts++;
@@ -460,7 +460,7 @@ var ParisGen = (function () {
     var streets = ["Bd Haussmann", "Rue de Rivoli", "Bd Saint-Michel", "Rue du Bac",
       "Av de l'Opera", "Rue Montorgueil", "Bd Voltaire", "Rue de la Paix",
       "Quai des Orfevres", "Rue Oberkampf"];
-    var target = 18 + Math.floor(rnd() * 5);
+    var target = Math.round((18 + Math.floor(rnd() * 5)) * Math.max(1, W * H / 6400));
     var placed = 0;
     var attempts = 0;
     var usedStreets = {};

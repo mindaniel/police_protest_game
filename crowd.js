@@ -40,7 +40,7 @@ var Crowd = (function () {
   /* Solid = buildings, shops, blocked tiles (barriers, van), off-map. */
   function isSolidTile(G, x, y) {
     if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return true;
-    var g = staticSolid();
+    var g = solidRows === MAP.rows ? solidGrid : staticSolid();   /* fast path: grid still valid */
     if (g[y * MAP.width + x]) return true;
     var b = G.blocked;
     if (b !== undefined && b.size > 0 && b.has(x + "," + y)) return true;
@@ -51,7 +51,7 @@ var Crowd = (function () {
    * Only used by BFS; collision tests must NOT consult G.vehBlocked. */
   function isPathWall(G, x, y) {
     if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return true;
-    var g = staticSolid();
+    var g = solidRows === MAP.rows ? solidGrid : staticSolid();   /* fast path: grid still valid */
     if (g[y * MAP.width + x]) return true;
     var b = G.blocked;
     if (b !== undefined && b.size > 0 && b.has(x + "," + y)) return true;
@@ -67,7 +67,7 @@ var Crowd = (function () {
   /* Circle-vs-tile test used to stop agents ending a step inside a wall. */
   function collides(G, x, y, r) {
     if (r === undefined || r === null) r = CONFIG.agentRadius;
-    var W = MAP.width, H = MAP.height, g = staticSolid();
+    var W = MAP.width, H = MAP.height, g = solidRows === MAP.rows ? solidGrid : staticSolid();
     var blocked = G.blocked, hasBlocked = blocked !== undefined && blocked.size > 0;
     var x0 = Math.floor(x - r), x1 = Math.floor(x + r);
     var y0 = Math.floor(y - r), y1 = Math.floor(y + r);

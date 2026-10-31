@@ -61,7 +61,7 @@ var Art = (function () {
   /* ---------- camera / projection ---------- */
   function updateCamera() {
     cam.fit = LW / (W * TS);
-    cam.zoom = clamp(cam.zoom, 1, 6);
+    cam.zoom = clamp(cam.zoom, 1, 6 * Math.max(1, W / 100));   /* big maps can zoom in further */
     cam.S = cam.fit * cam.zoom;
     var vw = LW / cam.S, vh = LH / cam.S;
     var x0 = W * TS - vw, y0 = H * TS - vh;
@@ -669,9 +669,12 @@ var Art = (function () {
 
   function init(G) {
     _G = G;
+    var resized = W !== MAP.width || H !== MAP.height;
     W = MAP.width; H = MAP.height;
     LW = W * CONFIG.tileSize; LH = H * CONFIG.tileSize;
-    if (!heights) { cam.cx = W / 2; cam.cy = H / 2; }
+    /* ground detail per tile: 32 px, less on big maps so the cached ground stays under ~4096 px */
+    GT = Math.max(16, Math.min(32, Math.floor(4096 / Math.max(W, H))));
+    if (!heights || resized) { cam.cx = W / 2; cam.cy = H / 2; cam.zoom = 1; }
     updateCamera();
     mapShops(G);
     pickColors();
@@ -1043,13 +1046,17 @@ var Art = (function () {
     for (i = 0; i < lamps.length; i++) push(6, lamps[i], lamps[i].x, lamps[i].y);
     for (i = 0; i < tprops.length; i++) push(7, tprops[i], tprops[i].x, tprops[i].y);
     if (!G) return;
-    /* people outside the visible screen are skipped (cheap projection test) */
+    /* people outside the visible screen are skipped (cheap projection test);
+     * when people are only a few pixels tall they are drawn later as batched dots */
     var cx0 = -24, cx1 = LW + 24, cy0 = -16, cy1 = LH + 48;
+    lodDots = 15 * _rs * cam.S < (CONFIG.peopleLodPx || 9);
+    lodN = 0;
     if (G.agents) for (i = 0; i < G.agents.length; i++) {
       var a = G.agents[i];
       if (!a.active) continue;
       P(a.x, a.y, 0);
       if (_px < cx0 || _px > cx1 || _py < cy0 || _py > cy1) continue;
+      if (lodDots) { lodList[lodN++] = a; continue; }
       push(0, a, a.x, a.y);
     }
     if (G.barriers) for (i = 0; i < G.barriers.length; i++) {
@@ -1060,6 +1067,42 @@ var Art = (function () {
     if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) push(2, G.vehicles[i], G.vehicles[i].x, G.vehicles[i].y);
     if (G.officers) for (i = 0; i < G.officers.length; i++) push(1, G.officers[i], G.officers[i].x, G.officers[i].y);
     if (G.detainees) for (i = 0; i < G.detainees.length; i++) push(4, G.detainees[i], G.detainees[i].x, G.detainees[i].y);
+  }
+
+  /* Far zoom: every visible person as a small dot, one path per colour. */
+  var lodDots = false, lodList = [], lodN = 0, lodGroups = {};
+  function drawLodPeople(ctx) {
+    var s = cam.S, r = Math.max(1.2, 2.6 * s), h = Math.max(2, 7 * s), i, k, a, col, g;
+    for (k in lodGroups) if (lodGroups.hasOwnProperty(k)) lodGroups[k].n = 0;
+    for (i = 0; i < lodN; i++) {
+      a = lodList[i];
+      col = (a.role === "rioter" && _G && _G.time < a.revealedUntil) ? "#ff2338" : agentPal(a).base;
+      g = lodGroups[col] || (lodGroups[col] = { n: 0, xs: [], ys: [] });
+      P(a.x, a.y, 0);
+      g.xs[g.n] = _px; g.ys[g.n] = _py; g.n++;
+    }
+    ctx.fillStyle = "rgba(0,0,0,0.28)";   /* shadows */
+    ctx.beginPath();
+    for (k in lodGroups) if (lodGroups.hasOwnProperty(k)) {
+      g = lodGroups[k];
+      for (i = 0; i < g.n; i++) ctx.rect(g.xs[i] - r, g.ys[i] - r * 0.4, r * 2, r * 0.8);
+    }
+    ctx.fill();
+    for (k in lodGroups) if (lodGroups.hasOwnProperty(k)) {
+      g = lodGroups[k];
+      if (!g.n) continue;
+      ctx.fillStyle = k;
+      ctx.beginPath();
+      for (i = 0; i < g.n; i++) ctx.rect(g.xs[i] - r * 0.7, g.ys[i] - h, r * 1.4, h);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#3a2c22";   /* heads */
+    ctx.beginPath();
+    for (k in lodGroups) if (lodGroups.hasOwnProperty(k)) {
+      g = lodGroups[k];
+      for (i = 0; i < g.n; i++) ctx.rect(g.xs[i] - r * 0.55, g.ys[i] - h - r, r * 1.1, r * 1.1);
+    }
+    ctx.fill();
   }
 
   function drawBackdrop(ctx) {
@@ -1504,6 +1547,7 @@ var Art = (function () {
     }
     drawDecals(ctx, G);
     collect(G);
+    if (lodDots && lodN) drawLodPeople(ctx);   /* before buildings, so buildings hide people behind them */
     for (d = 0; d < ND; d++) {
       b = buckets[d];
       if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);

@@ -75,6 +75,11 @@ UI.init = function (g, game) {
         else if (k === "ArrowLeft") LEVELS.prev();
         else if (k >= "1" && k <= "4" && k.length === 1) LEVELS.set(LEVELS.list()[+k - 1].id);
       }
+      if ((k === "m" || k === "M") && typeof CityGen !== "undefined" && CityGen.nextSize) {
+        UI.say("Map size: " + CityGen.nextSize());
+        restartGame(false);
+        UI.screen = "title";
+      }
       if (e.code === "Enter") { uiStartLevel(); e.preventDefault(); }
       return;
     }
@@ -756,9 +761,10 @@ UI.draw = function (ctx, g) {
       "2. Press Enter in planning to start the match.",
       "3. During the match, command squads and use your tools.",
       "",
-      "The controls are shown in the top-right corner during the game (? hides them)."
+      "The controls are shown in the top-right corner during the game (? hides them).",
+      (typeof CityGen !== "undefined" && CityGen.sizeLabel ? "Map size: " + CityGen.sizeLabel() + "   (M to change - bigger maps need a faster computer)" : "")
     ], typeof LEVELS !== "undefined" ? "Choose a difficulty, then press Enter" : "Press Enter to go to planning");
-    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 10 * 22 + 60);
+    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 11 * 22 + 60);
     return;
   }
 

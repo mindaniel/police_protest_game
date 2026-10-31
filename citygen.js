@@ -178,7 +178,7 @@ var CityGen = (function () {
 
     /* shopping strips: a few blocks spread around the city */
     var shopBlocks = shuffle(leaves.filter(function (q) { return !q.kind && q.w * q.h >= 30; }));
-    shopBlocks = spacedPick(shopBlocks, 4, 16, [pc], 7);
+    shopBlocks = spacedPick(shopBlocks, Math.round(4 * Math.max(1, W * H / 6400)), 16, [pc], 7);   /* more shopping streets on bigger maps */
     var shops = [], sid = 1, names = shuffle(SHOP_NAMES.slice()), streets = shuffle(STREET_NAMES.slice());
     for (k = 0; k < shopBlocks.length; k++) {
       var rim = rimFacingRoad(shopBlocks[k]), placed = 0, skip = ri(0, 2);
@@ -325,6 +325,22 @@ var CityGen = (function () {
     return m;
   }
 
+  /* Map size: the screen layout stays 1600 x 1024 logical px, so tiles get smaller on bigger maps. */
+  var SIZES = { normal: [100, 64, "Normal"], large: [140, 90, "Large"], huge: [180, 115, "Huge"] };
+  var sizeId = "normal";
+  try { var ss = localStorage.getItem("ppg_mapsize"); if (SIZES[ss]) sizeId = ss; } catch (e0) { /* storage blocked */ }
+  function nextSize() {
+    sizeId = sizeId === "normal" ? "large" : (sizeId === "large" ? "huge" : "normal");
+    try { localStorage.setItem("ppg_mapsize", sizeId); } catch (e1) { /* storage blocked */ }
+    return sizeLabel();
+  }
+  function sizeLabel() { var z = SIZES[sizeId]; return z[2] + " (" + z[0] + " x " + z[1] + ")"; }
+  function applySize(real) {
+    var z = real ? SIZES.normal : SIZES[sizeId];   /* real maps are baked at 100 x 64 */
+    MAP.width = z[0]; MAP.height = z[1];
+    CONFIG.tileSize = 1600 / MAP.width;
+  }
+
   /* City style: "paris" (default when paris.js is loaded), "grid" or "real". */
   var style = "paris";
   function setStyle(s) { style = (s === "grid" || s === "real") ? s : "paris"; }
@@ -343,6 +359,7 @@ var CityGen = (function () {
   /* Replace the fixed map with a generated one and set the city-mode tuning. */
   function apply(seed) {
     var st = getStyle();
+    applySize(st === "real");
     var m = st === "real" ? generateReal(seed, MAP.width, MAP.height)
       : (st === "paris" ? generateParis(seed, MAP.width, MAP.height) : generate(seed, MAP.width, MAP.height));
     MAP.realName = m.realName || null;
@@ -379,7 +396,7 @@ var CityGen = (function () {
     return m;
   }
 
-  return { generate: generate, generateParis: generateParis, generateReal: generateReal, apply: apply, setStyle: setStyle, getStyle: getStyle, nextStyle: nextStyle };
+  return { generate: generate, generateParis: generateParis, generateReal: generateReal, apply: apply, setStyle: setStyle, getStyle: getStyle, nextStyle: nextStyle, nextSize: nextSize, sizeLabel: sizeLabel };
 })();
 
 if (typeof module !== "undefined" && module.exports) {
