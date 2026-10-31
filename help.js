@@ -83,6 +83,7 @@ var HELP = (function () {
       ln("X + click", "snatch squad", 2);
       ln("P + click", "police line across a street", 1);
       ln("C + click", "checkpoint: stop and search", 2);
+      ln("M (Shift+M exit)", "order the crowd to disperse", 1);
       ln("D + click", "drone", 2);
       ln("right click", "squad's own tool", 2);
       var lo = info.loadout;

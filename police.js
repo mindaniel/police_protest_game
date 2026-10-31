@@ -825,6 +825,7 @@ var Police = (function () {
         seen[a.id] = true;
         var rise = 0;
         if (a.hasTool || a.revealedUntil > G.time || a.violentUntil > G.time) rise = 15;
+        if (rise > 0 && a.defiant) rise *= 2;   /* stayed and fought after a dispersal order */
         if (rise > 0) a.suspicion = Math.min(100, a.suspicion + rise * dt);
       }
     }

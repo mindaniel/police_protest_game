@@ -1575,6 +1575,7 @@ var Art = (function () {
     if (typeof METERS !== "undefined") METERS.draw(ctx, G);
     if (typeof REINFORCE !== "undefined") REINFORCE.draw(ctx, G);
     if (typeof LINES !== "undefined") LINES.draw(ctx, G);
+    if (typeof DISPERSE !== "undefined") DISPERSE.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
     if (typeof ATMO !== "undefined") ATMO.drawNight(ctx, G);   /* headlights, police lights, fires through the dark */

@@ -333,8 +333,30 @@ var Crowd = (function () {
     if (best >= 0) G._zoneLoad[best] = (G._zoneLoad[best] || 0) + 1;
   }
 
+  /* Dispersal (disperse.js): a field toward one exit tile, cached until the flow changes. */
+  function fieldTo(G, x, y) {
+    if (!G._fieldTo || G._fieldToVer !== G.flowVersion) { G._fieldTo = {}; G._fieldToVer = G.flowVersion; }
+    var k = x + "," + y;
+    if (!G._fieldTo[k]) G._fieldTo[k] = bfsFrom(G, [{ x: x, y: y }]);
+    return G._fieldTo[k];
+  }
+  /* A peaceful protester stops protesting and walks down the field (out of the city). */
+  function sendAway(G, a, field) {
+    leaveZone(G, a);
+    a._leaving = true;
+    a._flow = field;
+    a._flowVer = G.flowVersion;
+  }
+  function removeAgent(G, a) {
+    leaveZone(G, a);
+    a.active = false;
+    a.pending = false;
+    a.left = true;
+  }
+
   /* Keep a protester's area field fresh, and now and then march elsewhere. */
   function tendZone(G, a) {
+    if (a._leaving) return;   /* going home after a dispersal order */
     if (a._zone >= 0 && a._flowVer !== G.flowVersion) {
       a._flow = zoneField(G, a._zone);
       a._flowVer = G.flowVersion;
@@ -621,7 +643,7 @@ var Crowd = (function () {
     var rioterBusy = a.role === "rioter" && (a.state === "attackShop" || a.state === "flee");
     /* protest-area agents mill once inside their area; others on the plaza */
     var zoneMode = a.role === "peaceful" && a._zone >= 0 && a._flow;
-    var mill = !rioterBusy && (zoneMode
+    var mill = !rioterBusy && !a._leaving && (zoneMode
       ? a._flow[Math.floor(a.y) * MAP.width + Math.floor(a.x)] === 0
       : onPlaza);
 
@@ -1223,6 +1245,9 @@ var Crowd = (function () {
     rebuildFlow: rebuildFlow,
     collides: collides,
     neighbors: neighbors,
+    fieldTo: fieldTo,
+    sendAway: sendAway,
+    removeAgent: removeAgent,
     arrest: arrest,
     loudspeaker: loudspeaker,
     push: push,

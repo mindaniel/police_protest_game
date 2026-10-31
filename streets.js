@@ -9,8 +9,8 @@ var STREETS = (function () {
   function paint(g, W, H, GT, tile, style) {
     var T = GT, i, x, y, px, py, n, k;
     var isGrid = style !== "paris";
-    var roadBase = isGrid ? "#5b5f66" : "#6a655d";
-    var paveCol = isGrid ? "#b9bcc1" : "#d8cdb6";
+    var roadBase = isGrid ? "#c4c8ce" : "#cfc8bb";   /* light, clean road like before */
+    var paveCol = isGrid ? "#eceef1" : "#ece6da";
     var cobBase = isGrid ? "#7b7770" : "#9a8e7a";
     var plazaBase = isGrid ? "#c9c6bf" : "#e3d8c2";
     var grassCol = isGrid ? "#6e9a52" : "#7da15e";
@@ -34,14 +34,14 @@ var STREETS = (function () {
         if (lite) spkA.push([sx, sy, a]); else spkB.push([sx, sy, a]);
       }
       // patches
-      var np = h(x, y, 77) * 3 | 0;
+      var np = 0;   /* no dirty patches */
       for (i = 0; i < np; i++) {
         g.fillStyle = rgba(0, 0, 0, 0.06);
         var pw = T * (0.3 + h(x, y, 80 + i) * 0.4), ph = T * (0.2 + h(x, y, 90 + i) * 0.3);
         g.fillRect(ox + h(x, y, 100 + i) * (T - pw), oy + h(x, y, 110 + i) * (T - ph), pw, ph);
       }
       // crack
-      if (h(x, y, 42) < 1 / 12) {
+      if (false) {   /* no cracks */
         g.strokeStyle = "rgba(30,30,30,0.35)"; g.lineWidth = 1;
         g.beginPath();
         var cx = ox + T * 0.2, cy = oy + T * 0.3;
@@ -55,11 +55,11 @@ var STREETS = (function () {
       }
     }
     // draw speckles batched
-    g.fillStyle = "rgba(220,220,225,0.18)";
+    g.fillStyle = "rgba(255,255,255,0.10)";
     g.beginPath();
     for (i = 0; i < spkA.length; i++) g.rect(spkA[i][0], spkA[i][1], 1, 1);
     g.fill();
-    g.fillStyle = "rgba(20,20,22,0.18)";
+    g.fillStyle = "rgba(60,60,70,0.07)";
     g.beginPath();
     for (i = 0; i < spkB.length; i++) g.rect(spkB[i][0], spkB[i][1], 1, 1);
     g.fill();
@@ -137,8 +137,8 @@ var STREETS = (function () {
       while (tile(x, y + vd) === ".") vd++;
       runs[x + "," + y] = { h: hl + hr - 1, v: vu + vd - 1, hl: hl - 1, hr: hr - 1, vu: vu - 1, vd: vd - 1 };
     }
-    var white = "rgba(240,240,240,0.85)";
-    var edge = "rgba(240,240,240,0.55)";
+    var white = "rgba(255,255,255,1)";
+    var edge = "rgba(255,255,255,0.9)";
     var drawn = {};
     for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== ".") continue;
@@ -218,7 +218,7 @@ var STREETS = (function () {
           if (drawn[key]) continue;
           drawn[key] = 1;
           var aox = ax * T, aoy = ay * T;
-          g.fillStyle = "rgba(245,245,245,0.9)";
+          g.fillStyle = "rgba(255,255,255,1)";
           if (ad === "v") {
             for (var b = 0; b < T; b += T * 0.36) g.fillRect(aox + b, aoy, T * 0.18, T);
           } else {
@@ -246,9 +246,9 @@ var STREETS = (function () {
           g.fillStyle = "#555";
           for (var db = 0; db < 3; db++) g.fillRect(dxp + 1 + db * (T * 0.25 - 2) / 3, dyp + 1, 1, T * 0.1 - 2);
         }
-      } else if (h(x, y, 7) < 1 / 25) {
+      } else if (h(x, y, 7) < 1 / 90) {
         var mhx = ox4 + T * 0.5, mhy = oy4 + T * 0.5, mr = T * 0.16;
-        g.fillStyle = "#3d3f44";
+        g.fillStyle = "#8d9096";
         g.beginPath(); g.arc(mhx, mhy, mr, 0, Math.PI * 2); g.fill();
         g.strokeStyle = "rgba(200,200,200,0.4)"; g.lineWidth = 1;
         g.beginPath(); g.arc(mhx, mhy, mr - 1, 0, Math.PI * 2); g.stroke();

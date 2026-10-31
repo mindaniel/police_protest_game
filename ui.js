@@ -126,6 +126,15 @@ UI.init = function (g, game) {
     if (uiOrderKey(e, k)) { /* standing orders */ }
     else if (uiSelectKey(k)) { /* squad selected */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
+    else if ((k === "m" || k === "M") && typeof DISPERSE !== "undefined") {
+      if (e.shiftKey || !DISPERSE.exitOf(G)) { UI.mode = "exit"; UI.say("Click near the map edge where the crowd should leave"); }
+      else {
+        var dv = (typeof TRANSPORT !== "undefined") ? TRANSPORT.vehicleOf(G, UI.selected) : null;
+        var dr = DISPERSE.order(G, UI.selected, dv ? dv.x : 0, dv ? dv.y : 0);
+        UI.say(dr === "ok" ? "Dispersal ordered - calm people will leave by the exit" : (dr === "nocar" ? "Needs a squad with a car, van or truck (loudspeaker)"
+          : (dr === "busy" ? "A dispersal order is already running" : "Set an exit first (Shift+M)")));
+      }
+    }
     else if ((k === "p" || k === "P") && typeof LINES !== "undefined") { UI.mode = "line"; UI.say("Click across a street: squad " + (UI.selected + 1) + " forms a police line there (max 7 tiles wide)"); }
     else if ((k === "c" || k === "C") && typeof LINES !== "undefined") { UI.mode = "checkpoint"; UI.say("Click a street: squad " + (UI.selected + 1) + " stops and searches people passing there"); }
     else if ((k === "e" || k === "E") && typeof TRANSPORT !== "undefined") {
@@ -394,6 +403,10 @@ function uiLeftClick(e) {
     }
   }
   else if (UI.mode === "arrest") uiArrest(e);
+  else if (UI.mode === "exit" && typeof DISPERSE !== "undefined") {
+    DISPERSE.setExit(G, t.x, t.y);
+    UI.say(DISPERSE.exitOf(G) ? "Exit set - press M with a car/van squad to order the crowd to disperse" : "No exit there - click nearer the map edge");
+  }
   else if (UI.mode === "line" && typeof LINES !== "undefined") {
     var lr = LINES.formLine(G, UI.selected, t.x, t.y);
     UI.say(lr === "ok" ? "Squad " + (UI.selected + 1) + " moving into a police line" : (lr === "wide" ? "Too wide to seal - pick a narrower street"
