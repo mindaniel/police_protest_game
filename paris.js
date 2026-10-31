@@ -1,5 +1,5 @@
 var ParisGen = (function () {
-  var W, H, grid, rnd, river, places, blvds, shops, landmarks, decor, plaza;
+  var W, H, grid, rnd, river, places, blvds, shops, landmarks, decor, plaza, keep;
 
   function mulberry(seed) {
     var s = seed >>> 0;
@@ -17,11 +17,11 @@ var ParisGen = (function () {
   function set(x, y, c) { if (inb(x, y)) grid[idx(x, y)] = c; }
   function isWalk(c) { return c === '.' || c === 'a' || c === 'P' || c === 'G'; }
   function riverY(x) {
-    return river.cy + river.amp * Math.sin((x / W) * Math.PI * 2 + river.phase);
+    return river.cy + river.amp * Math.sin((x / W) * Math.PI * 1.1 + river.phase);
   }
 
   // Draw a thick line by stepping and filling tiles whose center is within rad
-  function drawLine(x0, y0, x1, y1, rad, ch, stopFn) {
+  function drawLine(x0, y0, x1, y1, rad, ch, stopFn, mark) {
     var dx = x1 - x0, dy = y1 - y0;
     var len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.001) return;
@@ -41,6 +41,7 @@ var ParisGen = (function () {
             if (ch === '.' && (c === 'W' || c === 'P' || c === 'G')) continue;
             if (ch === 'a' && c !== '#') continue;
             set(xx, yy, ch);
+            if (mark) keep[idx(xx, yy)] = 1;
           }
         }
       }
@@ -55,59 +56,73 @@ var ParisGen = (function () {
   function buildRiver() {
     river = {
       cy: H * (0.55 + rnd() * 0.20),
-      amp: 4 + rnd() * 4,
+      amp: 2.5 + rnd() * 3,
       phase: rnd() * Math.PI * 2,
       width: 4 + Math.floor(rnd() * 2)
     };
-    var hasIsland = rnd() < 0.5;
+    var hasIsland = rnd() < 0;  // island arms need more work; off for now
     river.hasIsland = hasIsland;
     var islCX = W * (0.35 + rnd() * 0.3);
-    var islHalfW = 11, islHalfH = 3.5;
+    var islHalfW = 11, islHalfH = 3;
     river.island = hasIsland ? { cx: islCX, halfW: islHalfW, halfH: islHalfH } : null;
-    for (var x = 0; x < W; x++) {
-      var cy = riverY(x);
-      var hw = river.width / 2;
+    var hw = river.width / 2; // 1.5 -> 3 wide
+    var x, y, cy, top, bot, dx, hh;
+    for (x = 0; x < W; x++) {
+      cy = riverY(x);
+      top = Math.floor(cy - hw + 0.5);
+      bot = top + river.width - 1;
       if (hasIsland) {
-        var dx = (x - islCX) / islHalfW;
+        dx = (x - islCX) / islHalfW;
         if (Math.abs(dx) < 1) {
-          var hh = islHalfH * Math.sqrt(1 - dx * dx);
-          // two arms each 3 wide around island
-          for (var y = Math.floor(cy - hw - hh - 3); y <= Math.ceil(cy + hw + hh + 3); y++) {
-            if (!inb(x, y)) continue;
-            var inIsl = Math.abs(y - cy) <= hh;
-            if (!inIsl) set(x, y, 'W');
+          hh = islHalfH * Math.sqrt(1 - dx * dx);
+          // upper arm 3 wide, island, lower arm 3 wide
+          for (y = top; y <= bot; y++) if (inb(x, y)) set(x, y, 'W');
+          var iTop = Math.floor(cy - hh + 0.5), iBot = iTop + 2 * Math.round(hh) - 1;
+          // clear island band back to land later (do not write W inside it)
+          for (y = Math.floor(cy - hh - 0.5); y <= Math.ceil(cy + hh); y++) {
+            if (inb(x, y) && get(x, y) === 'W') set(x, y, '#');
+          }
+          for (y = iBot + 1; y <= iBot + 3; y++) if (inb(x, y)) set(x, y, 'W');
+          continue;
+        }
+      }
+      for (y = top; y <= bot; y++) if (inb(x, y)) set(x, y, 'W');
+    }
+    // 2-tile quay each side, marked keep
+    for (x = 0; x < W; x++) {
+      cy = riverY(x);
+      top = Math.floor(cy - hw + 0.5);
+      bot = top + river.width - 1;
+      if (hasIsland) {
+        dx = (x - islCX) / islHalfW;
+        if (Math.abs(dx) < 1) {
+          hh = islHalfH * Math.sqrt(1 - dx * dx);
+          var iTop = Math.floor(cy - hh + 0.5), iBot = iTop + 2 * Math.round(hh) - 1;
+          for (var q = 1; q <= 2; q++) {
+            if (iTop - q >= 0 && get(x, iTop - q) !== 'W') { set(x, iTop - q, '.'); keep[(iTop - q) * W + x] = 1; }
+            if (iBot + q < H && get(x, iBot + q) !== 'W') { set(x, iBot + q, '.'); keep[(iBot + q) * W + x] = 1; }
           }
           continue;
         }
       }
-      for (var y2 = Math.floor(cy - hw); y2 <= Math.ceil(cy + hw); y2++) {
-        set(x, y2, 'W');
+      for (var q2 = 1; q2 <= 2; q2++) {
+        if (top - q2 >= 0 && get(x, top - q2) !== 'W') { set(x, top - q2, '.'); keep[(top - q2) * W + x] = 1; }
+        if (bot + q2 < H && get(x, bot + q2) !== 'W') { set(x, bot + q2, '.'); keep[(bot + q2) * W + x] = 1; }
       }
     }
-    // quays: 2-tile road along both banks
-    for (var x2 = 0; x2 < W; x2++) {
-      var cy2 = riverY(x2);
-      var hw2 = river.width / 2;
-      var top = Math.floor(cy2 - hw2);
-      var bot = Math.ceil(cy2 + hw2);
-      if (hasIsland) {
-        var dx2 = (x2 - islCX) / islHalfW;
-        if (Math.abs(dx2) < 1) {
-          var hh2 = islHalfH * Math.sqrt(1 - dx2 * dx2);
-          top = Math.floor(cy2 - hw2 - hh2 - 3);
-          bot = Math.ceil(cy2 + hw2 + hh2 + 3);
-          // quay around island
-          for (var yy = Math.floor(cy2 - hh2) - 1; yy <= Math.ceil(cy2 + hh2) + 1; yy++) {
-            for (var xx = Math.floor(x2) - 1; xx <= Math.ceil(x2) + 1; xx++) {
-              if (!inb(xx, yy)) continue;
-              if (get(xx, yy) === '#' || get(xx, yy) === '.') set(xx, yy, '.');
-            }
+    // island ends: cap the two arms with quay so island is enclosed
+    if (hasIsland) {
+      for (x = Math.max(1, Math.floor(islCX - islHalfW - 2)); x <= Math.min(W - 2, Math.ceil(islCX + islHalfW + 2)); x++) {
+        cy = riverY(x);
+        for (y = Math.floor(cy - 6); y <= Math.ceil(cy + 6); y++) {
+          if (inb(x, y) && (get(x, y) === '#' || get(x, y) === '.')) {
+            var nearW = false;
+            for (var yy = y - 1; yy <= y + 1 && !nearW; yy++)
+              for (var xx = x - 1; xx <= x + 1 && !nearW; xx++)
+                if (inb(xx, yy) && get(xx, yy) === 'W') nearW = true;
+            if (nearW) { set(x, y, '.'); keep[y * W + x] = 1; }
           }
         }
-      }
-      for (var q = 1; q <= 2; q++) {
-        if (top - q >= 0 && get(x2, top - q) !== 'W') set(x2, top - q, '.');
-        if (bot + q < H && get(x2, bot + q) !== 'W') set(x2, bot + q, '.');
       }
     }
   }
@@ -144,7 +159,7 @@ var ParisGen = (function () {
           var xx = x0 + dx;
           if (!inb(xx, y)) continue;
           var c = get(xx, y);
-          if (c === 'W' || c === '#') set(xx, y, '.');
+          if (c === 'W' || c === '#') { set(xx, y, '.'); keep[idx(xx, y)] = 1; }
         }
       }
       if (river.hasIsland && Math.abs(x0 - river.island.cx) < river.island.halfW + 10) {
@@ -209,7 +224,7 @@ var ParisGen = (function () {
     }
     for (var k = 0; k < between.length; k++) {
       var bl = between[k];
-      drawLine(bl.x0, bl.y0, bl.x1, bl.y1, 1.6, '.', null);
+      drawLine(bl.x0, bl.y0, bl.x1, bl.y1, 1.6, '.', null, true);
     }
     // other boulevards: radial to edge or until hitting a place
     for (var m = 0; m < blvds.length; m++) {
@@ -237,47 +252,36 @@ var ParisGen = (function () {
         drawLine(bv.x, bv.y, targetX, targetY, 1.6, '.', function (cx, cy) {
           var c = get(Math.round(cx), Math.round(cy));
           return c === 'W';
-        });
+        }, true);
       }
     }
   }
 
   function buildRues() {
-    var cellW = 24, cellH = 20;
+    var cellW = 26, cellH = 22;
     for (var cy = 0; cy < H; cy += cellH) {
       for (var cx = 0; cx < W; cx += cellW) {
-        var ang;
-        if (rnd() < 0.5) ang = 0;
-        else ang = (rnd() - 0.5) * 2 * (35 * Math.PI / 180);
+        var ang = rnd() < 0.5 ? 0 : (rnd() - 0.5) * 2 * (30 * Math.PI / 180);
         var cxm = cx + cellW / 2, cym = cy + cellH / 2;
-        var spacing = 9 + Math.floor(rnd() * 6);
-        // two directions
+        var spacing = 11 + Math.floor(rnd() * 5);
         for (var dir = 0; dir < 2; dir++) {
           var th = ang + dir * Math.PI / 2;
           var ux = Math.cos(th), uy = Math.sin(th);
           var vx = -uy, vy = ux;
-          for (var off = -30; off <= 30; off += spacing) {
+          for (var off = -26; off <= 26; off += spacing) {
             var ox = cxm + vx * off, oy = cym + vy * off;
-            var p0x = ox - ux * 30, p0y = oy - uy * 30;
-            var p1x = ox + ux * 30, p1y = oy + uy * 30;
-            drawRueSegment(p0x, p0y, p1x, p1y, cx, cy, cx + cellW, cy + cellH);
-          }
-        }
-      }
-    }
-    // lanes through large blocks
-    for (var y = 2; y < H - 2; y++) {
-      for (var x = 2; x < W - 2; x++) {
-        if (get(x, y) === '#' && get(x + 1, y) === '#' && get(x + 2, y) === '#' &&
-            get(x, y + 1) === '#' && get(x + 1, y + 1) === '#' && get(x + 2, y + 1) === '#' &&
-            get(x, y - 1) === '#' && get(x + 1, y - 1) === '#' && get(x + 2, y - 1) === '#' &&
-            get(x, y + 2) === '#' && get(x + 1, y + 2) === '#' && get(x + 2, y + 2) === '#' &&
-            get(x, y - 2) === '#' && get(x + 1, y - 2) === '#' && get(x + 2, y - 2) === '#') {
-          if (rnd() < 0.6) {
-            var len = 2 + Math.floor(rnd() * 4);
-            for (var l = 0; l < len; l++) {
-              if (inb(x + 1, y + l)) set(x + 1, y + l, 'a');
+            var p0x = ox - ux * 26, p0y = oy - uy * 26;
+            var p1x = ox + ux * 26, p1y = oy + uy * 26;
+            // skip if >half the line's 3-wide band is already road (parallel overlap)
+            var cnt = 0, steps = 40;
+            for (var s = 0; s <= steps; s++) {
+              var t = s / steps;
+              var rx = Math.round(p0x + (p1x - p0x) * t), ry = Math.round(p0y + (p1y - p0y) * t);
+              if (!inb(rx, ry)) continue;
+              if (get(rx, ry) === '.' || get(rx, ry) === 'W') cnt++;
             }
+            if (cnt > steps * 0.55) continue;
+            drawRueSegment(p0x, p0y, p1x, p1y, cx, cy, cx + cellW, cy + cellH);
           }
         }
       }
@@ -299,9 +303,9 @@ var ParisGen = (function () {
           if (!inb(xx, yy)) continue;
           if (xx < minX || xx >= maxX || yy < minY || yy >= maxY) continue;
           var ddx = xx + 0.5 - cx, ddy = yy + 0.5 - cy;
-          if (ddx * ddx + ddy * ddy <= 1.0) {
+          if (ddx * ddx + ddy * ddy <= 0.75 * 0.75 + 0.25) {
             var c = get(xx, yy);
-            if (c === 'W' || c === 'P' || c === 'G') continue;
+            if (c === 'W' || c === 'P' || c === 'G' || c === 'S') continue;
             set(xx, yy, '.');
           }
         }
@@ -456,19 +460,148 @@ var ParisGen = (function () {
   }
 
   function cleanSlivers() {
-    for (var y = 1; y < H - 1; y++) {
-      for (var x = 1; x < W - 1; x++) {
-        if (get(x, y) !== '#') continue;
-        var l = get(x - 1, y), r = get(x + 1, y), u = get(x, y - 1), d = get(x, y + 1);
-        if (isWalk(l) && isWalk(r) && !isWalk(u) && !isWalk(d)) set(x, y, '.');
-        if (isWalk(u) && isWalk(d) && !isWalk(l) && !isWalk(r)) set(x, y, '.');
+    // (a) fill isolated road with building; two passes
+    for (var pass = 0; pass < 2; pass++) {
+      for (var y = 0; y < H; y++) {
+        for (var x = 0; x < W; x++) {
+          if (get(x, y) !== '.') continue;
+          if (keep[y * W + x]) continue;
+          var hasB = false, nearPGW = false;
+          for (var dy = -2; dy <= 2 && !hasB; dy++) {
+            for (var dx = -2; dx <= 2 && !hasB; dx++) {
+              var nx = x + dx, ny = y + dy;
+              if (!inb(nx, ny)) continue;
+              var c = get(nx, ny);
+              if (c === '#' || c === 'S') hasB = true;
+            }
+          }
+          for (var dy2 = -1; dy2 <= 1 && !nearPGW; dy2++) {
+            for (var dx2 = -1; dx2 <= 1 && !nearPGW; dx2++) {
+              var nx2 = x + dx2, ny2 = y + dy2;
+              if (!inb(nx2, ny2)) continue;
+              var c2 = get(nx2, ny2);
+              if (c2 === 'P' || c2 === 'G' || c2 === 'W') nearPGW = true;
+            }
+          }
+          if (!hasB && !nearPGW) set(x, y, '#');
+        }
       }
     }
-    // 2x2 blocks
-    for (var y2 = 0; y2 < H - 1; y2++) {
-      for (var x2 = 0; x2 < W - 1; x2++) {
-        if (get(x2, y2) === '#' && get(x2 + 1, y2) === '#' &&
-            get(x2, y2 + 1) === '#' && get(x2 + 1, y2 + 1) === '#') continue;
+    // (b) remove small '#' pieces; grow if not touching keep
+    var seen = new Uint8Array(W * H);
+    var stack = [];
+    for (var sy = 0; sy < H; sy++) {
+      for (var sx = 0; sx < W; sx++) {
+        var idx = sy * W + sx;
+        if (seen[idx] || get(sx, sy) !== '#') continue;
+        var cells = [];
+        stack.length = 0; stack.push(sx, sy); seen[idx] = 1;
+        var touchesKeep = false;
+        while (stack.length) {
+          var y2 = stack.pop(), x2 = stack.pop();
+          cells.push(x2, y2);
+          if (keep[y2 * W + x2]) touchesKeep = true;
+          for (var dy3 = -1; dy3 <= 1; dy3++) for (var dx3 = -1; dx3 <= 1; dx3++) {
+            if (!dx3 && !dy3) continue;
+            var nx3 = x2 + dx3, ny3 = y2 + dy3;
+            if (!inb(nx3, ny3)) continue;
+            var ni = ny3 * W + nx3;
+            if (!seen[ni] && get(nx3, ny3) === '#') { seen[ni] = 1; stack.push(nx3, ny3); }
+          }
+        }
+        var n = cells.length / 2;
+        if (n >= 4) continue;
+        if (touchesKeep) {
+          for (var k = 0; k < cells.length; k += 2) set(cells[k], cells[k + 1], '.');
+        } else {
+          // grow: add road tiles adjacent (not keep, not other specials)
+          var need = 4 - n;
+          for (var k2 = 0; k2 < cells.length && need > 0; k2 += 2) {
+            var cx = cells[k2], cy = cells[k2 + 1];
+            for (var dy4 = -1; dy4 <= 1 && need > 0; dy4++) for (var dx4 = -1; dx4 <= 1 && need > 0; dx4++) {
+              if (!dx4 && !dy4) continue;
+              var gx = cx + dx4, gy = cy + dy4;
+              if (!inb(gx, gy)) continue;
+              if (keep[gy * W + gx]) continue;
+              var cg = get(gx, gy);
+              if (cg === '.') { set(gx, gy, '#'); cells.push(gx, gy); need--; }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function addLanes() {
+    var seen = new Uint8Array(W * H);
+    var stack = [];
+    for (var sy = 0; sy < H; sy++) {
+      for (var sx = 0; sx < W; sx++) {
+        var idx = sy * W + sx;
+        if (seen[idx] || get(sx, sy) !== '#') continue;
+        // flood fill block of '#'
+        var cells = [];
+        stack.length = 0; stack.push(sx, sy); seen[idx] = 1;
+        while (stack.length) {
+          var y = stack.pop(), x = stack.pop();
+          cells.push(x, y);
+          for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            var nx = x + dx, ny = y + dy;
+            if (!inb(nx, ny)) continue;
+            var ni = ny * W + nx;
+            if (!seen[ni] && get(nx, ny) === '#') { seen[ni] = 1; stack.push(nx, ny); }
+          }
+        }
+        var n = cells.length / 2;
+        if (n < 60) continue;
+        if (rnd() >= 0.6) continue;
+        // bbox
+        var minX = W, maxX = 0, minY = H, maxY = 0;
+        for (var k = 0; k < cells.length; k += 2) {
+          var cx = cells[k], cy = cells[k + 1];
+          if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+        }
+        var w = maxX - minX + 1, h = maxY - minY + 1;
+        var horiz = w >= h;
+        // find straight run through middle of longer direction
+        var midA = horiz ? Math.floor((minY + maxY) / 2) : Math.floor((minX + maxX) / 2);
+        var lo = horiz ? minX : minY, hi = horiz ? maxX : maxY;
+        // try center rows near midA
+        var bestRow = -1, bestLen = 0, bestFrom = 0, bestTo = 0;
+        for (var off2 = 0; off2 <= 2; off2++) {
+          for (var sg = -1; sg <= 1; sg += 2) {
+            var row = midA + sg * off2;
+            if (row < (horiz ? minY : minX) || row > (horiz ? maxY : maxX)) continue;
+            var start = -1, runLen = 0, runFrom = 0, runTo = 0;
+            for (var p = lo; p <= hi + 1; p++) {
+              var ok = p <= hi && (horiz ? get(p, row) === '#' : get(row, p) === '#');
+              if (ok) { if (start < 0) start = p; }
+              else {
+                if (start >= 0 && p - start > runLen) { runLen = p - start; runFrom = start; runTo = p - 1; }
+                start = -1;
+              }
+            }
+            if (runLen > bestLen) { bestLen = runLen; bestRow = row; bestFrom = runFrom; bestTo = runTo; }
+          }
+        }
+        if (bestLen < 8) continue;
+        // all the way through: extend to touch road both ends if adjacent; else half dead-end
+        var reach = bestLen;
+        var fromP = bestFrom, toP = bestTo;
+        // full-through if a road touches either end
+        var roadA = horiz ? (inb(fromP - 1, bestRow) && get(fromP - 1, bestRow) === '.') : (inb(bestRow, fromP - 1) && get(bestRow, fromP - 1) === '.');
+        var roadB = horiz ? (inb(toP + 1, bestRow) && get(toP + 1, bestRow) === '.') : (inb(bestRow, toP + 1) && get(bestRow, toP + 1) === '.');
+        if (!(roadA || roadB)) {
+          // dead end: half length from one side
+          reach = Math.floor(bestLen / 2);
+          if (rnd() < 0.5) toP = fromP + reach - 1;
+          else fromP = toP - reach + 1;
+        }
+        for (var q = fromP; q <= toP; q++) {
+          if (horiz) set(q, bestRow, 'a'); else set(bestRow, q, 'a');
+        }
       }
     }
   }
@@ -558,7 +691,7 @@ var ParisGen = (function () {
     grid = new Array(W * H);
     for (var i = 0; i < grid.length; i++) grid[i] = '#';
     shops = []; landmarks = []; decor = { trees: [], terraces: [], metro: [] };
-    places = []; blvds = []; plaza = null;
+    places = []; blvds = []; plaza = null; keep = new Uint8Array(W * H);
 
     buildRiver();
     buildBridges();
@@ -569,6 +702,7 @@ var ParisGen = (function () {
     buildMainSquare();
     placeShops();
     cleanSlivers();
+    addLanes();
     connectivityFix();
     buildDecor();
 
