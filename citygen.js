@@ -391,6 +391,9 @@ var CityGen = (function () {
     CONFIG.shopDefense = true;          /* glass grades, roller shutters, police deterrence */
     CONFIG.shopBreakSeconds = 15;       /* one rioter on plain open glass */
     CONFIG.nightCycle = true;           /* dusk falls partway through the match */
+    CONFIG.agentSpeedMin = 1.0;         /* calmer walking in the city (tests keep the defaults) */
+    CONFIG.agentSpeedMax = 1.25;
+    CONFIG.wanderSpeed = 0.3;
     if (typeof LEVELS !== "undefined") { LEVELS.apply(); CONFIG._levelId = LEVELS.current().id; }
     if (typeof REINFORCE !== "undefined") REINFORCE.placeStation();   /* police station building */
     return m;

@@ -766,9 +766,16 @@ var Art = (function () {
     return e;
   }
 
+  /* Drawn positions glide toward the simulated ones: no jitter, no 30 Hz steps. */
+  var smoothK = 1, lastDrawT = 0;
+  function smoothPos(e) {
+    if (e._rx === undefined || Math.abs(e._rx - e.x) > 1.5 || Math.abs(e._ry - e.y) > 1.5) { e._rx = e.x; e._ry = e.y; }
+    else { e._rx += (e.x - e._rx) * smoothK; e._ry += (e.y - e._ry) * smoothK; }
+  }
   function drawAgent(ctx, a, t) {
     var s = cam.S;
-    P(a.x, a.y, 0);
+    smoothPos(a);
+    P(a._rx, a._ry, 0);
     var bx = _px, by = _py;
     var sp2 = (a.vx || 0) * (a.vx || 0) + (a.vy || 0) * (a.vy || 0);
     if (sp2 > 0.02 && Q_BOB) by -= Math.abs(Math.sin(t * 11 + a.id)) * 1.3 * s;
@@ -845,6 +852,12 @@ var Art = (function () {
   var OFF_SPECS = {};
   function drawOfficer(ctx, o, t) {
     var s = cam.S, ang = officerAng(o), c = Math.cos(ang), sn = Math.sin(ang);
+    smoothPos(o);
+    var ox0 = o.x, oy0 = o.y;
+    o.x = o._rx; o.y = o._ry;   /* draw at the smoothed spot (restored below) */
+    try { drawOfficerAt(ctx, o, t, s, ang, c, sn); } finally { o.x = ox0; o.y = oy0; }
+  }
+  function drawOfficerAt(ctx, o, t, s, ang, c, sn) {
     var firm = o.stance === "firm", bike = o.baseSpeed >= CONFIG.motorbikeSpeed;
     if (bike) {
       ctx.strokeStyle = "#22262e"; ctx.lineWidth = Math.max(1, 1.6 * s);
@@ -1526,6 +1539,9 @@ var Art = (function () {
   /* graphics quality flags, read once per frame */
   var Q_BOB = true, Q_PLACARDS = true, Q_GHOSTS = true;
   function draw(ctx, G) {
+    var nowT = Date.now() / 1000, fdt = lastDrawT ? Math.min(0.1, nowT - lastDrawT) : 0.016;
+    lastDrawT = nowT;
+    smoothK = 1 - Math.exp(-fdt * 9);   /* about 0.14 per frame at 60 fps */
     if (typeof QUALITY !== "undefined") {
       Q_BOB = QUALITY.flag("agentBob"); Q_PLACARDS = QUALITY.flag("placards"); Q_GHOSTS = QUALITY.flag("ghosts");
     }

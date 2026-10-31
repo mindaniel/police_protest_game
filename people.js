@@ -296,7 +296,7 @@ var PEOPLE = (function () {
 
   function frameFor(id, speed, t) {
     if (speed < 0.15) return 0;
-    var f = t * (4 + speed * 2) + id * 0.37;
+    var f = t * (2.6 + speed * 1.4) + id * 0.37;   /* calmer walk cycle */
     return 1 + (Math.floor(f % 5));
   }
 

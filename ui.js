@@ -66,6 +66,15 @@ UI.init = function (g, game) {
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
+    if (UI.menuOpen) {   /* in-game menu: Esc/Enter resume, R restart, M main menu */
+      if (k === "Escape" || e.code === "Enter") uiMenuAction("resume");
+      else if (k === "r" || k === "R") uiMenuAction("restart");
+      else if (k === "m" || k === "M") uiMenuAction("main");
+      e.preventDefault();
+      return;
+    }
+    if (k === "Escape" && !UI.mode && (UI.screen === "planning" || UI.screen === "playing") &&
+        !(typeof REINFORCE !== "undefined" && REINFORCE.menuOpen())) { uiMenuAction("open"); return; }
     if ((k === "q" || k === "Q") && typeof QUALITY !== "undefined") {
       QUALITY.cycle(); UI.say(QUALITY.label()); return;
     }
@@ -221,6 +230,10 @@ UI.init = function (g, game) {
     var wasDrag = UI._press.drag;
     UI._press = null;
     cv.style.cursor = "default";
+    if (!wasDrag && e.target === cv && (UI.screen === "planning" || UI.screen === "playing")) {
+      var mp = UI.toLogical(e);
+      if (uiMenuClick(mp.x, mp.y)) return;
+    }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
       if (typeof HELP !== "undefined" && UI.screen !== "title" && HELP.hit(hp.x, hp.y)) HELP.toggle();
@@ -325,6 +338,56 @@ function uiSquadGo(s, x, y, run) {
     }
   }
   Police.moveSquad(G, s, x, y, run);
+}
+
+/* ---------- in-game menu ---------- */
+var UI_MENU = { btn: null, items: [] };
+function uiMenuAction(a) {
+  if (a === "open") { UI.menuOpen = true; UI._menuWasPaused = UI.Game.paused; UI.Game.paused = true; return; }
+  UI.menuOpen = false;
+  UI.Game.paused = !!UI._menuWasPaused && a === "resume";
+  if (a === "restart") restartGame(false);
+  else if (a === "main") { restartGame(false); UI.screen = "title"; }
+}
+function uiMenuClick(x, y) {
+  function inR(r) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  if (UI.menuOpen) {
+    for (var i = 0; i < UI_MENU.items.length; i++) if (inR(UI_MENU.items[i])) { uiMenuAction(UI_MENU.items[i].a); return true; }
+    return true;   /* clicks outside the panel do nothing while the menu is open */
+  }
+  if (inR(UI_MENU.btn)) { uiMenuAction("open"); return true; }
+  return false;
+}
+function uiDrawMenu(ctx, w, h) {
+  var k = (MAP.width * CONFIG.tileSize) / (parseFloat(UI.Game.canvas.style.width) || (MAP.width * CONFIG.tileSize));
+  /* MENU button at the right end of the top bar */
+  ctx.save();
+  ctx.font = "bold " + Math.round(12 * k) + "px Consolas, monospace";
+  var bw = Math.round(60 * k), bh = 20;
+  UI_MENU.btn = { x: w - bw - 6, y: 2, w: bw, h: bh };
+  ctx.fillStyle = "#2a3a55"; ctx.fillRect(UI_MENU.btn.x, 2, bw, bh);
+  ctx.strokeStyle = "#5a6f92"; ctx.lineWidth = 1; ctx.strokeRect(UI_MENU.btn.x + 0.5, 2.5, bw - 1, bh - 1);
+  ctx.fillStyle = "#ffffff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("MENU", UI_MENU.btn.x + bw / 2, 12);
+  if (UI.menuOpen) {
+    ctx.fillStyle = "rgba(6,8,14,0.6)"; ctx.fillRect(0, 0, w, h);
+    var pw = Math.round(320 * k), ih = Math.round(44 * k), gap = Math.round(10 * k);
+    var ph = Math.round(60 * k) + 3 * (ih + gap), px = (w - pw) / 2, py = (h - ph) / 2;
+    ctx.fillStyle = "rgba(14,18,28,0.96)"; ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = "#3a4a60"; ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+    ctx.fillStyle = "#9fe0a0"; ctx.font = "bold " + Math.round(18 * k) + "px Consolas, monospace";
+    ctx.fillText("PAUSED", w / 2, py + Math.round(28 * k));
+    var labels = [["Resume  (Esc)", "resume", "#2a9d8f"], ["Restart this city  (R)", "restart", "#3a4a60"], ["Main menu  (M)", "main", "#7a3a3a"]];
+    UI_MENU.items = [];
+    ctx.font = "bold " + Math.round(14 * k) + "px Consolas, monospace";
+    for (var i = 0; i < labels.length; i++) {
+      var r = { x: px + gap * 2, y: py + Math.round(52 * k) + i * (ih + gap), w: pw - gap * 4, h: ih, a: labels[i][1] };
+      UI_MENU.items.push(r);
+      ctx.fillStyle = labels[i][2]; ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = "#ffffff"; ctx.fillText(labels[i][0], r.x + r.w / 2, r.y + r.h / 2);
+    }
+  }
+  ctx.restore();
 }
 
 /* Planning -> live play. */
@@ -927,7 +990,9 @@ UI.draw = function (ctx, g) {
     ctx.restore();
   }
 
-  if (UI.Game.paused && UI.screen === "playing") {
+  if (UI.screen === "planning" || UI.screen === "playing") uiDrawMenu(ctx, w, h);
+
+  if (UI.Game.paused && UI.screen === "playing" && !UI.menuOpen) {
     uiOverlay(ctx, "PAUSED", UI_CONTROLS, "Press Space to resume");
   }
 

@@ -39,7 +39,7 @@ var BUILDINGS = (function () {
   // ---------- roof canvases ----------
   function gridRoofA() {
     var c = mk(128, 128), x = c.getContext("2d"), r = rnd(11), i, y;
-    x.fillStyle = "#3d4147"; x.fillRect(0, 0, 128, 128);
+    x.fillStyle = "#9a9ea4"; x.fillRect(0, 0, 128, 128);   /* light grey membrane (was near-black) */
     // faint seams every 0.5 tile (64 px)
     x.strokeStyle = "rgba(0,0,0,0.18)"; x.lineWidth = 1;
     for (i = 0; i <= 2; i++) {
@@ -80,7 +80,7 @@ var BUILDINGS = (function () {
 
   function gridRoofC() {
     var c = mk(128, 128), x = c.getContext("2d"), r = rnd(37), i, row, col;
-    x.fillStyle = "#8f4a34"; x.fillRect(0, 0, 128, 128);
+    x.fillStyle = "#a87a68"; x.fillRect(0, 0, 128, 128);   /* muted terracotta */
     var rowH = 0.12 * 128; // ~15.36 px
     var rows = Math.ceil(128 / rowH) + 1;
     for (row = 0; row < rows; row++) {
@@ -89,12 +89,12 @@ var BUILDINGS = (function () {
       for (col = -1; col < 9; col++) {
         var tileW = rowH * 0.9;
         var x0 = col * tileW + off;
-        var sh = 0.85 + r() * 0.3;
-        var rr = (143 * sh) | 0, gg = (74 * sh) | 0, bb = (52 * sh) | 0;
+        var sh = 0.95 + r() * 0.08;   /* subtle tile variation, not busy */
+        var rr = (168 * sh) | 0, gg = (122 * sh) | 0, bb = (104 * sh) | 0;
         x.fillStyle = "rgb(" + rr + "," + gg + "," + bb + ")";
         x.fillRect(x0, y0, tileW - 0.6, rowH - 0.6);
         // darker bottom edge, lighter top
-        x.fillStyle = "rgba(0,0,0,0.22)";
+        x.fillStyle = "rgba(0,0,0,0.10)";
         x.fillRect(x0, y0 + rowH - 1.6, tileW - 0.6, 1.2);
         x.fillStyle = "rgba(255,255,255,0.10)";
         x.fillRect(x0, y0, tileW - 0.6, 1);
@@ -122,17 +122,17 @@ var BUILDINGS = (function () {
 
   function parisSlate() {
     var c = mk(128, 128), x = c.getContext("2d"), r = rnd(51), i, row, col;
-    x.fillStyle = "#4d535c"; x.fillRect(0, 0, 128, 128);
+    x.fillStyle = "#7e858e"; x.fillRect(0, 0, 128, 128);   /* lighter slate */
     var rowH = 16, tileW = 16;
     for (row = 0; row < 9; row++) {
       var y0 = row * rowH;
       var off = (row % 2) * (tileW / 2);
       for (col = -1; col < 10; col++) {
         var x0 = col * tileW + off;
-        var sh = 0.85 + r() * 0.3;
-        x.fillStyle = "rgb(" + ((77 * sh) | 0) + "," + ((83 * sh) | 0) + "," + ((92 * sh) | 0) + ")";
+        var sh = 0.95 + r() * 0.08;
+        x.fillStyle = "rgb(" + ((126 * sh) | 0) + "," + ((133 * sh) | 0) + "," + ((142 * sh) | 0) + ")";
         x.fillRect(x0 + 0.5, y0 + 0.5, tileW - 1, rowH - 1);
-        x.fillStyle = "rgba(0,0,0,0.25)";
+        x.fillStyle = "rgba(0,0,0,0.10)";
         x.fillRect(x0 + 0.5, y0 + rowH - 1.5, tileW - 1, 1);
       }
     }
