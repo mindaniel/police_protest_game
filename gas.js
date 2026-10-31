@@ -241,19 +241,11 @@ var GAS = (function () {
         dx = a.x - ne.x; dy = a.y - ne.y;
         var m = Math.sqrt(dx * dx + dy * dy);
         if (m < 0.001) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; m = Math.sqrt(dx * dx + dy * dy) || 1; }
-        var spd = (1.6 + 1.2 * d) * (1 / 5); // per tick at EMIT_RATE
-        var mx = (dx / m) * spd, my = (dy / m) * spd;
-        var collides = false;
-        try { collides = Crowd.collides(G, a.x + mx, a.y + my); } catch (er2) { collides = false; }
-        if (collides) {
-          var okx = true, oky = true;
-          try { okx = !Crowd.collides(G, a.x + mx, a.y); } catch (er3) { okx = true; }
-          try { oky = !Crowd.collides(G, a.x, a.y + my); } catch (er4) { oky = true; }
-          if (okx) a.x += mx;
-          if (oky) a.y += my;
-        } else {
-          a.x += mx; a.y += my;
-        }
+        /* no position jump: the crowd code runs the person away smoothly
+         * along this heading (tiles per second) until _gasUntil */
+        var spd = 1.6 + 1.2 * d;
+        a._gasFx = (dx / m) * spd; a._gasFy = (dy / m) * spd;
+        a._gasUntil = G.time + 0.6;
       }
       // mood
       var gassedAt = a._gassedAt;

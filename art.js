@@ -1578,6 +1578,7 @@ var Art = (function () {
     }
     b = buckets[ND];
     if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
+    if (typeof LANDMARKS !== "undefined") LANDMARKS.draw(ctx, G);   /* city hall, churches, statues */
     drawWater(ctx, G, t);
     if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);   /* fire glow, drifting smoke, wet streets */
     else drawSmoke(ctx, G, t);

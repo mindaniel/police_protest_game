@@ -647,7 +647,10 @@ var Crowd = (function () {
       ? a._flow[Math.floor(a.y) * MAP.width + Math.floor(a.x)] === 0
       : onPlaza);
 
-    if (mill) {
+    if (a._gasUntil > G.time) {
+      /* choking on tear gas: run away from the cloud (gas.js sets the heading) */
+      vx = a._gasFx; vy = a._gasFy;
+    } else if (mill) {
       /* Mill about the plaza instead of freezing. */
       a._wanderT -= dt;
       if (a._wanderT <= 0) {
@@ -775,6 +778,12 @@ var Crowd = (function () {
       a._push = null;
     }
 
+    /* ease into the new velocity (about 0.15 s) so people never snap back and forth */
+    if (typeof a.vx === "number") {
+      var ek = Math.min(1, dt * 7);
+      vx = a.vx + (vx - a.vx) * ek; vy = a.vy + (vy - a.vy) * ek;
+    }
+
     /* per-axis collision so agents slide along walls instead of sticking */
     var nx = a.x + vx * dt;
     if (!collides(G, nx, a.y)) a.x = nx;
@@ -875,6 +884,7 @@ var Crowd = (function () {
 
   function updateRioter(G, r, dt) {
     var C = CONFIG;
+    if (r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;   /* going for a landmark */
 
     if (r.state === "flee") {
       if (G.time >= r._fleeUntil) {

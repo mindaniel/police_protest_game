@@ -8,7 +8,7 @@
 var CityGen = (function () {
   "use strict";
 
-  var W = 0, H = 0, g = null, R = Math.random;
+  var W = 0, H = 0, g = null, R = Math.random, pendingSites = null;
 
   function mulberry(seed) {
     var s = seed >>> 0;
@@ -256,8 +256,25 @@ var CityGen = (function () {
     var want = Math.max(5, Math.min(15, Math.round(crowdN / 75)));
     var rc = spacedPick(junc, want, want > 8 ? 10 : 15, zoneAvoid, 9);
     if (rc.length < want) rc = rc.concat(spacedPick(junc, want - rc.length, 7, rc.concat(zoneAvoid), 7));
+    /* landmarks (city hall, churches, statues...): the first protest areas gather in front of them */
+    var siteList = pendingSites || [];
+    pendingSites = null;
+    if (typeof LANDMARKS !== "undefined") {
+      /* LANDMARKS reads MAP: point it at the map being built for a moment */
+      var keepM = [MAP.rows, MAP.width, MAP.height, MAP.sites], rows0 = [];
+      for (y = 0; y < H; y++) rows0.push(g.slice(y * W, y * W + W).join(""));
+      MAP.rows = rows0; MAP.width = W; MAP.height = H; MAP.sites = siteList.slice();
+      if (!MAP.sites.length) LANDMARKS.autoPlace(null, { x: pc.x, y: pc.y, r: plazaR });
+      var lp = LANDMARKS.rallyPoints();
+      siteList = MAP.sites;
+      MAP.rows = keepM[0]; MAP.width = keepM[1]; MAP.height = keepM[2]; MAP.sites = keepM[3];
+      for (i = 0, k = 0; i < lp.length && k < rc.length; i++) {
+        if (lp[i].type === "statue" && Math.abs(lp[i].x - pc.x) + Math.abs(lp[i].y - pc.y) < plazaR + 2) continue;   /* already the plaza */
+        rc[k++] = { x: lp[i].x, y: lp[i].y, lm: lp[i].name };
+      }
+    }
     var rally = [{ x: pc.x, y: pc.y, r: plazaR, name: "PLAZA", plaza: true }];
-    for (i = 0; i < rc.length; i++) rally.push({ x: rc[i].x, y: rc[i].y, r: want > 8 ? 6 : 5, name: "PROTEST " + String.fromCharCode(65 + i) });
+    for (i = 0; i < rc.length; i++) rally.push({ x: rc[i].x, y: rc[i].y, r: want > 8 ? 6 : 5, name: "PROTEST " + String.fromCharCode(65 + i) + (rc[i].lm ? " - " + rc[i].lm : "") });
     for (i = 0; i < rally.length; i++) rally[i].tiles = area(rally[i].x, rally[i].y, rally[i].r);
 
     /* police staging: wide road tiles away from entrances and protest areas */
@@ -278,7 +295,7 @@ var CityGen = (function () {
     var rows = [];
     for (y = 0; y < H; y++) rows.push(g.slice(y * W, y * W + W).join(""));
     return {
-      rows: rows, shops: shops, plazaCenter: pc, spawnZones: zones, doors: doors,
+      rows: rows, sites: siteList, shops: shops, plazaCenter: pc, spawnZones: zones, doors: doors,
       rallyZones: rally, squadCenters: centers, shopBlocks: shopBlocks
     };
   }
@@ -317,6 +334,7 @@ var CityGen = (function () {
     }
     var shops = [];
     for (i = 0; i < rm.shops.length; i++) shops.push({ id: rm.shops[i].id, name: rm.shops[i].name, x: rm.shops[i].x, y: rm.shops[i].y });
+    pendingSites = rm.sites || [];
     var m = finish({ x: rm.plaza.x, y: rm.plaza.y }, rm.plaza.r, shops, [], doorC);
     /* Paris neighbourhoods get the Paris look */
     m.style = rm.id.indexOf("paris") === 0 ? "paris" : "real";
@@ -326,17 +344,21 @@ var CityGen = (function () {
   }
 
   /* Map size: the screen layout stays 1600 x 1024 logical px, so tiles get smaller on bigger maps. */
-  var SIZES = { normal: [100, 64, "Normal"], large: [140, 90, "Large"], huge: [180, 115, "Huge"] };
+  var SIZES = { normal: [100, 64, "Normal"], large: [140, 90, "Large"], huge: [180, 115, "Huge"], district: [320, 200, "District"] };
   var sizeId = "normal";
   try { var ss = localStorage.getItem("ppg_mapsize"); if (SIZES[ss]) sizeId = ss; } catch (e0) { /* storage blocked */ }
   function nextSize() {
-    sizeId = sizeId === "normal" ? "large" : (sizeId === "large" ? "huge" : "normal");
+    sizeId = sizeId === "normal" ? "large" : (sizeId === "large" ? "huge" : (sizeId === "huge" ? "district" : "normal"));
     try { localStorage.setItem("ppg_mapsize", sizeId); } catch (e1) { /* storage blocked */ }
     return sizeLabel();
   }
   function sizeLabel() { var z = SIZES[sizeId]; return z[2] + " (" + z[0] + " x " + z[1] + ")"; }
-  function applySize(real) {
-    var z = real ? SIZES.normal : SIZES[sizeId];   /* real maps are baked at 100 x 64 */
+  function applySize(real, seed) {
+    var z = SIZES[sizeId];
+    if (real) {   /* real maps keep the size they were baked at */
+      var rm = REALMAPS[((seed % REALMAPS.length) + REALMAPS.length) % REALMAPS.length];
+      z = [rm.w || 100, rm.h || 64];
+    }
     MAP.width = z[0]; MAP.height = z[1];
     CONFIG.tileSize = 1600 / MAP.width;
   }
@@ -359,7 +381,7 @@ var CityGen = (function () {
   /* Replace the fixed map with a generated one and set the city-mode tuning. */
   function apply(seed) {
     var st = getStyle();
-    applySize(st === "real");
+    applySize(st === "real", seed);
     var m = st === "real" ? generateReal(seed, MAP.width, MAP.height)
       : (st === "paris" ? generateParis(seed, MAP.width, MAP.height) : generate(seed, MAP.width, MAP.height));
     MAP.realName = m.realName || null;
@@ -367,6 +389,7 @@ var CityGen = (function () {
     MAP.style = m.style || "grid";
     MAP.decor = m.decor || null;
     MAP.landmarks = m.landmarks || null;
+    MAP.sites = m.sites || [];
     MAP.river = m.river || null;
     MAP.seed = seed;
     MAP.rows = m.rows;
