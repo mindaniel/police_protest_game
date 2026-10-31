@@ -69,6 +69,11 @@ var LEVELS = (function () {
     CONFIG.duskStart = lv.duskStart;
     CONFIG.matchSeconds = lv.matchSeconds;
     CONFIG.forceBudget = lv.forceBudget;
+    /* bigger maps (districts) get more people, rioters and police: square root of the area, at most 2.2x */
+    var big = (typeof MAP !== "undefined" && MAP.width) ? Math.min(2.2, Math.max(1, Math.sqrt(MAP.width * MAP.height / 6400))) : 1;
+    CONFIG.crowdSize = Math.min(1500, Math.round(lv.crowdSize * big));   /* the crowd sim slows down past ~1500 */
+    CONFIG.rioterCount = Math.round(CONFIG.rioterCount * big);
+    CONFIG.forceBudget = Math.round(lv.forceBudget * big);
   }
 
   function label() {
@@ -144,7 +149,7 @@ var LEVELS = (function () {
       // People / rioters line
       ctx.fillStyle = "#c9d1dc";
       ctx.font = "14px Consolas, monospace";
-      ctx.fillText(lv.crowdSize + " people, " + lv.rioterMin + "-" + lv.rioterMax + " rioters?", cx + 10, cy + 30);
+      ctx.fillText((CONFIG.crowdSize || lv.crowdSize) + " people, " + lv.rioterMin + "-" + lv.rioterMax + " rioters?", cx + 10, cy + 30);
 
       // Blurb wrapped
       ctx.fillStyle = "#9aa6b5";

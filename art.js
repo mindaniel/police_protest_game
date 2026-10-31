@@ -1552,6 +1552,12 @@ var Art = (function () {
     ctx.fillStyle = gr;
     ctx.fillRect(0, 0, LW, LH);
     var cached = typeof document !== "undefined";
+    /* zoomed far out on a big map: flat strategy-map chunks + dots instead of the detailed city */
+    var ov = cached && typeof OVERVIEW !== "undefined" && OVERVIEW.use(G);
+    if (ov) {
+      OVERVIEW.draw(ctx, G);
+      OVERVIEW.peopleDots(ctx, G);
+    } else {
     if (cached) {
       ensureCache();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1579,6 +1585,7 @@ var Art = (function () {
     b = buckets[ND];
     if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
     if (typeof LANDMARKS !== "undefined") LANDMARKS.draw(ctx, G);   /* city hall, churches, statues */
+    }
     drawWater(ctx, G, t);
     if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);   /* fire glow, drifting smoke, wet streets */
     else drawSmoke(ctx, G, t);
