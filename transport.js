@@ -270,7 +270,7 @@ var TRANSPORT = (function () {
       cap = seats(v.type).arrest;
       if (cap <= 0) continue;
       if ((v.load || 0) + (v.reserved || 0) >= cap) continue;
-      if (v.run === "station" || v.run === "unload") continue;
+      if (v.run === "station" || v.run === "unload" || v.run === "pickup") continue;
       dx = v.x - x; dy = v.y - y; d = dx * dx + dy * dy;
       if (d <= bestD) { bestD = d; best = v; }
     }
@@ -289,6 +289,20 @@ var TRANSPORT = (function () {
   function release(G, v) {
     if (!v) return;
     v.reserved = Math.max(0, (v.reserved || 0) - 1);
+  }
+
+  /* A motorbike officer holds a suspect: send the nearest vehicle with a free seat. */
+  function requestPickup(G, d) {
+    ensure(G);
+    var v = pickVehicle(G, d.x, d.y);
+    if (!v) return null;
+    v.run = "pickup";
+    v.ctrl = true;
+    v.pick = d;
+    v.backX = v.x; v.backY = v.y;
+    v.tx = d.x; v.ty = d.y;
+    if (G.log) G.log("Squad " + (v.squad + 1) + "'s vehicle goes to pick up an arrested person");
+    return v;
   }
 
   function stationTarget(G) {
@@ -424,6 +438,28 @@ var TRANSPORT = (function () {
         continue;
       }
 
+      // pickup run: drive to the held suspect, take them aboard, go back
+      if (v.run === "pickup") {
+        var pd = v.pick;
+        if (!pd || G.detainees.indexOf(pd) < 0) {
+          v.reserved = Math.max(0, (v.reserved || 0) - (pd && pd.car === v ? 0 : 1));
+          v.pick = null; v.run = "back";
+          var hb = homePoint(G, v, v.squad); v.tx = hb.x; v.ty = hb.y;
+        } else {
+          v.tx = pd.x; v.ty = pd.y;
+          var pdx = pd.x - v.x, pdy = pd.y - v.y;
+          if (pdx * pdx + pdy * pdy <= 2.6) {
+            v.pick = null; v.run = null;
+            pd.car = v; pd.pickup = false;
+            if (typeof Police !== "undefined" && Police.finishEscort) Police.finishEscort(G, pd);   /* calls onLoaded */
+            if (!v.run) {
+              v.run = "back";
+              var hb2 = homePoint(G, v, v.squad); v.tx = hb2.x; v.ty = hb2.y;
+            }
+          }
+        }
+        continue;
+      }
       // station run phases
       if (v.run === "station") {
         var sdx = v.tx - v.x, sdy = v.ty - v.y;
@@ -489,6 +525,7 @@ var TRANSPORT = (function () {
     if (v.run === "station") return "to station " + (v.load || 0) + "/" + arrCap + extra;
     if (v.run === "unload") return "unloading" + extra;
     if (v.run === "back") return "returning" + extra;
+    if (v.run === "pickup") return "picking up an arrest" + extra;
     if (hasCrew(v)) return "aboard " + v.crew.length + "/" + cap + extra;
     return "on foot" + extra;
   }
@@ -601,6 +638,7 @@ var TRANSPORT = (function () {
     driveEmpty: driveEmpty,
     setAutoDismount: setAutoDismount,
     pickVehicle: pickVehicle,
+    requestPickup: requestPickup,
     onLoaded: onLoaded,
     release: release,
     stationTarget: stationTarget,

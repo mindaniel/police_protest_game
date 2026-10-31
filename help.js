@@ -89,6 +89,7 @@ var HELP = (function () {
       else if (lo === "barriertruck") ln("B + click", "drop barrier", 1);
       else if (lo === "liaison") ln("(auto)", "talks people calm, never arrests", 1);
       else if (lo === "mounted") ln("click street", "horses push the crowd", 1);
+      else if (lo === "motorbike") ln("(arrests)", "bikes hold suspects, a car picks up", 1);
       ln("R", "call reinforcements", 1);
       sec("All squads");
       ln("Shift+H", "hold", 2);

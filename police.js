@@ -486,7 +486,10 @@ var Police = (function () {
 
     /* with transport.js: a vehicle with a free arrest seat, else walk to the station */
     var target = null;
-    if (typeof TRANSPORT !== "undefined") target = TRANSPORT.pickVehicle(G, agent.x, agent.y) || TRANSPORT.stationTarget(G);
+    /* motorbike officers can hold a suspect but cannot carry one: a vehicle comes to them */
+    var onBike = !!(officer && typeof TRANSPORT !== "undefined" && loadoutOf(G, officer.squad) === "motorbike");
+    if (onBike) target = null;
+    else if (typeof TRANSPORT !== "undefined") target = TRANSPORT.pickVehicle(G, agent.x, agent.y) || TRANSPORT.stationTarget(G);
     else target = nearestVehicle(G, agent.x, agent.y);
     var detainee = {
       id: nextDetaineeId++,
@@ -502,6 +505,11 @@ var Police = (function () {
       startedAt: typeof G.time === "number" ? G.time : 0
     };
     G.detainees.push(detainee);
+    if (onBike) {
+      detainee.pickup = true;
+      detainee.pickV = TRANSPORT.requestPickup(G, detainee);
+      detainee.nextAsk = (G.time || 0) + 2;
+    }
 
     if (officer) {
       officer.escorting = detainee;
@@ -561,8 +569,8 @@ var Police = (function () {
       var officer = detainee.officer;
       var age = (typeof G.time === "number" ? G.time : 0) - detainee.startedAt;
 
-      /* walking all the way to the station takes longer than to a car */
-      if (age > escortSafetyTime() * (detainee.car && detainee.car.station ? 3 : 1)) {
+      /* walking all the way to the station, or waiting for a pickup, takes longer */
+      if (age > escortSafetyTime() * ((detainee.car && detainee.car.station) || detainee.pickup ? 3 : 1)) {
         finishEscort(G, detainee);
         continue;
       }
@@ -575,6 +583,19 @@ var Police = (function () {
       }
 
       officer.busy = true;
+      if (detainee.pickup) {
+        /* the bike officer holds the suspect until a vehicle picks them up */
+        officer.tx = officer.x;
+        officer.ty = officer.y;
+        detainee.state = "holding";
+        detainee.x = officer.x + 0.5;
+        detainee.y = officer.y;
+        if (!detainee.pickV && G.time >= detainee.nextAsk) {
+          detainee.pickV = TRANSPORT.requestPickup(G, detainee);
+          detainee.nextAsk = G.time + 2;
+        }
+        continue;
+      }
       if (!detainee.car) {
         officer.tx = officer.x;
         officer.ty = officer.y;
@@ -1274,6 +1295,7 @@ var Police = (function () {
     update: update,
     draw: draw,
     startEscort: startEscort,
+    finishEscort: finishEscort,
     addSquad: addSquad,
     setForce: setForce,
     orderArrest: orderArrest,
