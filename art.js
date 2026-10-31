@@ -504,7 +504,15 @@ var Art = (function () {
             quad(set.winS, xa, y + 1, z, xa + 0.26, y + 1, z, xa + 0.26, y + 1, z + 0.22, xa, y + 1, z + 0.22);
           }
         }
-        if (!showS && hAt(x - 1, y) === h && hAt(x, y - 1) === h && hash2(x, y) % 9 === 0) {
+        if (typeof BUILDINGS !== "undefined") {
+          /* rooftop equipment: AC units, tanks, skylights, chimneys, dormers */
+          if (!showS && hAt(x - 1, y) === h && hAt(x, y - 1) === h) {
+            BUILDINGS.details(x, y, h, rnd(hash2(x * 3 + 1, y * 7 + 2)), paris() ? "paris" : "grid", function (x0, y0, x1, y1, z0, z1) {
+              set.roof = true;
+              addBox(set, x0, y0, x1, y1, z0, z1, set.rTop, set.rS, true);
+            });
+          }
+        } else if (!showS && hAt(x - 1, y) === h && hAt(x, y - 1) === h && hash2(x, y) % 9 === 0) {
           set.roof = true;
           addBox(set, x + 0.22, y + 0.25, x + 0.78, y + 0.75, h, h + 0.22, set.rTop, set.rS, true);
         }
@@ -607,6 +615,7 @@ var Art = (function () {
       STREETS.paint(g, W, H, t, tile, paris() ? "paris" : "grid");
       if (paris()) THEME_PARIS.decor(g, t, tile);
     }
+    if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);   /* soft cast shadows */
     if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
   }
 
@@ -1215,6 +1224,12 @@ var Art = (function () {
   var COL = COL_DEFAULT;
   function pickColors() {
     COL = COL_DEFAULT;
+    if (typeof BUILDINGS !== "undefined" && typeof document !== "undefined") {
+      /* textured roofs, walls and windows (canvas patterns) */
+      var f = BUILDINGS.fills(document.createElement("canvas").getContext("2d"), paris() ? "paris" : "grid");
+      COL = { wall: f.wall, window: f.window, tops: f.tops, shopWall: f.shopWall, shopTop: f.shopTop, roofSide: f.roofSide, roofTop: f.roofTop };
+      return;
+    }
     if (!paris()) return;
     var c = THEME_PARIS.colors;
     COL = { wall: c.wall, window: c.window, tops: c.tops, shopWall: c.shopWall, shopTop: c.shopTop,
