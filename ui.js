@@ -825,6 +825,7 @@ UI.draw = function (ctx, g) {
       "  Mood " + mood.toFixed(0) +
       "  Arrested " + g.stats.rioterArrested + "/" + (g.rioterTotal || CONFIG.rioterCount) +
       "  Wrong " + g.stats.wrongArrests +
+      "  In custody " + (g.stats.delivered || 0) +
       "  Shops hit " + g.stats.shopsDamaged + "/" + g.shops.length +
       (typeof QUALITY !== "undefined" ? "   " + QUALITY.label() + " (Q)" : "");
   }

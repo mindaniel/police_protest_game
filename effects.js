@@ -424,6 +424,7 @@ var FX = (function () {
     ctx.restore();
   }
 
-  return { init: init, update: update, draw: draw, throwAt: throwAt, shopBroken: shopBroken, water: water, smokeAt: smokeAt };
+  function list() { return fires; }   /* burning bins/fires {x, y, born} for atmosphere.js */
+  return { init: init, update: update, draw: draw, throwAt: throwAt, shopBroken: shopBroken, water: water, smokeAt: smokeAt, list: list };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = FX;
