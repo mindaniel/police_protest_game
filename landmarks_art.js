@@ -337,12 +337,13 @@ var LANDMARKS_ART = (function () {
   }
 
   function drawLabel(ctx, lm, s, attackers) {
-    var p = proj(lm.x + lm.w / 2, lm.y, 14);
+    var lh = { gov: 8, church: 14, theatre: 5, statue: 4.5, column: 15 }[lm.type] || 6;   /* just above its top */
+    var p = proj(lm.x + lm.w / 2, lm.y + lm.h / 2, lh);
     var txt = lm.name || "";
     ctx.font = "bold 11px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
-    var y = p.y - 8 * s;
+    var y = p.y - 4;
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(0,0,0,0.8)";
     ctx.strokeText(txt, p.x, y);

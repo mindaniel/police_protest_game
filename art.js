@@ -1570,6 +1570,16 @@ var Art = (function () {
     drawDecals(ctx, G);
     collect(G);
     if (lodDots && lodN) drawLodPeople(ctx);   /* before buildings, so buildings hide people behind them */
+    /* landmarks are drawn with the row of their south edge, so people in front stay visible */
+    var lmRows = null;
+    if (typeof LANDMARKS !== "undefined" && typeof LANDMARKS_ART !== "undefined") {
+      var lml = LANDMARKS.list(G);
+      for (i = 0; i < lml.length; i++) {
+        var lmr = Math.max(0, Math.min(ND - 1, lml[i].lm.y + lml[i].lm.h - 1));
+        if (!lmRows) lmRows = {};
+        (lmRows[lmr] = lmRows[lmr] || []).push(lml[i]);
+      }
+    }
     for (d = 0; d < ND; d++) {
       b = buckets[d];
       if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
@@ -1581,10 +1591,10 @@ var Art = (function () {
         }
       } else if (diags && diags[d]) fillSet(ctx, d);
       if (shopTiles && shopTiles[d]) drawShopDecor(ctx, shopTiles[d], G, t);
+      if (lmRows && lmRows[d]) LANDMARKS_ART.draw(ctx, G, lmRows[d]);
     }
     b = buckets[ND];
     if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
-    if (typeof LANDMARKS !== "undefined") LANDMARKS.draw(ctx, G);   /* city hall, churches, statues */
     }
     drawWater(ctx, G, t);
     if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);   /* fire glow, drifting smoke, wet streets */

@@ -78,6 +78,12 @@ UI.init = function (g, game) {
     if ((k === "q" || k === "Q") && typeof QUALITY !== "undefined") {
       QUALITY.cycle(); UI.say(QUALITY.label()); return;
     }
+    if (k === "Tab" && (UI.screen === "planning" || UI.screen === "playing") && CONFIG.squadCount > 0) {
+      /* Tab / Shift+Tab: next / previous squad (big maps have more squads than number keys) */
+      UI.selected = (UI.selected + (e.shiftKey ? CONFIG.squadCount - 1 : 1)) % CONFIG.squadCount;
+      UI.selVehicle = false; UI.say("Squad " + (UI.selected + 1) + " selected");
+      e.preventDefault(); return;
+    }
     if (UI.screen === "title") {
       if (typeof LEVELS !== "undefined") {
         if (k === "ArrowRight") LEVELS.next();

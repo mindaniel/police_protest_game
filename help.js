@@ -46,7 +46,7 @@ var HELP = (function () {
 
     if (pl) {
       sec("Squad");
-      ln("1-6 / click", "select a squad", 1);
+      ln("1-0, Tab / click", "select a squad", 1);
       ln("click a street", "place it (not on red)", 1);
       ln("V", "show / hide force panel", 1);
       ln("+ / - (panel)", "how many of each unit", 1);
@@ -66,7 +66,7 @@ var HELP = (function () {
       ln("Enter", "START the match", 1);
     } else {
       sec("Squad");
-      ln("1-6 / click", "select", 1);
+      ln("1-0, Tab / click", "select", 1);
       ln("click street", "move (far: squad drives)", 1);
       ln("click vehicle", "select only the vehicle", 2);
       ln("A + click", "arrest", 1);

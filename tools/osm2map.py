@@ -636,7 +636,7 @@ def step14_sites(ctx, elements):
         if a == "place_of_worship" or b in ("church", "cathedral", "chapel", "mosque", "temple", "synagogue"):
             return "church"
         # theatre
-        if a in ("theatre", "arts_centre") or g("tourism") == "museum" or b == "civic":
+        if a in ("theatre", "arts_centre") or g("tourism") == "museum" or (b == "civic" and any(k in nl for k in ("theatre", "théâtre", "opera", "opéra", "museum", "musée", "gallery"))):
             return "theatre"
         # column
         if g("historic") == "monument" or g("man_made") == "tower" or g("memorial") == "column" or g("obelisk") is not None or g("memorial") == "obelisk":
@@ -776,6 +776,10 @@ def step14_sites(ctx, elements):
 
     weights = {"gov": 5, "column": 4, "church": 3, "statue": 3, "theatre": 1}
     merged = [r for r in merged if r[1] not in ("North Tower", "South Tower")]   # parts of a cathedral
+    # streets and squares are not buildings; police HQs are government
+    street = ("street", "square", "road", "place ", "rue ", "avenue", "boulevard", "quai ", "phố", "đường")
+    merged = [r for r in merged if not any(k in r[1].lower() for k in street) or r[0] in ("statue", "column")]
+    merged = [(("gov",) + tuple(r[1:])) if "scotland yard" in r[1].lower() or "police" in r[1].lower() else r for r in merged]
     famous = lambda n: any(k in n for k in ("Column", "Colonne", "Tower", "Tour", "Parliament", "Palace", "Notre", "Cathedral", "Downing"))
     merged.sort(key=lambda r: (-weights[r[0]], not famous(r[1]), -(r[2][2] * r[2][3])))
 

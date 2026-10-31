@@ -74,6 +74,8 @@ var LEVELS = (function () {
     CONFIG.crowdSize = Math.min(1500, Math.round(lv.crowdSize * big));   /* the crowd sim slows down past ~1500 */
     CONFIG.rioterCount = Math.round(CONFIG.rioterCount * big);
     CONFIG.forceBudget = Math.round(lv.forceBudget * big);
+    CONFIG.maxPlanSquads = Math.min(20, Math.round(10 * big));   /* more squads to plan on a district */
+    CONFIG.maxSquads = CONFIG.maxPlanSquads + 4;                 /* room for reinforcements */
   }
 
   function label() {
