@@ -201,7 +201,7 @@ var Game = {
 function sizeCanvas() {
   var ts = CONFIG.tileSize;
   var lw = MAP.width * ts, lh = MAP.height * ts;      // logical size, never changes
-  var dpr = window.devicePixelRatio || 1;
+  var dpr = (typeof QUALITY !== "undefined") ? QUALITY.pixelRatio() : (window.devicePixelRatio || 1);
   var scale = Math.min(window.innerWidth / lw, window.innerHeight / lh);
   if (!(scale > 0)) scale = 1;
   var cssW = Math.floor(lw * scale), cssH = Math.floor(lh * scale);
@@ -277,6 +277,9 @@ function frame(now) {
   if (dt > 0.25) dt = 0.25;   // clamp after tab switches
 
   var hasUI = (typeof UI !== "undefined");
+  /* the graphics quality manager may skip drawing this frame (fps cap) */
+  var drawIt = (typeof QUALITY === "undefined") || QUALITY.frame(now);
+  var t0 = performance.now();
   if (hasUI) UI.tick(G);
 
   if (!Game.paused && (!hasUI || UI.screen === "playing")) {
@@ -297,6 +300,7 @@ function frame(now) {
     }
   }
 
+  if (!drawIt) { requestAnimationFrame(frame); return; }
   Game.ctx.setTransform(Game.renderScale || 1, 0, 0, Game.renderScale || 1, 0, 0);
   if (typeof Art !== "undefined") {
     Art.draw(Game.ctx, G);
@@ -306,6 +310,7 @@ function frame(now) {
     if (typeof Police !== "undefined") Police.draw(Game.ctx, G);
   }
   if (hasUI) UI.draw(Game.ctx, G); else drawDebug(Game.ctx);
+  if (typeof QUALITY !== "undefined") QUALITY.workTime(performance.now() - t0);
 
   requestAnimationFrame(frame);
 }
@@ -343,8 +348,12 @@ function initGame() {
   Game.ctx = Game.canvas.getContext("2d");
   sizeCanvas();
   window.addEventListener("resize", sizeCanvas);
+  if (typeof QUALITY !== "undefined") QUALITY.onChange(function () { sizeCanvas(); });
 
   if (typeof CityGen !== "undefined") {
+    var st = /[?&]style=(\w+)/.exec(window.location.search || "");
+    try { if (!st && localStorage.getItem("ppg_style")) st = [0, localStorage.getItem("ppg_style")]; } catch (e) { /* storage blocked */ }
+    if (st) CityGen.setStyle(st[1]);
     CityGen.apply(citySeed());
     G = makeG();
   }

@@ -241,7 +241,7 @@ var Art = (function () {
     groundCv.width = W * GT;
     groundCv.height = H * GT;
     var g = groundCv.getContext("2d"), x, y, ch, t = GT;
-    var base = { ".": "#eef1f5", "P": "#e4e8ee", "G": "#bfd8a8", "a": "#d4dae2", "#": "#cdd4dd", "S": "#cdd4dd" };
+    var base = { ".": "#eef1f5", "P": "#e4e8ee", "G": "#bfd8a8", "a": "#d4dae2", "#": "#cdd4dd", "S": "#cdd4dd", "W": "#86b7dc" };
     for (y = 0; y < H; y++) {
       for (x = 0; x < W; x++) {
         ch = tile(x, y);
@@ -470,13 +470,13 @@ var Art = (function () {
     P(a.x, a.y, 0);
     var bx = _px, by = _py;
     var sp2 = (a.vx || 0) * (a.vx || 0) + (a.vy || 0) * (a.vy || 0);
-    if (sp2 > 0.02) by -= Math.abs(Math.sin(t * 11 + a.id)) * 1.3 * s;
+    if (sp2 > 0.02 && Q_BOB) by -= Math.abs(Math.sin(t * 11 + a.id)) * 1.3 * s;
     var r = 2.9 * s, hb = 8.6 * s;
     var revealed = a.role === "rioter" && _G && _G.time < a.revealedUntil;
     var pal = agentPal(a);
     var base = revealed ? "#ff2338" : pal.base, dark = revealed ? "#b3121f" : pal.dark;
     var hid = hash2(a.id | 0, 3);
-    var placard = !revealed && hid % 4 === 0;
+    var placard = Q_PLACARDS && !revealed && hid % 4 === 0;
     if (placard) {
       var wob = a.mood > 65 ? Math.sin(t * 9 + a.id) * 1.5 * s : 0;
       var px = bx + r * 1.1 + wob, top = by - hb - 7 * s;
@@ -674,7 +674,15 @@ var Art = (function () {
     for (i = 0; i < trees.length; i++) push(5, trees[i], trees[i].x, trees[i].y);
     for (i = 0; i < lamps.length; i++) push(6, lamps[i], lamps[i].x, lamps[i].y);
     if (!G) return;
-    if (G.agents) for (i = 0; i < G.agents.length; i++) { var a = G.agents[i]; if (a.active) push(0, a, a.x, a.y); }
+    /* people outside the visible screen are skipped (cheap projection test) */
+    var cx0 = -24, cx1 = LW + 24, cy0 = -16, cy1 = LH + 48;
+    if (G.agents) for (i = 0; i < G.agents.length; i++) {
+      var a = G.agents[i];
+      if (!a.active) continue;
+      P(a.x, a.y, 0);
+      if (_px < cx0 || _px > cx1 || _py < cy0 || _py > cy1) continue;
+      push(0, a, a.x, a.y);
+    }
     if (G.barriers) for (i = 0; i < G.barriers.length; i++) {
       var b = G.barriers[i];
       if (typeof b._artAng !== "number") b._artAng = barrierAng(G, b);
@@ -1012,8 +1020,9 @@ var Art = (function () {
     for (i = 0; i < G.shops.length; i++) {
       var sh = G.shops[i];
       if (!sh.broken) continue;
-      for (k = 0; k < 7; k++) {
-        var ph = (t * 0.22 + k / 7) % 1;
+      var nk = (typeof QUALITY !== "undefined") ? QUALITY.flag("smoke") : 7;
+      for (k = 0; k < nk; k++) {
+        var ph = (t * 0.22 + k / nk) % 1;
         P(sh.x + 1 + ph * 0.9, sh.y + 1 - ph * 0.3, 0.9 + ph * 4.5);
         disc(ctx, _px, _py, (3 + ph * 9) * s, "rgba(95,102,115," + (0.5 * (1 - ph)).toFixed(2) + ")");
       }
@@ -1085,7 +1094,12 @@ var Art = (function () {
     ctx.restore();
   }
 
+  /* graphics quality flags, read once per frame */
+  var Q_BOB = true, Q_PLACARDS = true, Q_GHOSTS = true;
   function draw(ctx, G) {
+    if (typeof QUALITY !== "undefined") {
+      Q_BOB = QUALITY.flag("agentBob"); Q_PLACARDS = QUALITY.flag("placards"); Q_GHOSTS = QUALITY.flag("ghosts");
+    }
     beginFrame(ctx, G);
     var t = Date.now() / 1000, d, i, b;
     var gr = ctx.createLinearGradient(0, 0, 0, LH);
@@ -1129,9 +1143,11 @@ var Art = (function () {
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
     if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");
-    ctx.globalAlpha = 0.28;
-    for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
-    ctx.globalAlpha = 1;
+    if (Q_GHOSTS) {
+      ctx.globalAlpha = 0.28;
+      for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
+      ctx.globalAlpha = 1;
+    }
     drawTags(ctx, G);
     ctx.restore();
   }

@@ -276,9 +276,36 @@ var CityGen = (function () {
     };
   }
 
+  /* Paris-style district (paris.js) finished with the shared rules. */
+  function generateParis(seed, w, h) {
+    var lay = ParisGen.layout(seed, w, h), i, x, y;
+    W = w; H = h; R = mulberry(seed ^ 0x5bd1e995); g = lay.grid;
+    var pc = { x: Math.floor(lay.plaza.x), y: Math.floor(lay.plaza.y) };
+    var doorC = [], dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    for (y = 1; y < H - 1; y++) for (x = 1; x < W - 1; x++) {
+      if (get(x, y) !== "#") continue;
+      for (i = 0; i < 4; i++) {
+        var ox = x + dirs[i][0], oy = y + dirs[i][1], c = get(ox, oy);
+        if (c === "." || c === "a") { doorC.push({ x: ox, y: oy, hx: x, hy: y }); break; }
+      }
+    }
+    var m = finish(pc, lay.plaza.r, lay.shops, [], doorC);
+    m.style = "paris"; m.decor = lay.decor; m.landmarks = lay.landmarks; m.river = lay.river;
+    return m;
+  }
+
+  /* City style: "paris" (default when paris.js is loaded) or "grid". */
+  var style = "paris";
+  function setStyle(s) { style = s === "grid" ? "grid" : "paris"; }
+  function getStyle() { return (style === "paris" && typeof ParisGen !== "undefined") ? "paris" : "grid"; }
+
   /* Replace the fixed map with a generated one and set the city-mode tuning. */
   function apply(seed) {
-    var m = generate(seed, MAP.width, MAP.height);
+    var m = getStyle() === "paris" ? generateParis(seed, MAP.width, MAP.height) : generate(seed, MAP.width, MAP.height);
+    MAP.style = m.style || "grid";
+    MAP.decor = m.decor || null;
+    MAP.landmarks = m.landmarks || null;
+    MAP.river = m.river || null;
     MAP.seed = seed;
     MAP.rows = m.rows;
     MAP.shops = m.shops;
@@ -306,7 +333,7 @@ var CityGen = (function () {
     return m;
   }
 
-  return { generate: generate, apply: apply };
+  return { generate: generate, generateParis: generateParis, apply: apply, setStyle: setStyle, getStyle: getStyle };
 })();
 
 if (typeof module !== "undefined" && module.exports) {

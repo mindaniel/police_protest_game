@@ -65,6 +65,9 @@ UI.init = function (g, game) {
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
+    if ((k === "q" || k === "Q") && typeof QUALITY !== "undefined") {
+      QUALITY.cycle(); UI.say(QUALITY.label()); return;
+    }
     if (UI.screen === "title") {
       if (typeof LEVELS !== "undefined") {
         if (k === "ArrowRight") LEVELS.next();
@@ -90,6 +93,11 @@ UI.init = function (g, game) {
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
       else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("New random city"); }
+      else if ((k === "c" || k === "C") && typeof CityGen !== "undefined" && CityGen.setStyle) {
+        CityGen.setStyle(CityGen.getStyle() === "paris" ? "grid" : "paris");
+        try { localStorage.setItem("ppg_style", CityGen.getStyle()); } catch (e2) { /* storage blocked */ }
+        restartGame(false); UI.say(CityGen.getStyle() === "paris" ? "City style: Paris" : "City style: grid town");
+      }
       else if (k === "Escape") { UI.mode = null; }
       return;
     }
@@ -444,7 +452,8 @@ var UI_CONTROLS = [
   "Space : pause     T : speed 1x / 2x     N (planning) : new random city",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
   "H : low buildings (see behind blocks)",
-  "? or F1 : show / shrink / hide the controls panel (top right)"
+  "? or F1 : show / shrink / hide the controls panel (top right)",
+  "Q : graphics quality (Auto / High / Medium / Low) - use Low on a slow computer"
 ];
 
 function uiSquadDesc(g, s) {
@@ -666,7 +675,7 @@ UI.draw = function (ctx, g) {
   var top;
   if (UI.screen === "planning") {
     top = "PLANNING - the match has not started, time is frozen" +
-      (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city)" : "") +
+      (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city, C = " + (MAP.style === "paris" ? "Paris" : "grid") + " style)" : "") +
       (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : "");
   } else {
     var mood = (typeof Crowd !== "undefined") ? Crowd.averageMood(g) : 0;
@@ -677,7 +686,8 @@ UI.draw = function (ctx, g) {
       "  Mood " + mood.toFixed(0) +
       "  Arrested " + g.stats.rioterArrested + "/" + (g.rioterTotal || CONFIG.rioterCount) +
       "  Wrong " + g.stats.wrongArrests +
-      "  Shops hit " + g.stats.shopsDamaged + "/" + g.shops.length;
+      "  Shops hit " + g.stats.shopsDamaged + "/" + g.shops.length +
+      (typeof QUALITY !== "undefined" ? "   " + QUALITY.label() + " (Q)" : "");
   }
   ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.fillRect(0, 0, w, 24);
