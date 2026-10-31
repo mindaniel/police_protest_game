@@ -5,6 +5,8 @@ var OVERVIEW = (function () {
   var chunkKeys = []; // list of "cx,cy" strings currently cached
   var state = false; // hysteresis state
   var lastRows = null, lastW = 0, lastH = 0;
+  var compId = null, compW = 0, compH = 0, compRows = null;
+  var blockCol = {}; // component id -> rgb array
 
   function getTp() {
     return Art.project(1, 0, 0).x - Art.project(0, 0, 0).x;
@@ -22,6 +24,7 @@ var OVERVIEW = (function () {
   function invalidate() {
     cache = {}; levels = {}; chunkKeys = [];
     lastRows = null;
+    compId = null; compRows = null; blockCol = {};
   }
 
   function hash(x, y) {
@@ -40,32 +43,93 @@ var OVERVIEW = (function () {
     paris: [[185,178,166],[169,163,154],[154,162,173],[196,180,157]],
     other: [[184,165,150],[156,158,163],[168,146,127],[183,176,165]]
   };
-  function bcol(rows, x, y, style) {
-    var pal = style === "paris" ? PAL.paris : PAL.other;
-    var h = hash(Math.floor(x / 4), Math.floor(y / 4));
-    var c = pal[h % pal.length];
-    return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
-  }
   function isB(ch) { return ch === '#' || ch === 'S'; }
   function isBuildChar(ch) { return ch === '#' || ch === 'S'; }
 
+  function buildComponents(rows, w, h, style) {
+    compId = new Int32Array(w * h);
+    compRows = rows;
+    blockCol = {};
+    var pal = style === "paris" ? PAL.paris : PAL.other;
+    var stack = new Int32Array(w * h);
+    var next = 0;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var idx = y * w + x;
+        if (compId[idx] !== 0) continue;
+        if (!isBuildChar(rowChar(rows, x, y))) continue;
+        next++;
+        var sp = 0;
+        stack[sp++] = idx;
+        compId[idx] = next;
+        while (sp > 0) {
+          var cur = stack[--sp];
+          var cxx = cur % w, cyy = (cur / w) | 0;
+          var nb = [cur - 1, cur + 1, cur - w, cur + w];
+          var nx = [cxx - 1, cxx + 1, cxx, cxx];
+          var ny = [cyy, cyy, cyy - 1, cyy + 1];
+          for (var d = 0; d < 4; d++) {
+            var nxx = nx[d], nyy = ny[d];
+            if (nxx < 0 || nxx >= w || nyy < 0 || nyy >= h) continue;
+            var nidx = nyy * w + nxx;
+            if (compId[nidx] !== 0) continue;
+            if (!isBuildChar(rowChar(rows, nxx, nyy))) continue;
+            compId[nidx] = next;
+            stack[sp++] = nidx;
+          }
+        }
+        var hh = hash(next * 7919 + 104729, next * 6271 + 31);
+        blockCol[next] = pal[hh % pal.length];
+      }
+    }
+    compW = w; compH = h;
+  }
+  function getComp(x, y) {
+    if (!compId) return 0;
+    if (x < 0 || x >= compW || y < 0 || y >= compH) return 0;
+    return compId[y * compW + x];
+  }
+  function bcol(x, y) {
+    var id = getComp(x, y);
+    if (!id || !blockCol[id]) return 'rgb(170,165,158)';
+    // per 6x5 cell with brick-bond offset; deterministic shade within +/- 7%
+    var cy = Math.floor(y / 5);
+    var cx = Math.floor((x + (cy % 2 ? 3 : 0)) / 6);
+    var sh = hash(id * 131 + cx * 17 + cy * 7 + 5, cx * 29 + cy * 13 + id) % 15;
+    var f = 1 + (sh - 7) / 100; // 0.93 .. 1.07
+    var c = blockCol[id];
+    return 'rgb(' + Math.floor(c[0] * f) + ',' + Math.floor(c[1] * f) + ',' + Math.floor(c[2] * f) + ')';
+  }
+  function cellShade(x, y, id) {
+    var cy = Math.floor(y / 5);
+    var cx = Math.floor((x + (cy % 2 ? 3 : 0)) / 6);
+    return hash(id * 131 + cx * 17 + cy * 7 + 5, cx * 29 + cy * 13 + id) % 15;
+  }
+  function shade(rgb, f) {
+    var m = rgb.match(/\d+/g);
+    if (!m) return rgb;
+    return 'rgb(' + Math.floor(m[0] * f) + ',' + Math.floor(m[1] * f) + ',' + Math.floor(m[2] * f) + ')';
+  }
+
   // render one chunk at k px/tile into a canvas
   function renderChunk(cx, cy, k, rows, w, h, style, station, sites) {
+    if (!compId || compRows !== rows || compW !== w || compH !== h) {
+      buildComponents(rows, w, h, style);
+    }
     var cw = Math.min(CH, w - cx * CH), chh = Math.min(CH, h - cy * CH);
     if (cw <= 0 || chh <= 0) return null;
     var cv = document.createElement('canvas');
     cv.width = cw * k; cv.height = chh * k;
     var g = cv.getContext('2d');
     var x0 = cx * CH, y0 = cy * CH;
-    var px = Math.round(k), hy = k;
+    var i, j, ch;
     // ground passes: fill runs per row for base chars
-    var i, j, ch, col;
     for (j = 0; j < chh; j++) {
       var y = y0 + j;
       i = 0;
       while (i < cw) {
         ch = rowChar(rows, x0 + i, y);
-        var colr = '.';
+        var colr;
         if (ch === '.') colr = '#d3d6db';
         else if (ch === 'a') colr = '#c3c6cb';
         else if (ch === 'P') colr = '#e3dccd';
@@ -76,13 +140,14 @@ var OVERVIEW = (function () {
         var st = i;
         while (i < cw) {
           var c2 = rowChar(rows, x0 + i, y);
-          var cc = '.';
+          var cc;
           if (c2 === '.') cc = '#d3d6db';
           else if (c2 === 'a') cc = '#c3c6cb';
           else if (c2 === 'P') cc = '#e3dccd';
           else if (c2 === 'G' || c2 === 'T') cc = '#9cc489';
           else if (c2 === 'W') cc = '#7fb2d9';
           else if (isBuildChar(c2)) break;
+          else cc = '#d3d6db';
           if (cc !== colr) break;
           i++;
         }
@@ -90,15 +155,60 @@ var OVERVIEW = (function () {
         g.fillRect(st * k, j * k, (i - st) * k, k);
       }
     }
-    // buildings + shops
+    // ground shadows (north + east sides of buildings), before buildings drawn
+    if (k >= 4) {
+      var sw = Math.max(1, 0.45 * k), ew = Math.max(1, 0.3 * k);
+      g.fillStyle = 'rgba(0,0,0,0.22)';
+      for (j = 0; j < chh; j++) {
+        var ys = y0 + j;
+        for (i = 0; i < cw; i++) {
+          var xs = x0 + i;
+          if (isBuildChar(rowChar(rows, xs, ys))) continue;
+          if (isBuildChar(rowChar(rows, xs, ys - 1))) {
+            g.fillRect(i * k, j * k, k, sw);
+          }
+          if (isBuildChar(rowChar(rows, xs - 1, ys))) {
+            g.fillRect(i * k, j * k, ew, k);
+          }
+        }
+      }
+    }
+    // buildings + shops, using block colour + per-cell shade + shade-change seam
     for (j = 0; j < chh; j++) {
       var yy = y0 + j;
       for (i = 0; i < cw; i++) {
         var xx = x0 + i;
         ch = rowChar(rows, xx, yy);
         if (isBuildChar(ch)) {
-          g.fillStyle = bcol(rows, xx, yy, style);
+          g.fillStyle = bcol(xx, yy);
           g.fillRect(i * k, j * k, k, k);
+        }
+      }
+    }
+    // seam lines between cells of same block where shade changes (k>=4)
+    if (k >= 4) {
+      g.fillStyle = 'rgba(0,0,0,0.10)';
+      for (j = 0; j < chh; j++) {
+        var yl = y0 + j;
+        for (i = 0; i < cw; i++) {
+          var xl = x0 + i;
+          var cl = rowChar(rows, xl, yl);
+          if (!isBuildChar(cl)) continue;
+          var id = getComp(xl, yl);
+          if (!id) continue;
+          var s0 = cellShade(xl, yl, id);
+          // east neighbour
+          if (isBuildChar(rowChar(rows, xl + 1, yl)) && getComp(xl + 1, yl) === id) {
+            if (cellShade(xl + 1, yl, id) !== s0) {
+              g.fillRect(i * k + k - 1, j * k, 1, k);
+            }
+          }
+          // south neighbour
+          if (isBuildChar(rowChar(rows, xl, yl + 1)) && getComp(xl, yl + 1) === id) {
+            if (cellShade(xl, yl + 1, id) !== s0) {
+              g.fillRect(i * k, j * k + k - 1, k, 1);
+            }
+          }
         }
       }
     }
@@ -153,14 +263,14 @@ var OVERVIEW = (function () {
         }
       }
     }
-    // fake depth bands (cheap, all k)
+    // fake depth bands on building edges (south/east darker)
     for (j = 0; j < chh; j++) {
       var y4 = y0 + j;
       for (i = 0; i < cw; i++) {
         var x4 = x0 + i;
         var cc4 = rowChar(rows, x4, y4);
         if (isBuildChar(cc4)) {
-          var col4 = bcol(rows, x4, y4, style);
+          var col4 = bcol(x4, y4);
           var south = rowChar(rows, x4, y4 + 1);
           if (!isBuildChar(south)) {
             g.fillStyle = shade(col4, 0.7);
@@ -170,12 +280,6 @@ var OVERVIEW = (function () {
           if (!isBuildChar(east)) {
             g.fillStyle = shade(col4, 0.7);
             g.fillRect(i * k + k * 0.88, j * k, k * 0.12, k);
-          }
-        } else {
-          var north = rowChar(rows, x4, y4 - 1);
-          if (isBuildChar(north)) {
-            g.fillStyle = 'rgba(0,0,0,0.18)';
-            g.fillRect(i * k, j * k, k, k * 0.35);
           }
         }
       }
@@ -204,7 +308,7 @@ var OVERVIEW = (function () {
     if (sites) {
       for (i = 0; i < sites.length; i++) {
         var s = sites[i];
-        var colr2 = '#cccccc';
+        var colr2;
         if (s.type === 'gov') colr2 = '#e6dfcf';
         else if (s.type === 'church') colr2 = '#55606b';
         else if (s.type === 'theatre') colr2 = '#c9a77c';
@@ -240,11 +344,6 @@ var OVERVIEW = (function () {
       g.fillText(label, fx + fw / 2, fy + fh / 2);
     }
   }
-  function shade(rgb, f) {
-    var m = rgb.match(/\d+/g);
-    if (!m) return rgb;
-    return 'rgb(' + Math.floor(m[0] * f) + ',' + Math.floor(m[1] * f) + ',' + Math.floor(m[2] * f) + ')';
-  }
   function ck(cx, cy, k) { return cx + ',' + cy + ',' + k; }
 
   function draw(ctx, G) {
@@ -261,8 +360,6 @@ var OVERVIEW = (function () {
     var ncx = Math.ceil(W / CH), ncy = Math.ceil(H / CH);
     // visible tile bounds
     var o = Art.project(0, 0, 0);
-    var cw = ctx.canvas.width / (ctx.getTransform ? (ctx.getTransform().a || 1) : 1);
-    // logical canvas size
     var lw = MAP.width * CONFIG.tileSize, lh = MAP.height * CONFIG.tileSize;
     var vx0 = (0 - o.x) / tp, vy0 = (0 - o.y) / tp;
     var vx1 = (lw - o.x) / tp, vy1 = (lh - o.y) / tp;
@@ -274,7 +371,6 @@ var OVERVIEW = (function () {
         var key = ck(cx, cy, k);
         var cv = cache[key];
         if (!cv) {
-          // drop older level for this chunk
           var prev = levels[cx + ',' + cy];
           if (prev !== undefined && prev !== k) {
             delete cache[ck(cx, cy, prev)];
@@ -305,11 +401,10 @@ var OVERVIEW = (function () {
         var s = G.shops[i];
         if (!s.broken) continue;
         var pp = Art.project(s.x, s.y, 0);
-        var sxp = pp.x, syp = pp.y;
         var pw = tp * 2;
         ctx.fillStyle = 'rgba(30,20,20,0.75)';
         ctx.beginPath();
-        ctx.arc(sxp + pw / 2, syp + tp / 2, tp * 0.9, 0, 6.2832);
+        ctx.arc(pp.x + pw / 2, pp.y + tp / 2, tp * 0.9, 0, 6.2832);
         ctx.fill();
       }
     }
@@ -347,7 +442,6 @@ var OVERVIEW = (function () {
       buckets[col].push(a);
     }
     var cols = ['#6aa9ff', '#ffb347', '#ff5a4f', '#b000ff'];
-    ctx.beginPath();
     for (var b = 0; b < 4; b++) {
       var arr = buckets[b];
       if (!arr.length) continue;
