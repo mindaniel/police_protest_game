@@ -254,8 +254,8 @@ var NIGHT = (function () {
       var vary = 0.85 + hsh(c.x, c.y) * 0.3;     /* each lamp a little different */
       kept.push({ x: c.x + 0.5, y: c.y + 0.5,
         r: (lane ? 2.4 : (wide ? 5.2 : 3.8)) * vary,
-        peak: Math.min(1, (lane ? 0.6 : (wide ? 1.0 : 0.85)) * vary),
-        col: wide ? "205,215,240" : "255,170,95" });
+        peak: Math.min(0.92, (lane ? 0.5 : (wide ? 0.88 : 0.72)) * vary),
+        col: wide ? "255,206,120" : "255,180,85" });   /* warm yellow street lights */
     }
     lightList = kept;
   }
@@ -504,7 +504,7 @@ var NIGHT = (function () {
       var gp3 = Art.project(L3.x, L3.y, 0);
       var gr3 = L3.r * 0.85 * 32 * S;
       if (gp3.x * rs < -margin || gp3.y * rs < -margin || gp3.x * rs > cw + margin || gp3.y * rs > ch + margin) continue;
-      ctx.globalAlpha = Math.min(1, 0.11 * d * L3.peak / 0.6);
+      ctx.globalAlpha = Math.min(1, 0.16 * d * L3.peak / 0.6);
       ctx.drawImage(sprite(L3.col), gp3.x - gr3, gp3.y - gr3, gr3 * 2, gr3 * 2);
     }
     // streetlight lamp heads

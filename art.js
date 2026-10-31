@@ -913,6 +913,23 @@ var Art = (function () {
   function drawVehicle(ctx, v, t) {
     var ang = vehAng(v), c = Math.cos(ang), sn = Math.sin(ang), x = v.x, y = v.y;
     var on = (t % 0.6) < 0.3;
+    if (typeof VEHICLES !== "undefined" && VEHICLES.size && v.type !== "watertruck") {
+      /* detailed pre-rendered vehicle sprite, one per heading */
+      var vsp = VEHICLES.sprite(v.type, VEHICLES.angleIndex(ang), _rs * cam.S, on);
+      P(x, y, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(vsp.c, _rs * _px - vsp.ax, _rs * _py - vsp.ay);
+      setScreen(ctx);
+      return;
+    }
+    if (typeof VEHICLES !== "undefined" && v.type === "watertruck") {
+      var wsp = VEHICLES.sprite("watertruck", VEHICLES.angleIndex(ang), _rs * cam.S, on);
+      P(x, y, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(wsp.c, _rs * _px - wsp.ax, _rs * _py - wsp.ay);
+      setScreen(ctx);
+      if (!(_G && _G.waterFx && _G.time < _G.waterFx.until)) return;   /* turret only matters while spraying */
+    }
     if (v.type === "car") {
       obox(ctx, x, y, c, sn, -0.85, 0.85, 0.4, 0, 0.14, "#2a2f38", C_DARK);
       obox(ctx, x, y, c, sn, -0.9, 0.9, 0.42, 0.12, 0.48, "#f5f7fa", C_WHITE, [42, 93, 176, 0.24, 0.34]);
