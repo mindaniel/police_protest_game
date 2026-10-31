@@ -2,25 +2,25 @@
 var LEVELS = (function () {
   var list = [
     {
-      id: "calm", matchSeconds: 600, name: "Calm march", crowdSize: 220, rioterCount: 6,
+      id: "calm", forceBudget: 26, matchSeconds: 600, name: "Calm march", crowdSize: 220, rioterCount: 6,
       loadoutBudget: 12, lootJoinChance: 0.15, vanguardChance: 0.03,
       spawnTrickleSeconds: 90, duskStart: 0.5,
       blurb: "A peaceful march with a few troublemakers."
     },
     {
-      id: "tense", matchSeconds: 720, name: "Tense rally", crowdSize: 420, rioterCount: 10,
+      id: "tense", forceBudget: 22, matchSeconds: 720, name: "Tense rally", crowdSize: 420, rioterCount: 10,
       loadoutBudget: 10, lootJoinChance: 0.25, vanguardChance: 0.05,
       spawnTrickleSeconds: 110, duskStart: 0.45,
       blurb: "A big angry rally. Rioters hide in the crowd."
     },
     {
-      id: "angry", matchSeconds: 900, name: "Angry city", crowdSize: 640, rioterCount: 15,
+      id: "angry", forceBudget: 22, matchSeconds: 900, name: "Angry city", crowdSize: 640, rioterCount: 15,
       loadoutBudget: 10, lootJoinChance: 0.32, vanguardChance: 0.07,
       spawnTrickleSeconds: 130, duskStart: 0.4,
       blurb: "Huge crowds, looting spreads fast."
     },
     {
-      id: "riot", matchSeconds: 900, name: "Riot night", crowdSize: 900, rioterCount: 22,
+      id: "riot", forceBudget: 20, matchSeconds: 900, name: "Riot night", crowdSize: 900, rioterCount: 22,
       loadoutBudget: 9, lootJoinChance: 0.40, vanguardChance: 0.09,
       spawnTrickleSeconds: 150, duskStart: 0,
       blurb: "The whole city is out. Starts at dusk."
@@ -67,6 +67,7 @@ var LEVELS = (function () {
     CONFIG.spawnTrickleSeconds = lv.spawnTrickleSeconds;
     CONFIG.duskStart = lv.duskStart;
     CONFIG.matchSeconds = lv.matchSeconds;
+    CONFIG.forceBudget = lv.forceBudget;
   }
 
   function label() {

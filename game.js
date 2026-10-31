@@ -339,6 +339,7 @@ function restartGame(newCity) {
   G = makeG();
   Crowd.init(G);
   Crowd.rebuildFlow(G);
+  if (typeof FORCE !== "undefined" && typeof Police !== "undefined") Police.setForce(FORCE.loadouts());
   if (typeof Police !== "undefined") Police.init(G);
   if (typeof FX !== "undefined") FX.init(G);
   if (typeof GAS !== "undefined") GAS.init(G);
@@ -373,6 +374,7 @@ function initGame() {
   }
   Crowd.init(G);
   Crowd.rebuildFlow(G);
+  if (typeof FORCE !== "undefined" && typeof Police !== "undefined") Police.setForce(FORCE.loadouts());
   if (typeof Police !== "undefined") Police.init(G);
   if (typeof FX !== "undefined") FX.init(G);
   if (typeof GAS !== "undefined") GAS.init(G);
@@ -389,6 +391,19 @@ function initGame() {
 
   if (typeof UI !== "undefined") {
     UI.init(G, Game);
+    if (typeof FORCE !== "undefined") {
+      /* the force builder rebuilds the squads on the map whenever a count changes */
+      FORCE.onApply(function (list) {
+        Police.setForce(list);
+        Police.init(G);
+        if (typeof ORDERS !== "undefined") ORDERS.init(G);
+        if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
+        if (typeof UNITS !== "undefined") UNITS.init(G);
+        if (typeof LIAISON !== "undefined") LIAISON.init(G);
+        if (UI.selected >= CONFIG.squadCount) UI.selected = 0;
+      });
+      FORCE.onStart(function () { uiStartPlay(); });
+    }
   } else {
     window.addEventListener("keydown", function (e) {
       if (e.code === "Space") {

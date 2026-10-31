@@ -61,7 +61,7 @@ var GAS = (function () {
 
   function resetStocks(G) {
     var s, lo;
-    for (s = 0; s < 6; s++) {
+    for (s = 0; s < (CONFIG.squadCount || 6); s++) {
       lo = "none";
       try {
         if (typeof Police !== "undefined" && Police && Police.getLoadout) lo = Police.getLoadout(G, s);

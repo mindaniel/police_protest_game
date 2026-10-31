@@ -48,7 +48,8 @@ var HELP = (function () {
       sec("Squad");
       ln("1-6 / click", "select a squad", 1);
       ln("click green street", "place it", 1);
-      ln("V", "change loadout", 1);
+      ln("V", "show / hide force panel", 1);
+      ln("+ / - (panel)", "how many of each unit", 1);
       ln("O", "standing order", 1);
       ln("Y + clicks", "patrol route", 2);
       ln("Z + click", "trigger zone", 2);

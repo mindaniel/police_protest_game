@@ -85,12 +85,10 @@ UI.init = function (g, game) {
       return;
     }
     if (UI.screen === "planning") {
-      if (e.code === "Enter") {
-        UI.screen = "playing"; UI.mode = null; e.preventDefault();
-        if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
-      }
+      if (e.code === "Enter") { uiStartPlay(); e.preventDefault(); }
       else if (uiOrderKey(e, k)) { /* standing orders */ }
       else if (uiSelectKey(k)) { /* squad selected */ }
+      else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
       else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say(MAP.realName ? "Real map: " + MAP.realName : "New random city"); }
@@ -283,6 +281,12 @@ function uiArrest(e) {
   if (Police.orderArrest(G, UI.selected, ag)) UI.say("Squad " + (UI.selected + 1) + " moving in to arrest (a peaceful protester = wrong arrest)");
 }
 
+/* Planning -> live play. */
+function uiStartPlay() {
+  UI.screen = "playing"; UI.mode = null;
+  if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
+}
+
 /* Leave the title screen; rebuild the crowd when the difficulty changed. */
 function uiStartLevel() {
   if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
@@ -304,6 +308,7 @@ function uiLeftClick(e) {
     return;
   }
   if (UI.screen === "planning") {
+    if (typeof FORCE !== "undefined") { var flp = UI.toLogical(e); if (FORCE.click(flp.x, flp.y)) return; }
     var sq0 = UI.mode ? -1 : UI.pickSquad(e);
     if (sq0 >= 0) { UI.selected = sq0; return; }
     if (uiOrderClick(t)) return;
@@ -666,7 +671,8 @@ function uiPlanningLayer(ctx, g) {
     uiLabel(ctx, "BLOCKADE", bs[bi].x + bs[bi].w / 2, bs[bi].y + bs[bi].h / 2,
       "#ffb74d", "bold 10px Consolas, monospace");
   }
-  uiLoadoutPanel(ctx, g);
+  if (typeof FORCE !== "undefined") FORCE.draw(ctx, MAP.width * CONFIG.tileSize, MAP.height * CONFIG.tileSize);
+  else uiLoadoutPanel(ctx, g);
 }
 
 /* Big match clock in the top-left corner (sized for the screen, not the canvas). */
@@ -794,7 +800,7 @@ UI.draw = function (ctx, g) {
   var bot;
   if (UI.screen === "planning") {
     bot = "Squad " + (UI.selected + 1) + " (" + Police.getLoadout(g, UI.selected) + "): " + uiSquadDesc(g, UI.selected) + uiOrderHud(g) +
-      "  | click squad = select | click green street = place | V loadout | right-click/B barrier (" + left + " left) | N new city | Enter START" +
+      "  | click squad = select | click green street = place | " + (typeof FORCE !== "undefined" ? "V force panel" : "V loadout") + " | right-click/B barrier (" + left + " left) | N new city | Enter START" +
       (UI.mode ? "  [click to place: " + UI.mode.toUpperCase() + "]" : "");
   } else {
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +
