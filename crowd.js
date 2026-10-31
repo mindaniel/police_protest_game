@@ -9,6 +9,25 @@ var Crowd = (function () {
   /* ---------------- tile helpers ---------------- */
   function tkey(x, y) { return x + "," + y; }
 
+  var solidW = 0, solidH = 0, solidRows = null, solidGrid = null;
+
+  function staticSolid() {
+    var W = MAP.width, H = MAP.height;
+    if (solidRows === MAP.rows && solidGrid && solidW === W && solidH === H) return solidGrid;
+    solidRows = MAP.rows; solidW = W; solidH = H;
+    var g = solidGrid;
+    if (!g || g.length !== W * H) g = solidGrid = new Uint8Array(W * H);
+    else { for (var z = 0; z < g.length; z++) g[z] = 0; }
+    for (var y = 0; y < H; y++) {
+      var row = MAP.rows[y], base = y * W;
+      for (var x = 0; x < W; x++) {
+        var ch = row.charCodeAt(x);
+        if (ch === 35 || ch === 83 || ch === 87) g[base + x] = 1;
+      }
+    }
+    return g;
+  }
+
   function inBounds(x, y) {
     return x >= 0 && y >= 0 && x < MAP.width && y < MAP.height;
   }
@@ -20,28 +39,45 @@ var Crowd = (function () {
 
   /* Solid = buildings, shops, blocked tiles (barriers, van), off-map. */
   function isSolidTile(G, x, y) {
-    if (!inBounds(x, y)) return true;
-    var ch = MAP.rows[y].charAt(x);
-    if (ch === "#" || ch === "S" || ch === "W") return true;
-    return G.blocked.has(tkey(x, y));
+    if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return true;
+    var g = staticSolid();
+    if (g[y * MAP.width + x]) return true;
+    var b = G.blocked;
+    if (b !== undefined && b.size > 0 && b.has(x + "," + y)) return true;
+    return false;
   }
 
   /* Path-search wall: real solids plus tiles covered by parked vehicles.
    * Only used by BFS; collision tests must NOT consult G.vehBlocked. */
   function isPathWall(G, x, y) {
-    if (isSolidTile(G, x, y)) return true;
-    var k = tkey(x, y);
-    return !!((G.vehBlocked && G.vehBlocked.has(k)) || (G.fireBlocked && G.fireBlocked.has(k)));
+    if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return true;
+    var g = staticSolid();
+    if (g[y * MAP.width + x]) return true;
+    var b = G.blocked;
+    if (b !== undefined && b.size > 0 && b.has(x + "," + y)) return true;
+    var vb = G.vehBlocked, fb = G.fireBlocked;
+    if ((vb !== undefined && vb.size > 0) || (fb !== undefined && fb.size > 0)) {
+      var k = x + "," + y;
+      if (vb !== undefined && vb.has(k)) return true;
+      if (fb !== undefined && fb.has(k)) return true;
+    }
+    return false;
   }
 
   /* Circle-vs-tile test used to stop agents ending a step inside a wall. */
   function collides(G, x, y, r) {
-    r = r || CONFIG.agentRadius;
+    if (r === undefined || r === null) r = CONFIG.agentRadius;
+    var W = MAP.width, H = MAP.height, g = staticSolid();
+    var blocked = G.blocked, hasBlocked = blocked !== undefined && blocked.size > 0;
     var x0 = Math.floor(x - r), x1 = Math.floor(x + r);
     var y0 = Math.floor(y - r), y1 = Math.floor(y + r);
     for (var ty = y0; ty <= y1; ty++) {
+      if (ty < 0 || ty >= H) return true;
+      var base = ty * W;
       for (var tx = x0; tx <= x1; tx++) {
-        if (isSolidTile(G, tx, ty)) return true;
+        if (tx < 0 || tx >= W) return true;
+        if (g[base + tx]) return true;
+        if (hasBlocked && blocked.has(tx + "," + ty)) return true;
       }
     }
     return false;
@@ -49,32 +85,49 @@ var Crowd = (function () {
 
   /* ---------------- spatial hash ---------------- */
   function rebuildHash(G) {
-    var buckets = new Map();
     var cell = CONFIG.hashCell;
+    var cols = Math.ceil(MAP.width / cell) + 1;
+    var rows = Math.ceil(MAP.height / cell) + 1;
+    var h = G._hash, store = G._hashStore;
+    if (!store || store.cols !== cols || store.rows !== rows || store.cell !== cell) {
+      var buckets = new Array(cols * rows);
+      for (var b = 0; b < buckets.length; b++) buckets[b] = [];
+      store = G._hashStore = { cols: cols, rows: rows, cell: cell, buckets: buckets };
+      h = G._hash = { cell: cell, cols: cols, rows: rows, buckets: buckets };
+    } else {
+      var bs = store.buckets;
+      for (var c = 0; c < bs.length; c++) bs[c].length = 0;
+      h = G._hash;
+      if (!h || h.buckets !== bs) h = G._hash = { cell: cell, cols: cols, rows: rows, buckets: bs };
+    }
+    var buckets2 = h.buckets;
+    var maxCx = cols - 1, maxCy = rows - 1;
     var list = G.agents;
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
       if (!a.active) continue;
-      var k = Math.floor(a.x / cell) + "," + Math.floor(a.y / cell);
-      var b = buckets.get(k);
-      if (!b) { b = []; buckets.set(k, b); }
-      b.push(a);
+      var cx = Math.floor(a.x / cell), cy = Math.floor(a.y / cell);
+      if (cx < 0) cx = 0; else if (cx > maxCx) cx = maxCx;
+      if (cy < 0) cy = 0; else if (cy > maxCy) cy = maxCy;
+      buckets2[cy * cols + cx].push(a);
     }
-    G._hash = { cell: cell, buckets: buckets };
   }
 
   function neighbors(G, x, y, radius) {
     var out = [];
     var h = G._hash;
     if (!h) return out;
-    var cell = h.cell;
+    var cell = h.cell, cols = h.cols, rows = h.rows, buckets = h.buckets;
     var r2 = radius * radius;
     var cx0 = Math.floor((x - radius) / cell), cx1 = Math.floor((x + radius) / cell);
     var cy0 = Math.floor((y - radius) / cell), cy1 = Math.floor((y + radius) / cell);
+    if (cx0 < 0) cx0 = 0; if (cy0 < 0) cy0 = 0;
+    if (cx1 > cols - 1) cx1 = cols - 1; if (cy1 > rows - 1) cy1 = rows - 1;
     for (var cy = cy0; cy <= cy1; cy++) {
+      var rowBase = cy * cols;
       for (var cx = cx0; cx <= cx1; cx++) {
-        var b = h.buckets.get(cx + "," + cy);
-        if (!b) continue;
+        var b = buckets[rowBase + cx];
+        if (!b || b.length === 0) continue;
         for (var i = 0; i < b.length; i++) {
           var a = b[i];
           var dx = a.x - x, dy = a.y - y;
@@ -958,11 +1011,15 @@ var Crowd = (function () {
 
     var queryR = Math.max(CONFIG.moodSpreadRadius, CONFIG.sepRadius);
 
+    /* mood changes slowly: each agent updates it every 4th step (staggered),
+     * with the time since its last update; neighbour lists stay per step */
+    G._moodTick = ((G._moodTick || 0) + 1) & 3;
     for (i = 0; i < agents.length; i++) {
       var am = agents[i];
       if (!am.active) continue;
       am._nbrs = neighbors(G, am.x, am.y, queryR);
-      updateMood(G, am, am._nbrs, dt);
+      am._moodDt = (am._moodDt || 0) + dt;
+      if (((i + G._moodTick) & 3) === 0) { updateMood(G, am, am._nbrs, am._moodDt); am._moodDt = 0; }
     }
     for (i = 0; i < agents.length; i++) {
       var sa = agents[i];
