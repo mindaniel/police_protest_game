@@ -62,6 +62,9 @@ UI.init = function (g, game) {
 
   window.addEventListener("keydown", function (e) {
     var k = e.key;
+    if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
+      HELP.toggle(); e.preventDefault(); return;
+    }
     if (UI.screen === "title") {
       if (e.code === "Enter") { UI.screen = "planning"; e.preventDefault(); }
       return;
@@ -155,7 +158,11 @@ UI.init = function (g, game) {
     var wasDrag = UI._press.drag;
     UI._press = null;
     cv.style.cursor = "default";
-    if (!wasDrag && e.target === cv) uiLeftClick(e);
+    if (!wasDrag && e.target === cv) {
+      var hp = UI.toLogical(e);
+      if (typeof HELP !== "undefined" && UI.screen !== "title" && HELP.hit(hp.x, hp.y)) HELP.toggle();
+      else uiLeftClick(e);
+    }
   });
 };
 
@@ -418,7 +425,8 @@ var UI_CONTROLS = [
   "Shift+H / G / R / A : every squad holds / guards / retreats / goes auto",
   "Space : pause     T : speed 1x / 2x     N (planning) : new random city",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
-  "H : low buildings (see behind blocks)"
+  "H : low buildings (see behind blocks)",
+  "? or F1 : show / shrink / hide the controls panel (top right)"
 ];
 
 function uiSquadDesc(g, s) {
@@ -691,6 +699,14 @@ UI.draw = function (ctx, g) {
     ctx.textAlign = "center";
     ctx.fillStyle = "#ff8a80";
     ctx.fillText(UI.msg, w / 2, h - 40);
+  }
+
+  if (typeof HELP !== "undefined" && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {
+    HELP.draw(ctx, {
+      canvas: UI.Game.canvas, screen: UI.screen, mode: UI.mode || null, paused: false,
+      loadout: Police.getLoadout(g, UI.selected),
+      order: (typeof ORDERS !== "undefined") ? ORDERS.get(g, UI.selected).order : "hold"
+    });
   }
 
   if (UI.Game.paused && UI.screen === "playing") {
