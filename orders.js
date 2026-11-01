@@ -37,7 +37,16 @@ var ORDERS = (function () {
         lastShopX: 0, lastShopY: 0,
         nextLiaison: 0,
         autoRoute: true,
-        autoFrom: { x: cx, y: cy }
+        autoFrom: { x: cx, y: cy },
+        area: null,
+        areaAuto: true,
+        areaTried: false,
+        areaTargetX: null,
+        areaTargetY: null,
+        roamPauseUntil: 0,
+        roamLast: [],
+        roamBestDist: 1e9,
+        roamProgressT: 0
       };
     }
     return rec;
@@ -333,10 +342,11 @@ var ORDERS = (function () {
     if (!ensure(G)) return;
     var r = G.orders[s];
     if (!r) return;
+    var c;
     if (order === "guard" || order === "auto") {
-      r.postX = (typeof x === "number") ? x : (squadCenter(G, s) || { x: 0, y: 0 }).x;
-      r.postY = (typeof y === "number") ? y : (squadCenter(G, s) || { x: 0, y: 0 }).y;
-      if (typeof x !== "number") { var c = squadCenter(G, s); if (c) { r.postX = c.x; r.postY = c.y; } }
+      c = squadCenter(G, s);
+      r.postX = (typeof x === "number") ? x : (c ? c.x : 0);
+      r.postY = (typeof y === "number") ? y : (c ? c.y : 0);
     }
     if (order === "retreat") {
       if (typeof x === "number") { r.rallyX = x; r.rallyY = y; }
@@ -356,7 +366,16 @@ var ORDERS = (function () {
     r.pauseUntil = 0;
     r.atPost = false;
     r.lastMoveX = null; r.lastMoveY = null;
-    if (order === "patrol" && r.waypoints.length < 2) r.autoRoute = true;
+    if (order === "patrol") {
+      if (!r.area && (!r.waypoints || r.waypoints.length < 2)) {
+        r.areaAuto = true;
+        r.areaTried = false;
+        r.areaTargetX = null;
+        r.areaTargetY = null;
+        r.roamPauseUntil = 0;
+      }
+      if (r.waypoints.length < 2) r.autoRoute = true;
+    }
   }
 
   function setOrder(G, s, name) {
@@ -372,7 +391,9 @@ var ORDERS = (function () {
     return {
       order: r.order, postX: r.postX, postY: r.postY,
       targetX: r.targetX, targetY: r.targetY,
-      waypoints: r.waypoints, responding: r.responding
+      waypoints: r.waypoints, responding: r.responding,
+      area: r.area ? { x0: r.area.x0, y0: r.area.y0, x1: r.area.x1, y1: r.area.y1 } : null,
+      areaAuto: r.areaAuto
     };
   }
 
@@ -504,11 +525,68 @@ var ORDERS = (function () {
   }
 
   function thinkPatrol(G, s, r, cx, cy) {
-    if (r.waypoints.length < 2) {
-      if (r.autoRoute) autoRoute(G, s);
-      if (r.waypoints.length < 2) return;
+    var under, i, best, bd, d, aim, wp, target, a, ev;
+
+    if (!r.area && (!r.waypoints || r.waypoints.length < 2)) {
+      if (!r.areaTried) {
+        r.areaTried = true;
+        autoDivide(G);
+      }
+      if (!r.area) return;
     }
-    var under = shopsUnderAttack(G), i, best = null, bd = 1e9, d, aim;
+
+    if (r.area) {
+      ev = areaTrouble(G, r.area);
+      if (ev) {
+        r.areaTargetX = null;
+        r.areaTargetY = null;
+        r.roamPauseUntil = 0;
+        aim = ev.shop ? shopAim(G, ev.shop, cx, cy) : ev;
+        moveTo(G, s, aim.x, aim.y, true);
+        return;
+      }
+
+      if (G.time < r.roamPauseUntil) return;
+
+      if (r.areaTargetX !== null) {
+        d = dist(cx, cy, r.areaTargetX, r.areaTargetY);
+        if (d < 1.0) {
+          r.areaTargetX = null;
+          r.areaTargetY = null;
+          r.roamPauseUntil = G.time + 2 + Math.random() * 4;
+          return;
+        }
+        if (d < r.roamBestDist - 0.5) {
+          r.roamBestDist = d;
+          r.roamProgressT = G.time;
+        }
+        if (G.time - r.roamProgressT > 12) {
+          r.areaTargetX = null;
+          r.areaTargetY = null;
+          r.roamProgressT = G.time;
+          return;
+        }
+        moveTo(G, s, r.areaTargetX, r.areaTargetY, false);
+        return;
+      }
+
+      target = pickRoamTarget(G, r);
+      if (target) {
+        r.areaTargetX = target.x;
+        r.areaTargetY = target.y;
+        r.roamBestDist = dist(cx, cy, target.x, target.y);
+        r.roamProgressT = G.time;
+        r.roamLast.push({ x: target.x, y: target.y });
+        if (r.roamLast.length > 3) r.roamLast.shift();
+        moveTo(G, s, target.x, target.y, false);
+      }
+      return;
+    }
+
+    if (r.waypoints.length < 2) return;
+
+    under = shopsUnderAttack(G);
+    best = null; bd = 1e9;
     for (i = 0; i < under.length; i++) {
       d = dist(under[i].shop.x + 0.5, under[i].shop.y + 0.5, cx, cy);
       if (d <= 6 && d < bd) { bd = d; best = under[i]; }
@@ -520,7 +598,8 @@ var ORDERS = (function () {
       moveTo(G, s, aim.x, aim.y, true);
       return;
     }
-    var wp = r.waypoints[r.wpIndex % r.waypoints.length];
+
+    wp = r.waypoints[r.wpIndex % r.waypoints.length];
     if (!wp) return;
     if (dist(cx, cy, wp.x, wp.y) < 0.8) {
       if (r.pauseUntil === 0) { r.pauseUntil = G.time + 4; return; }
@@ -648,6 +727,307 @@ var ORDERS = (function () {
   }
 
   /* Called when live play starts: the planned positions become the rally points. */
+  function mapDims(G) {
+    var map = G.map, w = 0, h = 0;
+    if (map) {
+      w = map.width || map.w || map.cols || 0;
+      h = map.height || map.h || map.rows || 0;
+      if ((!w || !h) && map.length) {
+        h = map.length;
+        if (map[0]) w = map[0].length || 0;
+      }
+    }
+    return { w: w || 0, h: h || 0 };
+  }
+
+  function walkableBounds(G) {
+    var d = mapDims(G), w = d.w, h = d.h, i, j;
+    if (!w || !h) { w = 256; h = 256; }
+    var x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, found = false;
+    for (j = 0; j < h; j++) {
+      for (i = 0; i < w; i++) {
+        if (!walkable(G, i, j)) continue;
+        found = true;
+        if (i < x0) x0 = i;
+        if (i > x1) x1 = i;
+        if (j < y0) y0 = j;
+        if (j > y1) y1 = j;
+      }
+    }
+    if (!found) return null;
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
+
+  function countWalkableIn(G, x0, y0, x1, y1) {
+    var i, j, n = 0;
+    for (j = y0; j <= y1; j++) for (i = x0; i <= x1; i++) if (walkable(G, i, j)) n++;
+    return n;
+  }
+
+  function setArea(G, s, x0, y0, x1, y1) {
+    if (!ensure(G)) return;
+    var r = G.orders[s];
+    if (!r) return;
+    x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.floor(x1); y1 = Math.floor(y1);
+    var t;
+    if (x0 > x1) { t = x0; x0 = x1; x1 = t; }
+    if (y0 > y1) { t = y0; y0 = y1; y1 = t; }
+    var d = mapDims(G);
+    if (d.w > 0) {
+      if (x0 < 0) x0 = 0;
+      if (x1 >= d.w) x1 = d.w - 1;
+    }
+    if (d.h > 0) {
+      if (y0 < 0) y0 = 0;
+      if (y1 >= d.h) y1 = d.h - 1;
+    }
+    var add;
+    if (x1 - x0 + 1 < 6) {
+      add = 6 - (x1 - x0 + 1);
+      x0 -= Math.floor(add / 2);
+      x1 += Math.ceil(add / 2);
+      if (d.w > 0) {
+        if (x0 < 0) x0 = 0;
+        if (x1 >= d.w) x1 = d.w - 1;
+      }
+    }
+    if (y1 - y0 + 1 < 6) {
+      add = 6 - (y1 - y0 + 1);
+      y0 -= Math.floor(add / 2);
+      y1 += Math.ceil(add / 2);
+      if (d.h > 0) {
+        if (y0 < 0) y0 = 0;
+        if (y1 >= d.h) y1 = d.h - 1;
+      }
+    }
+    r.area = { x0: x0, y0: y0, x1: x1, y1: y1 };
+    r.areaAuto = false;
+    r.areaTried = true;
+    r.areaTargetX = null;
+    r.areaTargetY = null;
+    r.roamPauseUntil = 0;
+    r.order = "patrol";
+    r.responding = false;
+    r.savedOrder = null;
+  }
+
+  function clearArea(G, s) {
+    if (!ensure(G)) return;
+    var r = G.orders[s];
+    if (!r) return;
+    r.area = null;
+    r.areaAuto = false;
+    r.areaTried = false;
+    r.areaTargetX = null;
+    r.areaTargetY = null;
+    r.roamPauseUntil = 0;
+  }
+
+  function autoDivide(G) {
+    if (!ensure(G)) return;
+    var i, j, r, idx, squads = [], n = 0;
+    for (i = 0; i < G.orders.length; i++) {
+      r = G.orders[i];
+      if (r.order === "patrol" && r.areaAuto !== false) squads.push(i);
+    }
+    n = squads.length;
+    if (!n) return;
+
+    var box = walkableBounds(G);
+    if (!box) return;
+    var W = box.x1 - box.x0 + 1, H = box.y1 - box.y0 + 1;
+    var best = null, rows, cols, cw, ch, score;
+    for (rows = 1; rows <= n; rows++) {
+      cols = Math.ceil(n / rows);
+      cw = W / cols;
+      ch = H / rows;
+      score = Math.abs(cw - ch);
+      if (!best || score < best.score) best = { cols: cols, rows: rows, score: score };
+    }
+    cols = best.cols;
+    rows = best.rows;
+
+    var cells = [], x0, x1, y0, y1, cnt, gx, gy;
+    for (gy = 0; gy < rows; gy++) {
+      for (gx = 0; gx < cols; gx++) {
+        x0 = box.x0 + Math.floor(gx * W / cols);
+        x1 = box.x0 + Math.floor((gx + 1) * W / cols) - 1;
+        y0 = box.y0 + Math.floor(gy * H / rows);
+        y1 = box.y0 + Math.floor((gy + 1) * H / rows) - 1;
+        if (x1 < x0 || y1 < y0) continue;
+        cnt = countWalkableIn(G, x0, y0, x1, y1);
+        if (cnt >= 40) cells.push({ x0: x0, y0: y0, x1: x1, y1: y1, count: cnt });
+      }
+    }
+    if (!cells.length) cells.push({ x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1, count: 0 });
+
+    while (cells.length > n) {
+      var bi = 0, bj = 1, bd = 1e9;
+      for (i = 0; i < cells.length; i++) {
+        for (j = i + 1; j < cells.length; j++) {
+          var ax = (cells[i].x0 + cells[i].x1) / 2, ay = (cells[i].y0 + cells[i].y1) / 2;
+          var bx = (cells[j].x0 + cells[j].x1) / 2, by = (cells[j].y0 + cells[j].y1) / 2;
+          var dx = ax - bx, dy = ay - by, dd = dx * dx + dy * dy;
+          if (dd < bd) { bd = dd; bi = i; bj = j; }
+        }
+      }
+      var A = cells[bi], B = cells[bj];
+      cells[bi] = {
+        x0: Math.min(A.x0, B.x0), y0: Math.min(A.y0, B.y0),
+        x1: Math.max(A.x1, B.x1), y1: Math.max(A.y1, B.y1),
+        count: (A.count || 0) + (B.count || 0)
+      };
+      cells.splice(bj, 1);
+    }
+
+    var used = [];
+    for (i = 0; i < squads.length; i++) {
+      idx = squads[i];
+      r = G.orders[idx];
+      var c = squadCenter(G, idx);
+      if (!c) continue;
+      var bestCell = -1, bd2 = 1e9;
+      for (j = 0; j < cells.length; j++) {
+        if (used[j]) continue;
+        var ccx = (cells[j].x0 + cells[j].x1 + 1) / 2;
+        var ccy = (cells[j].y0 + cells[j].y1 + 1) / 2;
+        var d2 = dist(c.x, c.y, ccx, ccy);
+        if (d2 < bd2) { bd2 = d2; bestCell = j; }
+      }
+      if (bestCell >= 0) {
+        used[bestCell] = true;
+        r.area = {
+          x0: cells[bestCell].x0, y0: cells[bestCell].y0,
+          x1: cells[bestCell].x1, y1: cells[bestCell].y1
+        };
+        r.areaAuto = true;
+        r.areaTried = true;
+        r.areaTargetX = null;
+        r.areaTargetY = null;
+        r.roamPauseUntil = 0;
+      }
+    }
+  }
+
+  function inArea(area, x, y, m) {
+    if (!area) return false;
+    if (typeof m !== "number") m = 0;
+    return x >= area.x0 - m && x <= area.x1 + 1 + m && y >= area.y0 - m && y <= area.y1 + 1 + m;
+  }
+
+  function areaTrouble(G, area) {
+    var under = shopsUnderAttack(G), i, sh, a;
+    for (i = 0; i < under.length; i++) {
+      sh = under[i].shop;
+      if (inArea(area, sh.x + 0.5, sh.y + 0.5, 4)) return { x: sh.x + 0.5, y: sh.y + 0.5, shop: sh };
+    }
+    for (i = 0; i < G.agents.length; i++) {
+      a = G.agents[i];
+      if (!a.active || !visibleViolent(G, a)) continue;
+      if (inArea(area, a.x, a.y, 4)) return { x: a.x, y: a.y };
+    }
+    return null;
+  }
+
+  function pickRoamTarget(G, r) {
+    var a = r.area;
+    if (!a) return null;
+    r.roamLast = r.roamLast || [];
+    var shops = G.shops || [], shopInside = [], i, tries, tx, ty, sh, ok, j, last;
+    for (i = 0; i < shops.length; i++) {
+      sh = shops[i];
+      if (sh.x >= a.x0 && sh.x <= a.x1 && sh.y >= a.y0 && sh.y <= a.y1) shopInside.push(sh);
+    }
+
+    for (tries = 0; tries < 30; tries++) {
+      if (Math.random() < 0.5 && shopInside.length) {
+        sh = shopInside[Math.floor(Math.random() * shopInside.length)];
+        tx = sh.x + (Math.random() * 7 - 3);
+        ty = sh.y + (Math.random() * 7 - 3);
+      } else {
+        tx = a.x0 + Math.random() * (a.x1 - a.x0 + 1);
+        ty = a.y0 + Math.random() * (a.y1 - a.y0 + 1);
+      }
+      tx = Math.floor(tx);
+      ty = Math.floor(ty);
+      if (tx < a.x0 || tx > a.x1 || ty < a.y0 || ty > a.y1) continue;
+      if (!walkable(G, tx, ty)) continue;
+      ok = true;
+      for (j = 0; j < r.roamLast.length; j++) {
+        last = r.roamLast[j];
+        if (dist(tx + 0.5, ty + 0.5, last.x, last.y) < 4) { ok = false; break; }
+      }
+      if (!ok) continue;
+      return { x: tx + 0.5, y: ty + 0.5 };
+    }
+
+    for (tries = 0; tries < 30; tries++) {
+      tx = Math.floor(a.x0 + Math.random() * (a.x1 - a.x0 + 1));
+      ty = Math.floor(a.y0 + Math.random() * (a.y1 - a.y0 + 1));
+      if (!walkable(G, tx, ty)) continue;
+      return { x: tx + 0.5, y: ty + 0.5 };
+    }
+    return null;
+  }
+
+  function drawAreas(ctx, G, selected, planning) {
+    if (!ensure(G)) return;
+    var i, r, sig = "", need = false;
+    for (i = 0; i < G.orders.length; i++) {
+      r = G.orders[i];
+      if (r.order === "patrol") sig += i + ",";
+    }
+    if (planning) {
+      if (G._patrolSig !== sig) need = true;
+      for (i = 0; i < G.orders.length; i++) {
+        r = G.orders[i];
+        if (r.order === "patrol" && r.areaAuto !== false && !r.area) need = true;
+      }
+      if (need && (typeof G._areaDivideT !== "number" || G.time - G._areaDivideT > 1)) {
+        autoDivide(G);
+        G._areaDivideT = G.time;
+        G._patrolSig = sig;
+      }
+    }
+
+    ctx.save();
+    for (i = 0; i < G.orders.length; i++) {
+      r = G.orders[i];
+      if (r.order !== "patrol" || !r.area) continue;
+      if (!planning && i !== selected) continue;
+      var a = r.area;
+      var p0 = Art.project(a.x0, a.y0, 0);
+      var p1 = Art.project(a.x1 + 1, a.y1 + 1, 0);
+      var x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y);
+      var w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
+      if (planning) {
+        ctx.globalAlpha = (i === selected) ? 0.18 : 0.08;
+        ctx.fillStyle = RING.patrol;
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = RING.patrol;
+        ctx.lineWidth = (i === selected) ? 1.6 : 1;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = RING.patrol;
+        ctx.font = "bold " + Math.max(10, Math.round(10 * Art.camera.S)) + "px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText("S" + (i + 1) + " patrol", x + 4, y + 4);
+      } else {
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = RING.patrol;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 6]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+  }
+
   function startPlay(G) {
     if (!ensure(G)) return;
     for (var i = 0; i < G.orders.length; i++) {
@@ -740,6 +1120,7 @@ var ORDERS = (function () {
 
   function draw(ctx, G, selected, planning) {
     if (!ensure(G)) return;
+    drawAreas(ctx, G, selected, planning);
     var S = Art.camera.S;
     var i, r, c, p, letter, col;
     ctx.save();
@@ -887,6 +1268,7 @@ var ORDERS = (function () {
     setTrigger: setTrigger, clearTrigger: clearTrigger,
     onManualMove: onManualMove,
     autoRoute: autoRoute, setOrder: setOrder,
+    setArea: setArea, clearArea: clearArea, autoDivide: autoDivide,
     NAMES: NAMES, startPlay: startPlay
   };
 })();

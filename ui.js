@@ -218,6 +218,7 @@ UI.init = function (g, game) {
     }
   });
   window.addEventListener("mousemove", function (e) {
+    if (UI.mode === "patrolArea" && e.target === cv) UI.hoverTile = UI.toTile(e);   /* patrol area preview */
     if (UI._mini) { var mmv = UI.toLogical(e); MINIMAP.mouseMove(mmv.x, mmv.y); return; }
     if (typeof METERS !== "undefined" && METERS.using(G)) { var mt = UI.toTile(e); METERS.aim(G, mt.x + 0.5, mt.y + 0.5); }
     /* tear gas aiming: range circle and target cross */
@@ -255,7 +256,7 @@ UI.init = function (g, game) {
     if (!wasDrag && e.target === cv && (UI.screen === "planning" || UI.screen === "playing")) {
       var mp = UI.toLogical(e);
       if (uiMenuClick(mp.x, mp.y)) return;
-      if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G)) return;
+      if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G, e.shiftKey)) return;
     }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
@@ -543,6 +544,18 @@ function uiOrderClick(t) {
     ORDERS.setTarget(G, s, x, y); UI.mode = null; UI.say("Squad " + (s + 1) + " pushing forward (firm, shoves when packed)");
     return true;
   }
+if (UI.mode === "patrolArea") {
+    if (!UI._areaA) {
+      UI._areaA = { x: t.x, y: t.y };
+      UI.say("Now click the opposite corner");
+    } else {
+      ORDERS.setArea(G, UI.selected, UI._areaA.x, UI._areaA.y, t.x, t.y);
+      UI.mode = null;
+      UI._areaA = null;
+      UI.say("Squad " + (UI.selected + 1) + " patrols this area");
+    }
+    return true;
+  }
   if (UI.mode === "waypoint") {
     if (!Police.isWalkable(G, t.x, t.y)) { UI.say("Patrol points must be on the street"); return true; }
     ORDERS.addWaypoint(G, s, x, y);
@@ -805,6 +818,23 @@ function uiPlanningLayer(ctx, g) {
   var zones = CONFIG.spawnZones || [MAP.crowdSpawn];
   var bs = CONFIG.blockSites || [], bi, zi, cs;
   uiGround(ctx, true);
+  if (UI.mode === "patrolArea" && UI._areaA && UI.hoverTile) {
+    var ts = CONFIG.tileSize;
+    var ax = UI._areaA.x * ts;
+    var ay = UI._areaA.y * ts;
+    var bx2 = UI.hoverTile.x * ts;
+    var by2 = UI.hoverTile.y * ts;
+    var rx2 = Math.min(ax, bx2);
+    var ry2 = Math.min(ay, by2);
+    var rw2 = Math.abs(bx2 - ax) + ts;
+    var rh2 = Math.abs(by2 - ay) + ts;
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = "#2a9d8f";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rx2 + 0.5, ry2 + 0.5, rw2 - 1, rh2 - 1);
+    ctx.restore();
+  }
   if (UI.mode !== "barrier") {
     /* roads keep their normal look; only street tiles where squads may NOT be placed get a faint red */
     ctx.fillStyle = "rgba(220,60,60,0.14)";

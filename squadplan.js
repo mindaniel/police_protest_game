@@ -57,6 +57,16 @@ var SQUADPLAN = (function () {
     return "hold";
   }
 
+  function getAreaInfo(G, i) {
+    try {
+      if (typeof ORDERS !== "undefined" && ORDERS && typeof ORDERS.get === "function") {
+        var o = ORDERS.get(G, i);
+        if (o && o.area) return o.area;
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function applyOrder(G, i, name) {
     try {
       if (typeof ORDERS === "undefined" || !ORDERS) return;
@@ -148,6 +158,14 @@ var SQUADPLAN = (function () {
     return lines;
   }
 
+  function areaLabel(G, i) {
+    var a = getAreaInfo(G, i);
+    if (!a) return "auto";
+    var w = Math.abs(a.x1 - a.x0) + 1;
+    var h = Math.abs(a.y1 - a.y0) + 1;
+    return w + "x" + h;
+  }
+
   // ---- draw ----
 
   function drawHidden(ctx, w, h) {
@@ -197,14 +215,14 @@ var SQUADPLAN = (function () {
 
     // Pre-measure header/footer/subtitle so we can compute natural height
     var headH = 26 * scale;
-    var footerH = 26 * scale;
+    var footerH = 24 * scale;
 
     ctx.save();
     ctx.font = fontFor(baseFont - 2, scale);
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
 
-    var sub = "Sedans and bikes patrol, the rest hold. Click to change.";
+    var sub = "Bikes and sedans patrol their own area. 'area' = draw it.";
     var maxSubW = panelW - pad * 2;
     var subLines = wrapText(ctx, sub, maxSubW);
     if (subLines.length === 0) subLines = [sub];
@@ -216,8 +234,13 @@ var SQUADPLAN = (function () {
 
     var count = squadCount(G);
 
+    // Footer: two rows of buttons
+    var footRowH = 22 * scale;
+    var footGap = 4 * scale;
+    var footerBlockH = footRowH * 2 + footGap;
+
     // Natural panel height: header + subtitle block + rows + footer + padding
-    var contentH = headH + 4 * scale + subBlockH + 4 * scale + (count * rowH) + 4 * scale + footerH + pad * 2;
+    var contentH = headH + 4 * scale + subBlockH + 4 * scale + (count * rowH) + 4 * scale + footerBlockH + pad * 2;
     var panelH = Math.min(maxPanelH, Math.max(120 * scale, contentH));
     if (panelH < 120 * scale) panelH = 120 * scale;
 
@@ -265,12 +288,12 @@ var SQUADPLAN = (function () {
     }
     y += 4 * scale;
 
-    // bottom buttons
-    var footerY = panelY + panelH - pad - footerH;
+    // footer block sits at bottom
+    var footerTop = panelY + panelH - pad - footerBlockH;
 
     // row area
     listTop = y;
-    listBottom = footerY - 4 * scale;
+    listBottom = footerTop - 4 * scale;
 
     var totalH = count * rowH;
     maxScroll = Math.max(0, totalH - (listBottom - listTop));
@@ -309,7 +332,11 @@ var SQUADPLAN = (function () {
       var labelX = rx + 6 * scale;
       var label = (i + 1) + ". " + unitName(lt);
       ctx.fillStyle = isSel ? "#f4d35e" : "#e6e6e6";
-      var labelMaxW = rw - 6 * scale - 4 * scale - (4 * 26 + 4) * scale - 46 * scale;
+      // reserve space: 4 order buttons (24 each) + 3 gaps + area/route button (40) + gap + area label (~34)
+      var areaLabelW = 36 * scale;
+      var actionW = 42 * scale;
+      var labelMaxW = rw - 6 * scale - 4 * scale - (4 * 26 + 4) * scale - actionW - areaLabelW - 6 * scale;
+      if (labelMaxW < 30 * scale) labelMaxW = 30 * scale;
       var lw = ctx.measureText(label).width;
       if (lw > labelMaxW) {
         var cl = label;
@@ -325,36 +352,61 @@ var SQUADPLAN = (function () {
       var btnW = 24 * scale;
       var gap = 3 * scale;
       var right = rx + rw - 4 * scale;
-      var showRoute = (ord === "patrol");
-      var routeW = showRoute ? 40 * scale : 0;
-      var buttonsW = 4 * btnW + 3 * gap + (showRoute ? routeW + gap : 0);
+      var showArea = (ord === "patrol");
+      var buttonsW = 4 * btnW + 3 * gap + (showArea ? actionW + gap + areaLabelW + gap : 0);
       var bx = right - buttonsW;
       var by = ry + (rowH - btnH) / 2;
 
-      // route button (drawn first so order buttons align after)
-      if (showRoute) {
-        var rbx = right - routeW;
-        var routeLabel = "route";
+      // area/route button (drawn first so order buttons align after)
+      if (showArea) {
+        var abx = right - actionW - areaLabelW - gap;
+        var actionLabel = "area";
         ctx.font = fontFor(baseFont - 4, scale);
         ctx.fillStyle = "rgba(42,157,143,0.25)";
         ctx.strokeStyle = "#2a9d8f";
-        rr(ctx, rbx, by, routeW, btnH, 3 * scale);
+        rr(ctx, abx, by, actionW, btnH, 3 * scale);
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = "#e6e6e6";
         ctx.textAlign = "center";
-        ctx.fillText(routeLabel, rbx + routeW / 2, by + btnH / 2 + 1);
+        ctx.fillText(actionLabel, abx + actionW / 2, by + btnH / 2 + 1);
+
+        // area size label to the right of button
+        var albl = areaLabel(G, i);
+        var albx = right - areaLabelW;
+        ctx.font = fontFor(baseFont - 5, scale);
+        ctx.fillStyle = "#7d8797";
+        ctx.textAlign = "center";
+        ctx.fillText(albl, albx + areaLabelW / 2, by + btnH / 2 + 1);
         ctx.font = fontFor(baseFont - 1, scale);
+
         (function (idx) {
-          box(rbx, by, routeW, btnH, function () {
+          box(abx, by, actionW, btnH, function () {
+            var shift = false;
             try {
-              if (typeof ORDERS !== "undefined" && ORDERS && typeof ORDERS.clearWaypoints === "function") {
-                ORDERS.clearWaypoints(G, idx);
-              }
+              if (typeof UI !== "undefined" && UI && UI._shiftDown) shift = true;
             } catch (e) {}
-            setSelected(idx);
-            try { if (typeof UI !== "undefined" && UI) UI.mode = "waypoint"; } catch (e) {}
-            say("Click 2-6 patrol points for squad " + (idx + 1) + ", Esc when done");
+            // click() forwards shift via lastShift; also honor UI._shiftDown
+            shift = lastShift;
+            if (shift) {
+              try {
+                if (typeof ORDERS !== "undefined" && ORDERS && typeof ORDERS.clearWaypoints === "function") {
+                  ORDERS.clearWaypoints(G, idx);
+                }
+              } catch (e) {}
+              setSelected(idx);
+              try { if (typeof UI !== "undefined" && UI) UI.mode = "waypoint"; } catch (e) {}
+              say("Click 2-6 patrol points for squad " + (idx + 1) + ", Esc when done");
+            } else {
+              setSelected(idx);
+              try {
+                if (typeof UI !== "undefined" && UI) {
+                  UI.mode = "patrolArea";
+                  UI._areaA = null;
+                }
+              } catch (e) {}
+              say("Squad " + (idx + 1) + ": click two opposite corners of its patrol area (Esc cancels)");
+            }
           });
         })(i);
       }
@@ -415,46 +467,69 @@ var SQUADPLAN = (function () {
       ctx.fill();
     }
 
-    // footer buttons
-    var footBtns = ["All hold", "Vehicles patrol", "All auto"];
+    // footer buttons: two rows
     ctx.font = fontFor(baseFont - 2, scale);
-    var totalFW = 0;
-    var fws = [];
-    for (var f = 0; f < footBtns.length; f++) {
-      var fw = ctx.measureText(footBtns[f]).width + 14 * scale;
-      fws.push(fw);
-      totalFW += fw;
+    var row1 = ["All hold", "Vehicles patrol", "All auto"];
+    var row2 = ["Split city"];
+
+    function drawFootRow(labels, fy) {
+      var widths = [];
+      var totalW = 0;
+      for (var f = 0; f < labels.length; f++) {
+        var fw = ctx.measureText(labels[f]).width + 14 * scale;
+        widths.push(fw);
+        totalW += fw;
+      }
+      var fgap = labels.length > 1 ? Math.max(4 * scale, (panelW - pad * 2 - totalW) / (labels.length - 1)) : 0;
+      var fx = panelX + pad;
+      for (var g = 0; g < labels.length; g++) {
+        drawFootButton(labels[g], fx, fy, widths[g], footRowH);
+        fx += widths[g] + fgap;
+      }
     }
-    var fgap = Math.max(4 * scale, (panelW - pad * 2 - totalFW) / (footBtns.length > 1 ? footBtns.length - 1 : 1));
-    var fx = panelX + pad;
-    var fby = footerY;
-    var fbH = footerH;
-    for (var g = 0; g < footBtns.length; g++) {
-      (function (nm, fx2, fw2) {
-        ctx.fillStyle = "rgba(58,74,96,0.5)";
-        ctx.strokeStyle = "#3a4a60";
-        rr(ctx, fx2, fby, fw2, fbH, 4 * scale);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = "#e6e6e6";
-        ctx.textAlign = "center";
-        ctx.fillText(nm, fx2 + fw2 / 2, fby + fbH / 2 + 1);
-        box(fx2, fby, fw2, fbH, function () {
-          var n = squadCount(G);
-          if (nm === "All hold") {
-            for (var i2 = 0; i2 < n; i2++) applyOrder(G, i2, "hold");
-          } else if (nm === "All auto") {
-            for (var i3 = 0; i3 < n; i3++) applyOrder(G, i3, "auto");
-          } else {
-            for (var i4 = 0; i4 < n; i4++) {
-              var lt = getLoadout(G, i4);
-              if (lt === "car" || lt === "motorbike" || lt === "van") applyOrder(G, i4, "patrol");
+
+    function drawFootButton(nm, fx2, fy2, fw2, fh2) {
+      ctx.fillStyle = "rgba(58,74,96,0.5)";
+      ctx.strokeStyle = "#3a4a60";
+      rr(ctx, fx2, fy2, fw2, fh2, 4 * scale);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#e6e6e6";
+      ctx.textAlign = "center";
+      ctx.fillText(nm, fx2 + fw2 / 2, fy2 + fh2 / 2 + 1);
+      box(fx2, fy2, fw2, fh2, function () {
+        var n = squadCount(G);
+        if (nm === "All hold") {
+          for (var i2 = 0; i2 < n; i2++) applyOrder(G, i2, "hold");
+        } else if (nm === "All auto") {
+          for (var i3 = 0; i3 < n; i3++) applyOrder(G, i3, "auto");
+        } else if (nm === "Vehicles patrol") {
+          for (var i4 = 0; i4 < n; i4++) {
+            var lt = getLoadout(G, i4);
+            if (lt === "car" || lt === "motorbike" || lt === "van") applyOrder(G, i4, "patrol");
+          }
+        } else if (nm === "Split city") {
+          for (var i5 = 0; i5 < n; i5++) {
+            if (getOrder(G, i5) === "patrol") {
+              try {
+                if (typeof ORDERS !== "undefined" && ORDERS && typeof ORDERS.clearArea === "function") {
+                  ORDERS.clearArea(G, i5);
+                }
+              } catch (e) {}
             }
           }
-        });
-      })(footBtns[g], fx, fws[g]);
-      fx += fws[g] + fgap;
+          try {
+            if (typeof ORDERS !== "undefined" && ORDERS && typeof ORDERS.autoDivide === "function") {
+              ORDERS.autoDivide(G);
+            }
+          } catch (e) {}
+          say("City split into patrol areas");
+        }
+      });
     }
+
+    drawFootRow(row1, footerTop);
+    drawFootRow(row2, footerTop + footRowH + footGap);
 
     ctx.restore();
 
@@ -470,8 +545,10 @@ var SQUADPLAN = (function () {
   }
 
   // ---- click ----
+  var lastShift = false;
 
-  function click(x, y, G) {
+  function click(x, y, G, shift) {
+    lastShift = !!shift;
     if (!rectValid()) return false;
     // must be inside the actual drawn panel rect
     if (!pointIn(lastRect, x, y)) return false;
