@@ -398,6 +398,19 @@ var Police = (function () {
     var dx = goal.x - off.x;
     var dy = goal.y - off.y;
     var d = Math.sqrt(dx * dx + dy * dy);
+    /* drive.js: vehicles steer like cars (turning circle, reversing) instead of pivoting */
+    if (off._drNudge > 0) {
+      off._drNudge -= dt;
+      if (off._drNudge <= 0) DRIVE.reset(off);
+    } else if (isVehicle(off) && typeof DRIVE !== "undefined" && CONFIG.realisticDriving !== false) {
+      DRIVE.step(G, off, goal.x, goal.y, dt, {
+        field: vehicleField(G, off, Math.floor(goal.x), Math.floor(goal.y)),
+        clear: driveClear(G),
+        solid: function (x, y) { return isSolidPolice(G, x, y); }
+      });
+      off._wantAng = off.ang;
+      return;
+    }
     if (d < 0.05) { off.x = goal.x; off.y = goal.y; return; }
 
     /* Farther than 2 tiles from a goal that is the squad's home: follow the
@@ -414,8 +427,9 @@ var Police = (function () {
     if (d > 2) {
       var hx = (typeof off.homeX === "number") ? off.homeX : off.tx;
       var hy = (typeof off.homeY === "number") ? off.homeY : off.ty;
-      /* vehicles park offset from the home point, so they always use the field */
-      if (isVehicle(off) || (Math.abs(goal.x - hx) < 0.6 && Math.abs(goal.y - hy) < 0.6)) {
+      /* vehicles park offset from the home point, so they always use the field;
+       * officers too while heading home (their formation slot may sit 0.8 off it) */
+      if (isVehicle(off) || (Math.abs(off.tx - hx) < 0.6 && Math.abs(off.ty - hy) < 0.6)) {
         var field = policeFlowField(G, off.squad);
         if (field && stepByField(G, off, dt, field)) return;
       }

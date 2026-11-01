@@ -219,7 +219,7 @@ var TRANSPORT = (function () {
   // ordered list of walkable tile centres around vehicle
   function neighbourTiles(G, v) {
     var out = [], i, j, tx, ty;
-    var cx = Math.round(v.x), cy = Math.round(v.y);
+    var cx = Math.floor(v.x), cy = Math.floor(v.y);
     var ang = v.ang || 0;
     var dirs = [];
     // behind first (opposite ang), then sides, then front
@@ -232,11 +232,11 @@ var TRANSPORT = (function () {
     for (i = 0; i < order.length; i++) {
       var d = order[i];
       for (j = 1; j <= 2; j++) {
-        tx = Math.round(v.x + d.x * j);
-        ty = Math.round(v.y + d.y * j);
+        tx = Math.floor(v.x + d.x * j);
+        ty = Math.floor(v.y + d.y * j);
         if (seen[tx + "," + ty]) continue;
         seen[tx + "," + ty] = true;
-        if (isWalk(G, tx, ty)) out.push({ x: tx, y: ty, wx: tx, wy: ty });
+        if (isWalk(G, tx, ty)) out.push({ x: tx, y: ty, wx: tx + 0.35, wy: ty + 0.35 });
       }
     }
     // 8 neighbours fallback
@@ -246,10 +246,10 @@ var TRANSPORT = (function () {
         tx = cx + i; ty = cy + j;
         if (seen[tx + "," + ty]) continue;
         seen[tx + "," + ty] = true;
-        if (isWalk(G, tx, ty)) out.push({ x: tx, y: ty, wx: tx, wy: ty });
+        if (isWalk(G, tx, ty)) out.push({ x: tx, y: ty, wx: tx + 0.35, wy: ty + 0.35 });
       }
     }
-    if (!out.length) out.push({ x: cx, y: cy, wx: cx, wy: cy });
+    if (!out.length) out.push({ x: cx, y: cy, wx: v.x, wy: v.y });
     return out;
   }
 
@@ -493,9 +493,17 @@ var TRANSPORT = (function () {
       } else if (hasCrew(v) && s !== null && v.dest) {
         // normal drive order, auto-dismount
         var ddx = v.dest.x - v.x, ddy = v.dest.y - v.y;
-        if (ddx * ddx + ddy * ddy <= 1.44 && autoDismount(G, s)) {
+        /* stopped short (destination off the drivable streets, or blocked):
+         * after 4 s standing still the crew gets out and walks the rest */
+        var mv = (v._tpX === undefined) ? 1 : Math.abs(v.x - v._tpX) + Math.abs(v.y - v._tpY) + Math.abs((v.ang || 0) - v._tpA);
+        v._tpX = v.x; v._tpY = v.y; v._tpA = v.ang || 0;
+        v._tpStill = mv < 0.02 * dt / 0.05 ? (v._tpStill || 0) + dt : 0;
+        if (autoDismount(G, s) && (ddx * ddx + ddy * ddy <= 1.44 || v._tpStill >= 4)) {
+          var dest = v.dest;
           dismount(G, v, s);
-          v.dest = null;
+          v.dest = null; v._tpStill = 0;
+          /* the crew finishes on foot at the exact spot that was ordered */
+          if (typeof Police !== "undefined") Police.moveSquad(G, s, dest.x, dest.y);
         }
       } else if (!v.run && !hasCrew(v) && seats(v.type).arrest > 0 && (v.load || 0) >= seats(v.type).arrest) {
         // full and idle (a drive order interrupted the run): go now

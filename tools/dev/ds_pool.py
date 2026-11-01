@@ -117,7 +117,8 @@ def parse_sse(body):
 class Account:
     def __init__(self, n, headless=True):
         self.n, self.headless = n, headless
-        self.profile = HOME / (".deepseek-profile-%d" % n)
+        dirs = [d for d in os.environ.get("DS_PROFILE_DIRS", "").split(os.pathsep) if d]
+        self.profile = pathlib.Path(dirs[n - 1]) if n <= len(dirs) else HOME / (".deepseek-profile-%d" % n)
         self.port = 9333 + n
 
     def __enter__(self):
