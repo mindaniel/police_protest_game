@@ -626,20 +626,56 @@ function uiOverlay(ctx, title, lines, footer) {
   ctx.fillRect(0, 0, w, h);
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
+
+  var k = (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() : 1;
+  if (!(k > 0)) k = 1;
+
+  var titlePx = 30;
+  var linePx = 14;
+  var footerPx = 16;
+  var titleY = 50;
+
+  function layout(lp) {
+    var yy = titleY + titlePx * k + 25 * k;
+    var pos = [];
+    for (var i = 0; i < lines.length; i++) {
+      pos.push(yy);
+      yy += lp * k * 1.35;
+    }
+    var fy = -1;
+    if (footer) {
+      fy = yy + 20 * k;
+      yy = fy + footerPx * k * 1.35;
+    }
+    return { y: yy, pos: pos, footerY: fy };
+  }
+
+  var lp = linePx;
+  var lay = layout(lp);
+  var limit = h - 10;
+  while (lay.y > limit && lp > 8) {
+    lp -= 1;
+    lay = layout(lp);
+  }
+
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 30px Consolas, monospace";
-  ctx.fillText(title, w / 2, 50);
-  ctx.font = "14px Consolas, monospace";
-  var y = 105;
+  ctx.font = "bold " + titlePx + "px Consolas, monospace";
+  ctx.fillText(title, w / 2, titleY);
+
+  if (lines.length) ctx.font = lp + "px Consolas, monospace";
   for (var i = 0; i < lines.length; i++) {
     ctx.fillStyle = lines[i].charAt(0) === "#" ? "#9fe0a0" : "#d7dde8";
-    ctx.fillText(lines[i].replace(/^#/, ""), w / 2, y);
-    y += 22;
+    ctx.fillText(lines[i].replace(/^#/, ""), w / 2, lay.pos[i]);
   }
-  ctx.fillStyle = "#ffd866";
-  ctx.font = "bold 16px Consolas, monospace";
-  ctx.fillText(footer, w / 2, y + 20);
-  return y + 20;
+
+  if (footer) {
+    ctx.fillStyle = "#ffd866";
+    ctx.font = "bold " + footerPx + "px Consolas, monospace";
+    ctx.fillText(footer, w / 2, lay.footerY);
+  }
+
+  if (typeof window !== "undefined") window.UI_OVERLAY_BOTTOM = lay.y;
+  return lay.y;
 }
 
 var UI_CONTROLS = [
@@ -901,8 +937,8 @@ function uiDrawScreen(ctx, g) {
       "The controls are shown in the top-right corner during the game (? hides them).",
       (MAP.realName ? "Map: " + MAP.realName + "   (M = next map)" : ""),
       "S = settings and full guide"
-    ], typeof LEVELS !== "undefined" ? "Choose a difficulty, then press Enter" : "Press Enter to go to planning");
-    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 12 * 22 + 60);
+    ], typeof LEVELS !== "undefined" ? null : "Press Enter to go to planning");
+    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, (typeof UI_OVERLAY_BOTTOM === "number" ? UI_OVERLAY_BOTTOM : 0) + 20);
     return;
   }
 

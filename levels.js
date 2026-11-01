@@ -118,74 +118,165 @@ var LEVELS = (function () {
     return lines;
   }
 
+  // Set font at px and shrink it until text fits maxWidth (measureText is already scaled by the hook)
+  function fitPx(ctx, text, weight, px, maxWidth, minPx) {
+    var p = px;
+    var prefix = weight ? weight + " " : "";
+    while (p > minPx) {
+      ctx.font = prefix + p + "px Consolas, monospace";
+      if (ctx.measureText(text).width <= maxWidth) break;
+      p -= 1;
+    }
+    ctx.font = prefix + p + "px Consolas, monospace";
+    return p;
+  }
+
+  function textScale() {
+    var k = (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() : 1;
+    return (k > 0) ? k : 1;
+  }
+
   function drawPicker(ctx, w, h, y) {
     ctx.save();
-    var cardW = 220, cardH = 92, gap = 16;
+
+    var k = textScale();
+    var gap = 16;
+    var cardW = Math.min((w - 80) / 4 - gap, 300 * k);
+    var pad = 10 * k;
+    var textW = cardW - pad * 2;
+    var lineGap = 6 * k;
+    var namePxBase = 18;
+    var peoplePxBase = 14;
+    var blurbPxBase = 12;
+
+    var cards = [];
+    var maxCardH = 0;
+
+    for (var i = 0; i < list.length; i++) {
+      var lv = list[i];
+
+      var namePx = fitPx(ctx, lv.name, "bold", namePxBase, textW, 10);
+      var peopleText = lv.crowdSize + " people, " + lv.rioterMin + "-" + lv.rioterMax + " rioters?";
+      var peoplePx = fitPx(ctx, peopleText, "", peoplePxBase, textW, 9);
+
+      ctx.font = blurbPxBase + "px Consolas, monospace";
+      var blurbLines = wrapText(ctx, lv.blurb, textW, 8);
+      var blurbPx = [];
+      var blurbH = 0;
+      for (var j = 0; j < blurbLines.length; j++) {
+        var bp = fitPx(ctx, blurbLines[j], "", blurbPxBase, textW, 8);
+        blurbPx.push(bp);
+        blurbH += bp * k * 1.25;
+      }
+
+      var blockH = 6 * k;
+      var cardH = pad + namePx * k + lineGap + peoplePx * k + lineGap + blurbH + lineGap + blockH + pad;
+      if (cardH > maxCardH) maxCardH = cardH;
+
+      cards.push({
+        lv: lv,
+        namePx: namePx,
+        peoplePx: peoplePx,
+        peopleText: peopleText,
+        blurbLines: blurbLines,
+        blurbPx: blurbPx
+      });
+    }
+
+    var aboveText = "Choose a difficulty, then press Enter";
+    var abovePx = fitPx(ctx, aboveText, "", 14, w - 40, 9);
+    var aboveH = abovePx * k;
+    var hintGap = 16 * k;
+    var cardsY = y + aboveH + hintGap;
+
+    var belowText = "Left / Right or 1-4: choose difficulty";
+    var belowPx = fitPx(ctx, belowText, "", 14, w - 40, 9);
+    var belowH = belowPx * k;
+    var belowY = cardsY + maxCardH + hintGap * 0.75;
+
+    // Keep the picker inside the canvas when possible
+    if (belowY + belowH > h - 8) {
+      var minCardsY = y + aboveH + 4;
+      var want = h - 8 - belowH - hintGap * 0.75 - maxCardH;
+      if (want > minCardsY) cardsY = want;
+      belowY = cardsY + maxCardH + hintGap * 0.75;
+    }
+
+    // Hint above the cards
+    ctx.fillStyle = "#ffd866";
+    ctx.font = abovePx + "px Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(aboveText, w / 2, y);
+
     var totalW = cardW * 4 + gap * 3;
     var startX = Math.floor((w - totalW) / 2);
     cardRects = [];
 
     var barColors = ["#6fcf73", "#ffd866", "#f4a261", "#e63946"];
 
-    for (var i = 0; i < list.length; i++) {
-      var lv = list[i];
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      var lv = c.lv;
       var cx = startX + i * (cardW + gap);
-      var cy = y;
+      var cy = cardsY;
       var selected = (i === currentIndex);
 
       // Card background
-      roundRect(ctx, cx, cy, cardW, cardH, 8);
+      roundRect(ctx, cx, cy, cardW, maxCardH, 8);
       ctx.fillStyle = selected ? "rgba(40,50,70,0.95)" : "rgba(16,20,30,0.9)";
       ctx.fill();
       ctx.lineWidth = selected ? 3 : 1;
       ctx.strokeStyle = selected ? "#ffd866" : "#3a4a60";
       ctx.stroke();
 
-      // Name
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 18px Consolas, monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText(lv.name, cx + 10, cy + 8);
 
-      // People / rioters line
+      // Name
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold " + c.namePx + "px Consolas, monospace";
+      var ty = cy + pad;
+      ctx.fillText(lv.name, cx + pad, ty);
+      ty += c.namePx * k + lineGap;
+
+      // People / rioters line (each level shows its own crowdSize, like LEVELS.label())
       ctx.fillStyle = "#c9d1dc";
-      ctx.font = "14px Consolas, monospace";
-      ctx.fillText((CONFIG.crowdSize || lv.crowdSize) + " people, " + lv.rioterMin + "-" + lv.rioterMax + " rioters?", cx + 10, cy + 30);
+      ctx.font = c.peoplePx + "px Consolas, monospace";
+      ctx.fillText(c.peopleText, cx + pad, ty);
+      ty += c.peoplePx * k + lineGap;
 
-      // Blurb wrapped
+      // Blurb wrapped, with each line shrunk if still too wide
       ctx.fillStyle = "#9aa6b5";
-      ctx.font = "12px Consolas, monospace";
-      var lines = wrapText(ctx, lv.blurb, cardW - 20, 2);
-      for (var j = 0; j < lines.length; j++) {
-        ctx.fillText(lines[j], cx + 10, cy + 48 + j * 14);
+      for (var j = 0; j < c.blurbLines.length; j++) {
+        ctx.font = c.blurbPx[j] + "px Consolas, monospace";
+        ctx.fillText(c.blurbLines[j], cx + pad, ty);
+        ty += c.blurbPx[j] * k * 1.25;
       }
 
       // Strength bar (4 blocks, filled up to i+1)
-      var blockW = 10, blockH = 6, blockGap = 4;
-      var barY = cy + cardH - 14;
-      var barX = cx + 10;
-      for (var k = 0; k < 4; k++) {
-        var bx = barX + k * (blockW + blockGap);
+      var blockW = 10 * k;
+      var blockH = 6 * k;
+      var blockGap = 4 * k;
+      var barY = cy + maxCardH - pad - blockH;
+      var barX = cx + pad;
+      for (var b = 0; b < 4; b++) {
+        var bx = barX + b * (blockW + blockGap);
         ctx.beginPath();
-        if (k < i + 1) {
-          ctx.fillStyle = barColors[k];
-        } else {
-          ctx.fillStyle = "#2a3444";
-        }
+        ctx.fillStyle = (b < i + 1) ? barColors[b] : "#2a3444";
         ctx.rect(bx, barY, blockW, blockH);
         ctx.fill();
       }
 
-      cardRects.push({ x: cx, y: cy, w: cardW, h: cardH, id: lv.id });
+      cardRects.push({ x: cx, y: cy, w: cardW, h: maxCardH, id: lv.id });
     }
 
-    // Hint text
+    // Hint below the cards
     ctx.fillStyle = "#d7dde8";
-    ctx.font = "14px Consolas, monospace";
+    ctx.font = belowPx + "px Consolas, monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText("Left / Right or 1-4: choose difficulty", w / 2, y + cardH + 10);
+    ctx.fillText(belowText, w / 2, belowY);
 
     ctx.restore();
   }
