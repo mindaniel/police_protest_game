@@ -203,6 +203,33 @@ var Game = {
 };
 
 /* Size the canvas to the map in device pixels, CSS scales it to the window. */
+/* Text size: every font set on the main canvas is enlarged by Game.textScale()
+ * (the player's choice, plus a little more when the window is small). */
+var TEXT_SIZES = [["Normal", 1], ["Large", 1.2], ["Extra large", 1.4], ["Huge", 1.6]];
+Game.textIdx = 1;
+try { var tsv = localStorage.getItem("ppg_text"); if (tsv !== null && TEXT_SIZES[+tsv]) Game.textIdx = +tsv; } catch (e0) { /* storage blocked */ }
+Game.textLabel = function () { return TEXT_SIZES[Game.textIdx][0]; };
+Game.textPref = function () { return TEXT_SIZES[Game.textIdx][1]; };
+Game.nextText = function (d) {
+  Game.textIdx = (Game.textIdx + (d || 1) + TEXT_SIZES.length) % TEXT_SIZES.length;
+  try { localStorage.setItem("ppg_text", String(Game.textIdx)); } catch (e1) { /* storage blocked */ }
+};
+Game.textScale = function () {
+  var shown = Game.canvas ? (parseFloat(Game.canvas.style.width) || 1600) / (MAP.width * CONFIG.tileSize) : 1;
+  return Game.textPref() * Math.min(1.3, Math.max(1, 1 / Math.sqrt(shown)));
+};
+function textScaleHook(c) {
+  var d = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "font");
+  if (!d || !d.set) return;
+  Object.defineProperty(c, "font", {
+    get: function () { return d.get.call(this); },
+    set: function (v) {
+      var k = Game.textScale();
+      d.set.call(this, k === 1 ? v : String(v).replace(/(\d+(?:\.\d+)?)px/, function (m, n) { return (Math.round(n * k * 10) / 10) + "px"; }));
+    }
+  });
+}
+
 function sizeCanvas() {
   var ts = CONFIG.tileSize;
   var lw = MAP.width * ts, lh = MAP.height * ts;      // logical size, never changes
@@ -376,6 +403,7 @@ function restartGame(newCity) {
 function initGame() {
   Game.canvas = document.getElementById("game");
   Game.ctx = Game.canvas.getContext("2d");
+  textScaleHook(Game.ctx);
   sizeCanvas();
   window.addEventListener("resize", sizeCanvas);
   if (typeof QUALITY !== "undefined") QUALITY.onChange(function () { sizeCanvas(); });

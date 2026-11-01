@@ -386,7 +386,7 @@ function uiDrawMenu(ctx, w, h) {
   /* MENU button at the right end of the top bar */
   ctx.save();
   ctx.font = "bold " + Math.round(12 * k) + "px Consolas, monospace";
-  var bw = Math.round(60 * k), bh = 20;
+  var bw = Math.max(Math.round(60 * k), Math.ceil(ctx.measureText("MENU").width) + 16), bh = 20;
   UI_MENU.btn = { x: w - bw - 6, y: 2, w: bw, h: bh };
   ctx.fillStyle = "#2a3a55"; ctx.fillRect(UI_MENU.btn.x, 2, bw, bh);
   ctx.strokeStyle = "#5a6f92"; ctx.lineWidth = 1; ctx.strokeRect(UI_MENU.btn.x + 0.5, 2.5, bw - 1, bh - 1);
@@ -870,6 +870,13 @@ function uiSettingsClosed() {
   UI.say("Map: " + MAP.realName + (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : ""));
 }
 
+/* One line of text squeezed to maxW (long status bars with big text sizes). */
+function uiFitText(ctx, s, x, y, maxW) {
+  var tw = ctx.measureText(s).width;
+  if (tw > maxW) { ctx.save(); ctx.translate(x, y); ctx.scale(maxW / tw, 1); ctx.fillText(s, 0, 0); ctx.restore(); }
+  else ctx.fillText(s, x, y);
+}
+
 UI.draw = function (ctx, g) {
   uiDrawScreen(ctx, g);
   if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) SETTINGS.draw(ctx, MAP.width * CONFIG.tileSize, MAP.height * CONFIG.tileSize);
@@ -970,7 +977,7 @@ function uiDrawScreen(ctx, g) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#9fe0a0";
-  ctx.fillText(top, 8, 12);
+  uiFitText(ctx, top, 8, 12, w - 90);
 
   // Bottom bar
   var stance = first ? first.stance : "-";
@@ -991,7 +998,7 @@ function uiDrawScreen(ctx, g) {
   ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.fillRect(0, h - 24, w, 24);
   ctx.fillStyle = "#d7dde8";
-  ctx.fillText(bot, 8, h - 12);
+  uiFitText(ctx, bot, 8, h - 12, w - 16);
 
   if (Date.now() < UI.msgUntil) {
     ctx.textAlign = "center";

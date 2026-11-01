@@ -182,7 +182,7 @@ var METERS = (function () {
     ctx.fillText(label, x, y + H / 2);
     var lw = ctx.measureText(label).width;
     var bx = x + lw + 8;
-    var bw = w - (bx - x) - 120;
+    var bw = w - (bx - x) - ctx.measureText(hint).width - 16;
     if (bw < 40) bw = 40;
     ctx.fillStyle = "rgba(10,12,18,0.75)";
     ctx.fillRect(bx, y + (H - barH) / 2, bw, barH);

@@ -111,8 +111,11 @@ var HELP = (function () {
   }
 
   // --- Layout measuring ---
-  function makeFont(size) { return "bold " + size + "px Consolas, monospace"; }
-  function makeFontReg(size) { return size + "px Consolas, monospace"; }
+  /* fonts are sized here for the screen already: cancel the global text scale (game.js) */
+  function hookK() { return (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() : 1; }
+  function textPref() { return (typeof Game !== "undefined" && Game.textPref) ? Game.textPref() : 1; }
+  function makeFont(size) { return "bold " + (size / hookK()) + "px Consolas, monospace"; }
+  function makeFontReg(size) { return (size / hookK()) + "px Consolas, monospace"; }
 
   function measure(ctx, lines, fontSize, padding, lineH) {
     ctx.save();
@@ -140,7 +143,7 @@ var HELP = (function () {
       }
     }
     ctx.restore();
-    var keyCol = keyW + fontSize * 0.6; // gap
+    var keyCol = keyW + fontSize * 1.2; // gap
     var width = padding * 2 + keyCol + descW;
     var height = padding * 2 + (lines.length + 1) * lineH;  // +1 for the header
     return { fontSize: fontSize, padding: padding, lineH: lineH,
@@ -159,8 +162,8 @@ var HELP = (function () {
     var cssScale = (cssW > 0 && isFinite(cssW)) ? cssW / lw : 1;
     if (!(cssScale > 0)) cssScale = 1;
 
-    var targetLogical = 14 / cssScale;
-    var minF = 11, maxF = 30;
+    var targetLogical = 14 * textPref() / cssScale;
+    var minF = 11, maxF = 40;
     var fs = Math.max(minF, Math.min(maxF, targetLogical));
     var maxW = lw * 0.45, maxH = lh * 0.70;
 
@@ -214,7 +217,7 @@ var HELP = (function () {
 
   function signature(info, st) {
     return [st, info.screen, info.mode, info.loadout, info.order,
-            info.canvas.style.width, info.canvas.width, info.canvas.height].join("|");
+            info.canvas.style.width, info.canvas.width, info.canvas.height, textPref()].join("|");
   }
 
   function ensureCache(ctx, info) {

@@ -79,6 +79,15 @@ var SETTINGS = (function () {
         hint: "Lower it if the game is slow"
       });
     }
+    if (typeof Game !== "undefined" && Game.nextText) {
+      out.push({
+        id: "text",
+        label: "Text size",
+        value: function () { return Game.textLabel(); },
+        change: function (d) { Game.nextText(d); },
+        hint: "Bigger letters in menus and in the game"
+      });
+    }
     if (has(MINIMAP) && typeof MINIMAP.isHidden === "function") {
       out.push({
         id: "minimap",
@@ -355,7 +364,7 @@ var SETTINGS = (function () {
 
   function drawSettings(ctx, x, y, w, h) {
     var list = rows();
-    var rowH = 62;
+    var rowH = Math.round(62 * Math.max(1, (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() * 0.85 : 1));
     var yy = y;
     if (_sel >= list.length) _sel = Math.max(0, list.length - 1);
     if (_sel < 0) _sel = 0;
