@@ -838,7 +838,12 @@ var Police = (function () {
     var dx = tgt.x - leader.x, dy = tgt.y - leader.y, dd = Math.sqrt(dx * dx + dy * dy);
     for (j = 0; j < squad.length; j++) squad[j].busy = true;
     if (dd < 1.0) {
-      leader.arrestHold += dt;
+      if (typeof RESIST !== "undefined" && RESIST) {
+        leader.arrestHold += dt * RESIST.arrestRate(G, tgt, s, squad);
+        if (RESIST.breakFree(G, tgt, s, squad, dt)) { resetSquad(squad); return; }
+      } else {
+        leader.arrestHold += dt;
+      }
       if (leader.arrestHold >= CONFIG.arrestSeconds) {
         if (Crowd.arrest(G, tgt)) startEscort(G, tgt, s);
         resetSquad(squad);
@@ -1030,7 +1035,21 @@ var Police = (function () {
               squad[j].ty = squad[j].homeY;
             }
           } else if (dd < 1.0) {
-            leader.arrestHold += dt;
+            if (typeof RESIST !== "undefined" && RESIST) {
+              leader.arrestHold += dt * RESIST.arrestRate(G, tgt, s, squad);
+              if (RESIST.breakFree(G, tgt, s, squad, dt)) {
+                leader.arrestTarget = null;
+                leader.arrestHold = 0;
+                for (j = 0; j < squad.length; j++) {
+                  squad[j].busy = false;
+                  squad[j].tx = squad[j].homeX;
+                  squad[j].ty = squad[j].homeY;
+                }
+                continue;   /* next squad */
+              }
+            } else {
+              leader.arrestHold += dt;
+            }
             for (j = 0; j < squad.length; j++) squad[j].busy = true;
             if (leader.arrestHold >= CONFIG.arrestSeconds) {
               if (Crowd.arrest(G, tgt)) startEscort(G, tgt, s);

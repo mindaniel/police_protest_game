@@ -232,6 +232,7 @@ var CityGen = (function () {
     CONFIG.lootJoinChance = 0.25;       /* angry bystanders join in when a shop is smashed */
     CONFIG.crowdBlocksPolice = true;
     CONFIG.vehiclesBlock = true;        /* vehicles are solid; parked ones cut narrow streets */
+    CONFIG.rioterResist = true;         /* lone rioters run, crowds resist arrest (resist.js) */
     CONFIG.shopDefense = true;          /* glass grades, roller shutters, police deterrence */
     CONFIG.shopBreakSeconds = 15;       /* one rioter on plain open glass */
     CONFIG.nightCycle = true;           /* dusk falls partway through the match */
