@@ -177,6 +177,17 @@ var FORCE = (function () {
     return k || 1;
   }
 
+  function textScaleK() {
+    var tk = 1;
+    try {
+      if (typeof Game !== "undefined" && Game && Game.textScale) {
+        var v = Game.textScale();
+        if (v && v > 0) tk = v;
+      }
+    } catch (e) { tk = 1; }
+    return tk || 1;
+  }
+
   function rrect(ctx, x, y, w, h, r) {
     if (w < 2 * r) r = Math.max(0, w / 2);
     if (h < 2 * r) r = Math.max(0, h / 2);
@@ -193,56 +204,164 @@ var FORCE = (function () {
     ctx.closePath();
   }
 
+  // Measure a single line of text drawn at base px `bp` (scaled by tk via ctx.font hook).
+  function lineH(bp, tk) { return bp * tk * 1.2; }
+
+  function fitText(ctx, txt, maxW, basePx, tk, minPx) {
+    // returns {px, w} for the largest font (down to minPx) whose width fits maxW
+    var bp = basePx;
+    while (bp > minPx) {
+      ctx.font = "bold " + bp + "px sans-serif";
+      if (ctx.measureText(txt).width <= maxW) break;
+      bp -= 0.5;
+    }
+    ctx.font = "bold " + bp + "px sans-serif";
+    return { px: bp, w: ctx.measureText(txt).width };
+  }
+
+  function ellipsize(ctx, txt, maxW) {
+    var s = String(txt);
+    if (ctx.measureText(s).width <= maxW) return s;
+    var ell = "...";
+    var lo = 0, hi = s.length;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (ctx.measureText(s.slice(0, mid) + ell).width <= maxW) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo > 0 ? s.slice(0, lo) + ell : ell;
+  }
+
+  // Wrap into at most maxLines; if truncated, last line gets "..."
+  function wrapN(ctx, txt, maxW, maxLines) {
+    var words = String(txt).split(" "), lines = [], cur = "";
+    for (var i = 0; i < words.length; i++) {
+      var t = cur ? cur + " " + words[i] : words[i];
+      if (ctx.measureText(t).width <= maxW) cur = t;
+      else {
+        if (cur) lines.push(cur);
+        cur = words[i];
+        if (lines.length >= maxLines) break;
+      }
+    }
+    if (lines.length < maxLines && cur) lines.push(cur);
+    // was there more text than we consumed?
+    var more = (lines.length >= maxLines);
+    if (more) {
+      // check if cur fully consumed and there are remaining words
+      var joined = lines.join(" ");
+      var orig = String(txt);
+      if (joined.length < orig.length) {
+        lines[lines.length - 1] = ellipsize(ctx, lines[lines.length - 1] + (cur && lines[lines.length-1].indexOf(cur) < 0 ? " " + cur : ""), maxW);
+        // recompute simply: ellipsize the last line
+      }
+      // Ensure last line is ellipsized if any words remain
+      var last = lines[lines.length - 1];
+      if (ctx.measureText(last).width > maxW) {
+        lines[lines.length - 1] = ellipsize(ctx, last, maxW);
+      }
+    }
+    return lines;
+  }
+
   function buildLayout(w, h) {
     var k = cssK(w);
+    var tk = textScaleK();
     var pw = Math.round(w * 0.78);
-    var pad = 14 * k, gap = 10 * k, titleH = 28 * k;
+    var pad = 14 * k, gap = 10 * k;
     var cols = 5, nrows = 2;
+
+    var titlePx = 17, titleLH = lineH(titlePx, tk);
+    var titleH = Math.max(28 * k, titleLH + 8 * k);
+
     var cardW = (pw - pad * 2 - gap * (cols - 1)) / cols;
-    var picH = Math.round(cardW * 0.55);
-    var cardH = picH + 92 * k;
+
+    // --- card vertical layout budget ---
+    var namePx = 12, costPx = 11, descPx = 9.5, countPx = 18;
+    var nameLH = lineH(namePx, tk);
+    var costLH = lineH(costPx, tk);
+    var descLH = lineH(descPx, tk);
+
+    // space reserved for -/+ row (button height driven by count font a bit)
+    var btnH = Math.max(22 * k, lineH(11, tk) + 8 * k);
+    var countLH = Math.max(btnH, lineH(countPx, tk));
+
+    var padCard = 8 * k;
+    // min text block (name/cost on one line + desc 1 line + buttons)
+    var nameBlockMin = Math.max(nameLH, costLH);
+    var textMin = padCard + nameBlockMin + 2 * k + descLH + 4 * k + btnH + padCard;
+
+    // ideal picture height
+    var idealPic = Math.round(cardW * 0.55);
+    // card height: allow growing. Target text needs nameBlock + 2 desc lines + buttons
+    var textIdeal = padCard + nameBlockMin + 2 * k + descLH * 2 + 4 * k + btnH + padCard;
+    var cardH = idealPic + textIdeal;
+    // cap so grid (2 rows) + footer + title fits
+    var footerH = 12 * k + lineH(12, tk) + 8 * k + Math.max(36 * k, lineH(15, tk) + 10 * k);
+    var maxGridH = (h - 60) - pad * 2 - titleH - gap - footerH - gap;
+    var maxCardH = Math.floor((maxGridH - gap) / nrows);
+    if (maxCardH > 60 * k && cardH > maxCardH) cardH = maxCardH;
+    // enforce minimum text
+    if (cardH < textMin) cardH = textMin;
+
+    // picture shrinks first, but keep >= 30% of card height
+    var picH = cardH - textIdeal;
+    var minPic = Math.round(cardH * 0.30);
+    if (picH < minPic) picH = minPic;
+    if (picH < 0) picH = 0;
+
     var gridH = cardH * nrows + gap;
-    var barH = 12 * k, startH = 36 * k;
-    var ph = pad + titleH + gap + gridH + gap + (barH + 26 * k + startH) + pad;
+    var barH = 12 * k;
+    var startH = Math.max(36 * k, lineH(15, tk) + 12 * k);
+    var statsLH = lineH(12, tk);
+    var ph = pad + titleH + gap + gridH + gap + (barH + statsLH + 8 * k + startH) + pad;
+    var maxPh = h - 60;
+    if (ph > maxPh) ph = maxPh;
     var px = Math.round((w - pw) / 2);
     var py = Math.round((h - ph) / 2);
     if (py < 8 * k) py = 8 * k;
+
     var cards = [], gy = py + pad + titleH + gap;
     for (var i = 0; i < TYPES.length; i++) {
       var r = Math.floor(i / cols), c = i % cols;
       var x = px + pad + c * (cardW + gap);
       var y = gy + r * (cardH + gap);
-      var ccy = y + cardH - 17 * k;
+      var by = y + cardH - btnH - padCard + btnH / 2; // center of btn row
       cards.push({
         x: x, y: y, w: cardW, h: cardH,
         pic: { x: x + 6 * k, y: y + 6 * k, w: cardW - 12 * k, h: picH },
-        minus: { x: x + 8 * k, y: ccy - 11 * k, w: 22 * k, h: 22 * k },
-        plus: { x: x + cardW - 30 * k, y: ccy - 11 * k, w: 22 * k, h: 22 * k }
+        minus: { x: x + 8 * k, y: by - btnH / 2, w: btnH, h: btnH },
+        plus: { x: x + cardW - 8 * k - btnH, y: by - btnH / 2, w: btnH, h: btnH }
       });
     }
+
+    // footer positions measured to not overlap grid
     var fy = gy + gridH + gap;
+    var statsY = fy + barH + 8 * k;
+
+    // hide button: wide enough for its label
+    var hideLabel = "Place on map (V)";
+    var ctx = document.getElementById("game").getContext("2d");
+    ctx.font = "bold " + (11 * k) + "px sans-serif";
+    var hideW = Math.max(150 * k, ctx.measureText(hideLabel).width + 24 * k);
+    var hideH = Math.max(22 * k, lineH(11, tk) + 8 * k);
+    var hideR = { x: px + pw - pad - hideW, y: py + pad + (titleH - hideH) / 2, w: hideW, h: hideH };
+    // ensure title doesn't collide: title is left aligned, hide right aligned; if collision, push hide down? keep same row.
+
+    var startY = statsY + statsLH + 8 * k;
+    // clamp start within panel
+    if (startY + startH > py + ph - pad) startY = py + ph - pad - startH;
+    if (startY < fy + barH) startY = fy + barH;
+
     return {
-      k: k, px: px, py: py, pw: pw, ph: ph, pad: pad, titleH: titleH,
+      k: k, tk: tk, px: px, py: py, pw: pw, ph: ph, pad: pad, titleH: titleH,
       cards: cards,
-      hideR: { x: px + pw - pad - 150 * k, y: py + pad + (titleH - 22 * k) / 2, w: 150 * k, h: 22 * k },
+      hideR: hideR,
       barR: { x: px + pad, y: fy, w: pw - pad * 2, h: barH },
-      startR: { x: px + pad, y: fy + barH + 26 * k, w: pw - pad * 2, h: startH },
+      startR: { x: px + pad, y: startY, w: pw - pad * 2, h: startH },
+      statsR: { x: px + pad, y: statsY, w: pw - pad * 2, h: statsLH },
       tab: { x: 8 * k, y: 30 * k, w: 100 * k, h: 24 * k }
     };
-  }
-
-  function wrap2(ctx, txt, maxW) {
-    var words = String(txt).split(" "), lines = [], cur = "";
-    for (var i = 0; i < words.length; i++) {
-      var t = cur ? cur + " " + words[i] : words[i];
-      if (!cur || ctx.measureText(t).width <= maxW) cur = t;
-      else {
-        lines.push(cur); cur = words[i];
-        if (lines.length >= 2) break;
-      }
-    }
-    if (lines.length < 2 && cur) lines.push(cur);
-    return lines;
   }
 
   // ---- pictures ----
@@ -375,7 +494,7 @@ var FORCE = (function () {
   function draw(ctx, w, h) {
     var key = w + "x" + h;
     if (!layout || layoutKey !== key) { layout = buildLayout(w, h); layoutKey = key; }
-    var L = layout, k = L.k;
+    var L = layout, k = L.k, tk = L.tk;
     ctx.save();
     ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
 
@@ -403,7 +522,7 @@ var FORCE = (function () {
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText("PLAN YOUR FORCE", L.px + L.pad, L.py + L.pad + L.titleH / 2);
 
-    // place on map
+    // place on map (button sized to its label in buildLayout)
     var hb = L.hideR;
     ctx.fillStyle = "#24324a";
     rrect(ctx, hb.x, hb.y, hb.w, hb.h, 5 * k); ctx.fill();
@@ -424,18 +543,86 @@ var FORCE = (function () {
       drawPic(ctx, tp, cd.pic);
 
       var tx = cd.x + 8 * k, tw = cd.w - 16 * k;
-      var ty = cd.pic.y + cd.pic.h + 4 * k;
+      var y = cd.pic.y + cd.pic.h + 4 * k;
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "#e8eef6";
-      ctx.font = "bold " + (12 * k) + "px sans-serif";
-      ctx.fillText(tp.name, tx, ty + 11 * k);
-      ctx.fillStyle = "#f0c040";
-      ctx.font = (11 * k) + "px sans-serif";
-      ctx.fillText(tp.cost + " pts", tx, ty + 23 * k);
-      ctx.fillStyle = "#9aa6b6";
-      ctx.font = (9.5 * k) + "px sans-serif";
-      var lines = wrap2(ctx, tp.desc, tw);
-      for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], tx, ty + (34 + j * 11) * k);
+
+      // --- name & cost, never overlapping ---
+      var costTxt = tp.cost + " pts";
+      var namePx = 12, costPx = 11;
+      ctx.font = "bold " + namePx + "px sans-serif";
+      var nameW = ctx.measureText(tp.name).width;
+      ctx.font = (costPx) + "px sans-serif";
+      var costW = ctx.measureText(costTxt).width;
+      var gapBetween = 8 * k;
+      var sameLine = (nameW + costW + gapBetween) <= tw;
+
+      if (sameLine) {
+        ctx.fillStyle = "#e8eef6";
+        ctx.font = "bold " + namePx + "px sans-serif";
+        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+        var nLH = lineH(namePx, tk);
+        ctx.fillText(tp.name, tx, y + nLH);
+        ctx.fillStyle = "#f0c040";
+        ctx.font = (costPx) + "px sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillText(costTxt, tx + tw, y + nLH);
+        ctx.textAlign = "left";
+        y += nLH + 2 * k;
+      } else {
+        // name first (may shrink), then cost below
+        var fitN = fitText(ctx, tp.name, tw, namePx, tk, 8);
+        var nLH2 = lineH(fitN.px, tk);
+        ctx.fillStyle = "#e8eef6";
+        ctx.font = "bold " + fitN.px + "px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(tp.name, tx, y + nLH2);
+        y += nLH2 + 2 * k;
+
+        var fitC = fitText(ctx, costTxt, tw, costPx, tk, 7);
+        var cLH = lineH(fitC.px, tk);
+        ctx.fillStyle = "#f0c040";
+        ctx.font = fitC.px + "px sans-serif";
+        ctx.fillText(costTxt, tx, y + cLH);
+        y += cLH + 2 * k;
+      }
+
+      // --- description: bottom up from button row ---
+      var btnTop = cd.minus.y;
+      var descBottom = btnTop - 4 * k;
+      var descSpace = descBottom - y;
+      if (descSpace > 0) {
+        var dPx = 9.5;
+        var dLH = lineH(dPx, tk);
+        var maxLines = Math.floor(descSpace / dLH);
+        if (maxLines < 1) maxLines = 1;
+        if (maxLines > 2) maxLines = 2;
+
+        // shrink description font until it fits desired number of lines (up to 2) in available height
+        var desiredLines = maxLines;
+        while (dPx > 6 && Math.floor(descSpace / lineH(dPx, tk)) < desiredLines) dPx -= 0.5;
+
+        dLH = lineH(dPx, tk);
+        var usableLines = Math.floor(descSpace / dLH);
+        if (usableLines < 1) usableLines = 1;
+        if (usableLines > 2) usableLines = 2;
+
+        ctx.font = dPx + "px sans-serif";
+        var lines = wrapN(ctx, tp.desc, tw, usableLines);
+        // only draw as many as fit
+        var drawLines = Math.min(lines.length, Math.floor(descSpace / dLH));
+        if (drawLines < 1) drawLines = (descSpace > 0 ? 1 : 0);
+        // if we draw fewer than produced, ellipsize last drawn
+        if (drawLines > 0 && drawLines < lines.length) {
+          lines = lines.slice(0, drawLines);
+          lines[drawLines - 1] = ellipsize(ctx, lines[drawLines - 1] + " ...", tw);
+        }
+        ctx.fillStyle = "#9aa6b6";
+        ctx.font = dPx + "px sans-serif";
+        ctx.textAlign = "left";
+        for (var j = 0; j < lines.length && j < drawLines; j++) {
+          if (y + (j + 1) * dLH <= descBottom + 1) ctx.fillText(lines[j], tx, y + (j + 1) * dLH);
+        }
+      }
 
       drawBtn(ctx, cd.minus, "-", canDec(tp.id), k);
       drawBtn(ctx, cd.plus, "+", canInc(tp.id), k);
@@ -456,12 +643,22 @@ var FORCE = (function () {
       ctx.fillStyle = (frac >= 0.999) ? "#e05252" : (frac > 0.85 ? "#e8933a" : "#3fbf7f");
       rrect(ctx, br.x, br.y, Math.max(br.h, br.w * frac), br.h, br.h / 2); ctx.fill();
     }
+
+    var sr = L.statsR;
     ctx.fillStyle = "#e8eef6";
     ctx.font = "bold " + (12 * k) + "px sans-serif";
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText("Budget used " + used + " / " + bud +
+    var statsTxt = "Budget used " + used + " / " + bud +
       "     Squads " + totalSquads() + " / " + maxSquadsVal() +
-      "     Officers " + totalOfficers(), br.x, br.y + br.h + 14 * k);
+      "     Officers " + totalOfficers();
+    // shrink stats if too wide
+    var sPx = 12;
+    while (sPx > 7) {
+      ctx.font = "bold " + (sPx * k) + "px sans-serif";
+      if (ctx.measureText(statsTxt).width <= sr.w) break;
+      sPx -= 0.5;
+    }
+    ctx.fillText(ellipsize(ctx, statsTxt, sr.w), sr.x, sr.y + sr.h / 2);
 
     var sb = L.startR;
     ctx.fillStyle = "#2fbf71";
