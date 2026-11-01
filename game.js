@@ -334,18 +334,17 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-/* Random city: ?seed=123 in the URL replays one city, otherwise a new one each launch. */
+/* Crowd randomness: ?seed=123 in the URL replays one match, otherwise a new one each launch. */
 function citySeed() {
   var m = /[?&]seed=(\d+)/.exec(window.location.search || "");
   return m ? parseInt(m[1], 10) : Math.floor(Math.random() * 1e9);
 }
 
-/* newCity: true = generate another random city, false = replay the same one. */
+/* newCity: true = go to the next real map, false = replay the same one. */
 function restartGame(newCity) {
   if (typeof CityGen !== "undefined") {
-    /* real maps: N steps to the next one; random cities get a new seed */
-    var real = CityGen.getStyle && CityGen.getStyle() === "real";
-    CityGen.apply(newCity ? (real ? (MAP.seed || 0) + 1 : Math.floor(Math.random() * 1e9)) : MAP.seed);
+    if (newCity) CityGen.nextMap(1);
+    CityGen.apply(newCity ? Math.floor(Math.random() * 1e9) : MAP.seed);
   }
   G = makeG();
   Crowd.init(G);
@@ -382,9 +381,8 @@ function initGame() {
   if (typeof QUALITY !== "undefined") QUALITY.onChange(function () { sizeCanvas(); });
 
   if (typeof CityGen !== "undefined") {
-    var st = /[?&]style=(\w+)/.exec(window.location.search || "");
-    try { if (!st && localStorage.getItem("ppg_style")) st = [0, localStorage.getItem("ppg_style")]; } catch (e) { /* storage blocked */ }
-    if (st) CityGen.setStyle(st[1]);
+    var mp = /[?&]map=(\w+)/.exec(window.location.search || "");
+    if (mp) CityGen.setMap(mp[1]);
     CityGen.apply(citySeed());
     G = makeG();
   }

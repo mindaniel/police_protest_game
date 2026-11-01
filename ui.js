@@ -63,14 +63,20 @@ UI.init = function (g, game) {
 
   window.addEventListener("keydown", function (e) {
     var k = e.key;
+    if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) {   /* settings / guide screen takes all keys */
+      SETTINGS.key(k);
+      if (!SETTINGS.isOpen()) uiSettingsClosed();
+      e.preventDefault(); return;
+    }
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
     if ((k === "j" || k === "J") && typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
       MINIMAP.toggle(); e.preventDefault(); return;   /* show / hide the radar */
     }
-    if (UI.menuOpen) {   /* in-game menu: Esc/Enter resume, R restart, M main menu */
+    if (UI.menuOpen) {   /* in-game menu: Esc/Enter resume, S settings, R restart, M main menu */
       if (k === "Escape" || e.code === "Enter") uiMenuAction("resume");
+      else if (k === "s" || k === "S") uiMenuAction("settings");
       else if (k === "r" || k === "R") uiMenuAction("restart");
       else if (k === "m" || k === "M") uiMenuAction("main");
       e.preventDefault();
@@ -93,18 +99,19 @@ UI.init = function (g, game) {
         else if (k === "ArrowLeft") LEVELS.prev();
         else if (k >= "1" && k <= "4" && k.length === 1) LEVELS.set(LEVELS.list()[+k - 1].id);
       }
-      if ((k === "m" || k === "M") && typeof CityGen !== "undefined" && CityGen.nextSize) {
-        UI.say("Map size: " + CityGen.nextSize());
+      if ((k === "m" || k === "M") && typeof CityGen !== "undefined") {
+        UI.say("Map: " + CityGen.nextMap(e.shiftKey ? -1 : 1).name);
         restartGame(false);
         UI.screen = "title";
       }
+      if ((k === "s" || k === "S") && typeof SETTINGS !== "undefined") SETTINGS.open("settings");
       if (e.code === "Enter") { uiStartLevel(); e.preventDefault(); }
       return;
     }
     if (UI.screen === "over") {
       if (k === "r" || k === "R") restartGame();
       else if (k === "m" || k === "M") { UI.screen = "title"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say(MAP.realName ? "Real map: " + MAP.realName : "New random city"); }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("Map: " + MAP.realName); }
       return;
     }
     if (UI.screen === "planning") {
@@ -115,13 +122,7 @@ UI.init = function (g, game) {
       else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say(MAP.realName ? "Real map: " + MAP.realName : "New random city"); }
-      else if ((k === "c" || k === "C") && typeof CityGen !== "undefined" && CityGen.setStyle) {
-        CityGen.nextStyle();
-        try { localStorage.setItem("ppg_style", CityGen.getStyle()); } catch (e2) { /* storage blocked */ }
-        restartGame(false);
-        UI.say(CityGen.getStyle() === "paris" ? "City style: random Paris" : (CityGen.getStyle() === "real" ? "Real map: " + MAP.realName : "City style: grid town"));
-      }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("Map: " + MAP.realName); }
       else if (k === "Escape") { UI.mode = null; }
       return;
     }
@@ -204,6 +205,7 @@ UI.init = function (g, game) {
 
   /* Left button: click = select / command, hold and drag = pan the map. */
   cv.addEventListener("mousedown", function (e) {
+    if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) return;   /* handled on mouseup */
     if (e.button === 0) {
       if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
         var mml = UI.toLogical(e);
@@ -242,6 +244,10 @@ UI.init = function (g, game) {
   window.addEventListener("mouseup", function (e) {
     if (e.button === 2 && typeof METERS !== "undefined") METERS.stop(G);
     if (UI._mini && e.button === 0) { UI._mini = false; MINIMAP.mouseUp(); return; }
+    if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) {
+      if (e.button === 0 && e.target === cv) { var sp = UI.toLogical(e); SETTINGS.click(sp.x, sp.y); if (!SETTINGS.isOpen()) uiSettingsClosed(); }
+      UI._press = null; return;
+    }
     if (e.button !== 0 || !UI._press) return;
     var wasDrag = UI._press.drag;
     UI._press = null;
@@ -360,6 +366,7 @@ function uiSquadGo(s, x, y, run) {
 var UI_MENU = { btn: null, items: [] };
 function uiMenuAction(a) {
   if (a === "open") { UI.menuOpen = true; UI._menuWasPaused = UI.Game.paused; UI.Game.paused = true; return; }
+  if (a === "settings") { if (typeof SETTINGS !== "undefined") SETTINGS.open("settings"); return; }   /* menu stays open behind it */
   UI.menuOpen = false;
   UI.Game.paused = !!UI._menuWasPaused && a === "resume";
   if (a === "restart") restartGame(false);
@@ -388,12 +395,12 @@ function uiDrawMenu(ctx, w, h) {
   if (UI.menuOpen) {
     ctx.fillStyle = "rgba(6,8,14,0.6)"; ctx.fillRect(0, 0, w, h);
     var pw = Math.round(320 * k), ih = Math.round(44 * k), gap = Math.round(10 * k);
-    var ph = Math.round(60 * k) + 3 * (ih + gap), px = (w - pw) / 2, py = (h - ph) / 2;
+    var ph = Math.round(60 * k) + 4 * (ih + gap), px = (w - pw) / 2, py = (h - ph) / 2;
     ctx.fillStyle = "rgba(14,18,28,0.96)"; ctx.fillRect(px, py, pw, ph);
     ctx.strokeStyle = "#3a4a60"; ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
     ctx.fillStyle = "#9fe0a0"; ctx.font = "bold " + Math.round(18 * k) + "px Consolas, monospace";
     ctx.fillText("PAUSED", w / 2, py + Math.round(28 * k));
-    var labels = [["Resume  (Esc)", "resume", "#2a9d8f"], ["Restart this city  (R)", "restart", "#3a4a60"], ["Main menu  (M)", "main", "#7a3a3a"]];
+    var labels = [["Resume  (Esc)", "resume", "#2a9d8f"], ["Settings & guide  (S)", "settings", "#2a3a55"], ["Restart this city  (R)", "restart", "#3a4a60"], ["Main menu  (M)", "main", "#7a3a3a"]];
     UI_MENU.items = [];
     ctx.font = "bold " + Math.round(14 * k) + "px Consolas, monospace";
     for (var i = 0; i < labels.length; i++) {
@@ -650,7 +657,7 @@ var UI_CONTROLS = [
   "O : cycle the squad's standing order (hold, guard, patrol, push, retreat, auto)",
   "Y then clicks : patrol route   Z then click : trigger zone (Shift+Y / Shift+Z clear)",
   "Shift+H / G / R / A : every squad holds / guards / retreats / goes auto",
-  "Space : pause     T : speed 1x / 2x     N (planning) : new random city",
+  "Space : pause     T : speed 1x / 2x     N (planning) : next map",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
   "H : low buildings (see behind blocks)",
   "? or F1 : show / shrink / hide the controls panel (top right)",
@@ -853,7 +860,22 @@ function uiClock(ctx, g) {
   ctx.restore();
 }
 
+/* Settings closed: a new map or difficulty rebuilds the city (title stays on the title). */
+function uiSettingsClosed() {
+  if (!SETTINGS.consumeRestart()) return;
+  var scr = UI.screen;
+  UI.menuOpen = false;
+  restartGame(false);
+  if (scr === "title") UI.screen = "title";
+  UI.say("Map: " + MAP.realName + (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : ""));
+}
+
 UI.draw = function (ctx, g) {
+  uiDrawScreen(ctx, g);
+  if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) SETTINGS.draw(ctx, MAP.width * CONFIG.tileSize, MAP.height * CONFIG.tileSize);
+};
+
+function uiDrawScreen(ctx, g) {
   var ts = CONFIG.tileSize, w = MAP.width * ts, h = MAP.height * ts, i;
 
   if (UI.screen === "title") {
@@ -869,9 +891,10 @@ UI.draw = function (ctx, g) {
       "3. During the match, command squads and use your tools.",
       "",
       "The controls are shown in the top-right corner during the game (? hides them).",
-      (typeof CityGen !== "undefined" && CityGen.sizeLabel ? "Map size: " + CityGen.sizeLabel() + "   (M to change - bigger maps need a faster computer)" : "")
+      (MAP.realName ? "Map: " + MAP.realName + "   (M = next map)" : ""),
+      "S = settings and full guide"
     ], typeof LEVELS !== "undefined" ? "Choose a difficulty, then press Enter" : "Press Enter to go to planning");
-    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 11 * 22 + 60);
+    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, 105 + 12 * 22 + 60);
     return;
   }
 
@@ -926,8 +949,7 @@ UI.draw = function (ctx, g) {
   var top;
   if (UI.screen === "planning") {
     top = "PLANNING - the match has not started, time is frozen" +
-      (MAP.realName ? "   " + MAP.realName + " (" + MAP.attribution + ")  N = next map, C = style"
-        : (MAP.seed !== undefined ? "   City #" + MAP.seed + "  (N = new random city, C = " + (MAP.style === "paris" ? "Paris" : "grid") + " style)" : "")) +
+      (MAP.realName ? "   " + MAP.realName + " (" + MAP.attribution + ")  N = next map" : "") +
       (typeof LEVELS !== "undefined" ? "   " + LEVELS.label() : "");
   } else {
     var mood = (typeof Crowd !== "undefined") ? Crowd.averageMood(g) : 0;
@@ -956,7 +978,7 @@ UI.draw = function (ctx, g) {
   var bot;
   if (UI.screen === "planning") {
     bot = "Squad " + (UI.selected + 1) + " (" + Police.getLoadout(g, UI.selected) + "): " + uiSquadDesc(g, UI.selected) + uiOrderHud(g) +
-      "  | click squad = select | click a street = place (red = not allowed) | " + (typeof FORCE !== "undefined" ? "V force panel" : "V loadout") + " | right-click/B barrier (" + left + " left) | N new city | Enter START" +
+      "  | click squad = select | click a street = place (red = not allowed) | " + (typeof FORCE !== "undefined" ? "V force panel" : "V loadout") + " | right-click/B barrier (" + left + " left) | N next map | Enter START" +
       (UI.mode ? "  [click to place: " + UI.mode.toUpperCase() + "]" : "");
   } else {
     bot = "Squad " + (UI.selected + 1) + " (" + stance + ", " + uiSquadDesc(g, UI.selected) + ")" +

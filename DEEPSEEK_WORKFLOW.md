@@ -46,7 +46,7 @@ Avoid long slash-separated word lists in prompts (a/b/c/d/…). They look like c
 5. Commit with a clear message, then push to main so the user can use "Update and Play".
 
 ## Game facts worth knowing
-- Screen: fixed 1600×1024 logical canvas; `CONFIG.tileSize = 1600 / MAP.width`. Maps must keep a 25:16 aspect: real maps are 360×230, and the generated District size is 320×205.
+- Screen: fixed 1600×1024 logical canvas; `CONFIG.tileSize = 1600 / MAP.width`. Maps must keep a 25:16 aspect: real maps are 360×230, and random city generation was removed (real maps only).
 - Real maps: `tools/osm2map.py` (3.5 m per tile, road widths by class, exports `sites` landmarks) builds from Overpass JSON downloaded by `tools/osmget.py OUT lat lon width_m height_m`.
 - Big-map systems: overview.js (zoomed-out chunk LOD), minimap.js, landmarks.js plus landmarks_art.js (MAP.sites; Paris props use MAP.landmarks), marches.js, and inner-crowd LOD in crowd.js. Crowd is capped at 1500 (levels.js).
 - User rules (also in NEXT_SESSION.md): ES5 only; mood must never raise suspicion; fights stay non-graphic; the user's Linux laptop is weak, so keep an eye on fps.
@@ -54,7 +54,7 @@ Avoid long slash-separated word lists in prompts (a/b/c/d/…). They look like c
 ## This Windows machine (clinemin profiles)
 The DeepSeek logins live in clinemin's Edge profiles, not `~/.deepseek-profile-N`. Point ds_pool at them:
 ```
-export DS_PROFILE_DIRS="C:\Users\qmn1\.cline\deepseek-web-v2\profile;C:\Users\qmn1\.cline\deepseek-web-v2\profiles\profile2"
+export DS_PROFILE_DIRS="C:\Users\qmn1\.cline\deepseek-web-v2\profile;C:\Users\qmn1\.cline\deepseek-web-v2\profiles\nn\profile;C:\Users\qmn1\.cline\deepseek-web-v2\profiles\m\profile"
 export DS_WORK=/c/Users/qmn1/Desktop/ppg_work
 ```
-Account 1 (`profile`) is signed in. Account 2 (`profiles\profile2`) needs a DeepSeek login first (clinemin `/profile` -> profile2 -> `/login`, or `ds_pool.py login 2` with the variable set). Don't use a profile while clinemin has it open.
+Three accounts, all signed in (clinemin profiles `default`, `nn`, `m`; see `~/.cline/browser-profiles.json`). Note the extra `profile` folder inside `profiles\nn` and `profiles\m`. Use `--accounts 1,2,3`. Don't use a profile while clinemin has it open.

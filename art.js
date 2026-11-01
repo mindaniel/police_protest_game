@@ -122,6 +122,7 @@ var Art = (function () {
     }
     cv.addEventListener("wheel", function (e) {
       e.preventDefault();
+      if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) { SETTINGS.wheel(e.deltaY); return; }
       var p = logical(e);
       zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15);
     }, { passive: false });

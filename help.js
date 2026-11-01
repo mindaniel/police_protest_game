@@ -57,8 +57,7 @@ var HELP = (function () {
       ln("order: " + info.order, orderMeaning(info.order), 2);
       sec("Map");
       ln("B + click", "place barrier", 2);
-      ln("N", "new random city", 2);
-      ln("C", "city: Paris / grid / real maps", 2);
+      ln("N", "next map", 2);
       ln("wheel / + -", "zoom", 3);
       ln("drag / arrows", "pan", 3);
       ln("H", "low buildings", 3);

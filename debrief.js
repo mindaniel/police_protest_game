@@ -479,7 +479,7 @@ var DEBRIEF = (function () {
     y = panelY + panelH - footerH + 6;
     ctx.font = font14;
     ctx.fillStyle = "#ffd866";
-    ctx.fillText("R replay this city   N new city   M change difficulty", cx, y);
+    ctx.fillText("R replay this map   N next map   M main menu", cx, y);
     var best = G ? G._debriefPrevBest : null;
     ctx.font = font12;
     ctx.fillStyle = "#8a95a6";
