@@ -10,14 +10,17 @@ var ORDERS = (function () {
     for (var i = 0; i < CONFIG.squadCount; i++) G.orders.push(makeRec(G, i));
   }
 
-  /* One squad's record (all "hold"); reinforcement squads get theirs lazily. */
+  /* One squad's record; default order depends on unit type. */
   function makeRec(G, i) {
-    var s, cx, cy, rec;
+    var s, cx, cy, rec, loadout, patrol;
     {
       s = squadCenter(G, i);
       cx = s ? s.x : 0; cy = s ? s.y : 0;
+      loadout = "none";
+      if (typeof Police !== "undefined" && Police.getLoadout) loadout = Police.getLoadout(G, i);
+      patrol = (loadout === "car" || loadout === "motorbike");
       rec = {
-        order: "hold",
+        order: patrol ? "patrol" : "hold",
         postX: cx, postY: cy,
         targetX: null, targetY: null,
         rallyX: cx, rallyY: cy,
@@ -32,7 +35,9 @@ var ORDERS = (function () {
         trigger: null,
         targetShop: null,
         lastShopX: 0, lastShopY: 0,
-        nextLiaison: 0
+        nextLiaison: 0,
+        autoRoute: true,
+        autoFrom: { x: cx, y: cy }
       };
     }
     return rec;
@@ -190,6 +195,140 @@ var ORDERS = (function () {
     return best;
   }
 
+  function nearestShopDist(G, x, y) {
+    var shops = G.shops || [], i, sh, dx, dy, d, best = 1e9;
+    for (i = 0; i < shops.length; i++) {
+      sh = shops[i];
+      dx = sh.x + 0.5 - x; dy = sh.y + 0.5 - y;
+      d = Math.sqrt(dx * dx + dy * dy);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function findWalkableNear(G, x, y, r) {
+    var i, j, nx, ny;
+    if (walkable(G, x, y)) return { x: x, y: y };
+    for (i = 1; i <= r; i++) {
+      for (j = -i; j <= i; j++) {
+        nx = x + j; ny = y - i; if (walkable(G, nx, ny)) return { x: nx, y: ny };
+        nx = x + j; ny = y + i; if (walkable(G, nx, ny)) return { x: nx, y: ny };
+        nx = x - i; ny = y + j; if (walkable(G, nx, ny)) return { x: nx, y: ny };
+        nx = x + i; ny = y + j; if (walkable(G, nx, ny)) return { x: nx, y: ny };
+      }
+    }
+    return null;
+  }
+
+  function autoRoute(G, s) {
+    if (!ensure(G)) return;
+    var r = G.orders[s];
+    if (!r) return;
+    var c = squadCenter(G, s);
+    if (!c) return;
+
+    var loadout = "none";
+    if (typeof Police !== "undefined" && Police.getLoadout) loadout = Police.getLoadout(G, s);
+    var fast = (loadout === "car" || loadout === "motorbike");
+    var minR = fast ? 10 : 6;
+    var maxR = fast ? 18 : 10;
+    var desiredR = fast ? 14 : 8;
+
+    var sx = Math.floor(c.x), sy = Math.floor(c.y);
+    var start = findWalkableNear(G, sx, sy, 4);
+    if (!start) {
+      r.waypoints = [];
+      r.wpIndex = 0;
+      r.autoFrom = { x: c.x, y: c.y };
+      return;
+    }
+
+    var seen = {}, q = [], head = 0, dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    var key = start.x + "," + start.y;
+    seen[key] = true;
+    q.push({ x: start.x, y: start.y, d: 0 });
+
+    var candidates = [];
+    while (head < q.length) {
+      var cur = q[head++];
+      if (cur.d > 0) {
+        var dx = cur.x - start.x, dy = cur.y - start.y;
+        var dd = Math.sqrt(dx * dx + dy * dy);
+        if (dd >= 2 && dd <= maxR) {
+          candidates.push({ x: cur.x, y: cur.y, d: dd, ang: Math.atan2(dy, dx) });
+        }
+      }
+      if (cur.d >= maxR) continue;
+      for (var k = 0; k < 4; k++) {
+        var nx = cur.x + dirs[k][0], ny = cur.y + dirs[k][1];
+        var nk = nx + "," + ny;
+        if (seen[nk]) continue;
+        seen[nk] = true;
+        if (walkable(G, nx, ny)) q.push({ x: nx, y: ny, d: cur.d + 1 });
+      }
+    }
+
+    var n = 4 + Math.floor(Math.random() * 3);
+    var sectors = [], i, j, cand, sec, best, bd, score, sd;
+
+    for (i = 0; i < n; i++) sectors.push(null);
+
+    for (i = 0; i < candidates.length; i++) {
+      cand = candidates[i];
+      if (cand.d < minR) continue;
+      sec = Math.floor(((cand.ang + Math.PI) / (Math.PI * 2)) * n) % n;
+      sd = nearestShopDist(G, cand.x + 0.5, cand.y + 0.5);
+      score = Math.min(sd, 8) * 0.7 + Math.abs(cand.d - desiredR) * 0.15;
+      if (!sectors[sec] || score < sectors[sec].score) {
+        sectors[sec] = { x: cand.x, y: cand.y, d: cand.d, ang: cand.ang, score: score };
+      }
+    }
+
+    for (i = 0; i < n; i++) {
+      if (sectors[i]) continue;
+      best = null; bd = 1e9;
+      for (j = 0; j < candidates.length; j++) {
+        cand = candidates[j];
+        sec = Math.floor(((cand.ang + Math.PI) / (Math.PI * 2)) * n) % n;
+        if (sec !== i) continue;
+        sd = nearestShopDist(G, cand.x + 0.5, cand.y + 0.5);
+        score = Math.min(sd, 8) * 0.7 + Math.abs(cand.d - desiredR) * 0.15;
+        if (score < bd) {
+          bd = score;
+          best = { x: cand.x, y: cand.y, d: cand.d, ang: cand.ang, score: score };
+        }
+      }
+      sectors[i] = best;
+    }
+
+    var picked = [];
+    for (i = 0; i < sectors.length; i++) if (sectors[i]) picked.push(sectors[i]);
+
+    if (picked.length < 4) {
+      var used = {}, rest = [];
+      for (i = 0; i < picked.length; i++) used[picked[i].x + "," + picked[i].y] = true;
+      for (i = 0; i < candidates.length; i++) {
+        cand = candidates[i];
+        if (used[cand.x + "," + cand.y]) continue;
+        sd = nearestShopDist(G, cand.x + 0.5, cand.y + 0.5);
+        score = Math.min(sd, 8) * 0.7 + Math.abs(cand.d - desiredR) * 0.15;
+        rest.push({ x: cand.x, y: cand.y, d: cand.d, ang: cand.ang, score: score });
+      }
+      rest.sort(function (a, b) { return a.score - b.score; });
+      for (i = 0; i < rest.length && picked.length < 4; i++) picked.push(rest[i]);
+    }
+
+    picked.sort(function (a, b) { return a.ang - b.ang; });
+
+    var wps = [];
+    for (i = 0; i < picked.length; i++) wps.push({ x: picked[i].x + 0.5, y: picked[i].y + 0.5 });
+
+    r.waypoints = wps;
+    r.wpIndex = 0;
+    r.autoFrom = { x: c.x, y: c.y };
+    r.pauseUntil = 0;
+  }
+
   function set(G, s, order, x, y) {
     if (!ensure(G)) return;
     var r = G.orders[s];
@@ -200,7 +339,7 @@ var ORDERS = (function () {
       if (typeof x !== "number") { var c = squadCenter(G, s); if (c) { r.postX = c.x; r.postY = c.y; } }
     }
     if (order === "retreat") {
-      if (typeof x === "number") { r.rallyX = x; r.rallyY = y; }   // else the planned start point
+      if (typeof x === "number") { r.rallyX = x; r.rallyY = y; }
       Police.setStance(G, s, "calm");
     }
     if (order === "push") {
@@ -217,6 +356,14 @@ var ORDERS = (function () {
     r.pauseUntil = 0;
     r.atPost = false;
     r.lastMoveX = null; r.lastMoveY = null;
+    if (order === "patrol" && r.waypoints.length < 2) r.autoRoute = true;
+  }
+
+  function setOrder(G, s, name) {
+    if (!ensure(G)) return;
+    var c = squadCenter(G, s);
+    if (c && (name === "guard" || name === "auto" || name === "retreat")) set(G, s, name, c.x, c.y);
+    else set(G, s, name);
   }
 
   function get(G, s) {
@@ -270,6 +417,7 @@ var ORDERS = (function () {
   function addWaypoint(G, s, x, y) {
     if (!ensure(G)) return;
     var r = G.orders[s];
+    r.autoRoute = false;
     if (r.waypoints.length >= 6) return;
     r.waypoints.push({ x: x, y: y });
   }
@@ -278,6 +426,7 @@ var ORDERS = (function () {
     if (!ensure(G)) return;
     G.orders[s].waypoints = [];
     G.orders[s].wpIndex = 0;
+    G.orders[s].autoRoute = false;
   }
 
   function setTrigger(G, s, x, y, r) {
@@ -355,7 +504,10 @@ var ORDERS = (function () {
   }
 
   function thinkPatrol(G, s, r, cx, cy) {
-    if (r.waypoints.length < 2) return;   // acts as hold until the route has 2 points
+    if (r.waypoints.length < 2) {
+      if (r.autoRoute) autoRoute(G, s);
+      if (r.waypoints.length < 2) return;
+    }
     var under = shopsUnderAttack(G), i, best = null, bd = 1e9, d, aim;
     for (i = 0; i < under.length; i++) {
       d = dist(under[i].shop.x + 0.5, under[i].shop.y + 0.5, cx, cy);
@@ -599,7 +751,7 @@ var ORDERS = (function () {
       c = squadCenter(G, i);
       if (!c) continue;
       p = Art.project(c.x, c.y, 3);
-      var bs = Math.max(7, 6 * S);   // half-size: readable at full-map zoom
+      var bs = Math.max(7, 6 * S);
       var bx = p.x + Math.max(12, 10 * S), by = p.y;
       letter = LETTER[r.order] || "H";
       col = RING[r.order] || RING.hold;
@@ -622,10 +774,20 @@ var ORDERS = (function () {
       c = squadCenter(G, i);
       if (!c) continue;
 
-      // patrol waypoints
-      if (r.waypoints.length) {
-        ctx.strokeStyle = "rgba(42,157,143,0.7)";
-        ctx.lineWidth = 1.2;
+      // while planning, auto patrol previews follow the squad when it is moved
+      if (planning && r.order === "patrol" && r.autoRoute) {
+        if (!r.autoFrom || !r.waypoints || r.waypoints.length < 2 ||
+            dist(c.x, c.y, r.autoFrom.x, r.autoFrom.y) > 2) {
+          autoRoute(G, i);
+        }
+      }
+
+      // patrol route (auto or manual)
+      if (r.order === "patrol" && r.waypoints && r.waypoints.length) {
+        var routeAlpha = (i === selected) ? 1 : 0.28;
+        ctx.globalAlpha = routeAlpha;
+        ctx.strokeStyle = RING.patrol;
+        ctx.lineWidth = (i === selected) ? 1.4 : 1;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
         var w0 = Art.project(r.waypoints[0].x, r.waypoints[0].y, 0);
@@ -640,17 +802,15 @@ var ORDERS = (function () {
         }
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.fillStyle = RING.patrol;
+        var dotR = Math.max(2.5, 2.5 * S);
         for (var k2 = 0; k2 < r.waypoints.length; k2++) {
           var wp = Art.project(r.waypoints[k2].x, r.waypoints[k2].y, 0);
-          ctx.fillStyle = "#2a9d8f";
           ctx.beginPath();
-          ctx.arc(wp.x, wp.y, Math.max(6, 3.5 * S), 0, Math.PI * 2);
+          ctx.arc(wp.x, wp.y, dotR, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = "#fff";
-          ctx.font = "bold " + Math.max(8, Math.round(8 * S)) + "px sans-serif";
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillText(String(k2 + 1), wp.x, wp.y);
         }
+        ctx.globalAlpha = 1;
       }
 
       // post + radius
@@ -726,6 +886,7 @@ var ORDERS = (function () {
     addWaypoint: addWaypoint, clearWaypoints: clearWaypoints,
     setTrigger: setTrigger, clearTrigger: clearTrigger,
     onManualMove: onManualMove,
+    autoRoute: autoRoute, setOrder: setOrder,
     NAMES: NAMES, startPlay: startPlay
   };
 })();

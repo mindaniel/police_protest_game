@@ -255,6 +255,7 @@ UI.init = function (g, game) {
     if (!wasDrag && e.target === cv && (UI.screen === "planning" || UI.screen === "playing")) {
       var mp = UI.toLogical(e);
       if (uiMenuClick(mp.x, mp.y)) return;
+      if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G)) return;
     }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
@@ -1041,6 +1042,7 @@ function uiDrawScreen(ctx, g) {
     ctx.restore();
   }
 
+  if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen())) SQUADPLAN.draw(ctx, w, h, g);
   if (UI.screen === "planning" || UI.screen === "playing") uiDrawMenu(ctx, w, h);
 
   if (UI.Game.paused && UI.screen === "playing" && !UI.menuOpen) {

@@ -120,11 +120,33 @@ var Art = (function () {
       var r = cv.getBoundingClientRect();
       return { x: (e.clientX - r.left) / r.width * LW, y: (e.clientY - r.top) / r.height * LH };
     }
+    var touchpadUntil = 0;   /* touchpad seen recently: small wheel steps pan */
     cv.addEventListener("wheel", function (e) {
-      e.preventDefault();
       if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) { SETTINGS.wheel(e.deltaY); return; }
       var p = logical(e);
-      zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+      if (typeof SQUADPLAN !== "undefined" && typeof UI !== "undefined" && UI.screen === "planning" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.wheel(e.deltaY, p.x, p.y)) return;
+      e.preventDefault();
+      var r = cv.getBoundingClientRect();
+      var f = LW / r.width;
+      var now = Date.now();
+      var isPinch = e.ctrlKey === true;
+      var smallDelta = e.deltaMode === 0 && (Math.abs(e.deltaY) < 50 || e.deltaY % 1 !== 0);
+      var isPan = !isPinch && e.deltaMode === 0 && (e.deltaX !== 0 || smallDelta);
+      if (isPan) {
+        touchpadUntil = now + 1000;
+        panScreen(e.deltaX * f, e.deltaY * f);
+        return;
+      }
+      if (!isPinch && e.deltaMode === 0 && (Math.abs(e.deltaY) < 50 || e.deltaY % 1 !== 0) && now < touchpadUntil) {
+        touchpadUntil = now + 1000;
+        panScreen(e.deltaX * f, e.deltaY * f);
+        return;
+      }
+      if (isPinch) {
+        zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.01));
+      } else {
+        zoomAt(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+      }
     }, { passive: false });
     cv.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     cv.addEventListener("mousedown", function (e) {
