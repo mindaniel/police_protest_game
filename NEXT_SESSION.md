@@ -1,3 +1,5 @@
+> **New sessions: read DEEPSEEK_WORKFLOW.md first** (how to assign work to DeepSeek with several accounts). The Windows paths below are from an older machine.
+
 Continue work on my browser game "Police vs Protestors".
 
 STATE (2026-10-30): the working copy and the real project are identical, and both are pushed to GitHub (main).
