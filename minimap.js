@@ -4,29 +4,43 @@ var MINIMAP = (function () {
   var base = null;
   var baseRef = null;
   var px = 2; // offscreen px per tile
+  var arrows = []; // clickable edge arrows from last draw
   var api = {};
 
-  function mapArea() {
-    var LW = MAP.width * CONFIG.tileSize;
-    var LH = MAP.height * CONFIG.tileSize;
-    var pad = 12, bottom = 40;
-    var w = Math.round(LW * 0.2);
-    var h = Math.round(w * MAP.height / MAP.width);
-    var maxH = Math.round(LH * 0.28);
-    if (h > maxH) {
-      h = maxH;
-      w = Math.round(h * MAP.width / MAP.height);
-    }
-    return { x: LW - pad - w, y: LH - bottom - h, w: w, h: h };
+  function zoomedIn() {
+    return typeof Art !== "undefined" && Art && Art.camera &&
+      typeof Art.camera.zoom === "number" && Art.camera.zoom >= 1.35;
   }
 
-  function visible() {
-    return api.forced || hidden === false && MAP.width * MAP.height > 9000 || hidden === false && api.forced;
+  function bigEnough() {
+    return api.forced === true ||
+      (typeof MAP !== "undefined" && MAP && MAP.width * MAP.height > 9000);
   }
 
-  function shouldShow() {
-    if (hidden) return false;
-    return api.forced || MAP.width * MAP.height > 9000;
+  function available() { return bigEnough() && zoomedIn(); }
+
+  function geom() {
+    var ts = (typeof CONFIG !== "undefined" && CONFIG.tileSize) ? CONFIG.tileSize : 1;
+    var w = MAP.width * ts;
+    var h = MAP.height * ts;
+    var r = 0.13 * h;
+    return { LW: w, LH: h, r: r, x: 16 + r, y: h - 46 - r };
+  }
+
+  function showButton() {
+    var g = geom();
+    return { x: 30, y: g.LH - 60, r: 14 };
+  }
+
+  function closeButton(g) {
+    var a = -Math.PI / 4;
+    var rr = Math.max(8, Math.min(13, g.r * 0.09));
+    return { x: g.x + Math.cos(a) * g.r, y: g.y + Math.sin(a) * g.r, r: rr };
+  }
+
+  function d2(x1, y1, x2, y2) {
+    var dx = x1 - x2, dy = y1 - y2;
+    return dx * dx + dy * dy;
   }
 
   function tileColor(ch) {
@@ -42,15 +56,16 @@ var MINIMAP = (function () {
   }
 
   function buildBase() {
+    if (typeof MAP === "undefined" || !MAP || !MAP.rows) return;
     if (baseRef === MAP.rows && base) return;
     baseRef = MAP.rows;
     base = document.createElement('canvas');
     base.width = MAP.width * px;
     base.height = MAP.height * px;
     var c = base.getContext('2d');
-    var y, x, ch, col, i;
+    var y, x, ch, col, i, row, nx, ny, nch, s;
     for (y = 0; y < MAP.height; y++) {
-      var row = MAP.rows[y];
+      row = MAP.rows[y];
       for (x = 0; x < MAP.width; x++) {
         ch = row.charAt(x);
         col = tileColor(ch);
@@ -67,7 +82,6 @@ var MINIMAP = (function () {
       for (x = 0; x < MAP.width; x++) {
         ch = row.charAt(x);
         if (ch !== '#' && ch !== 'S') continue;
-        var nx, ny, nch;
         if (x > 0) {
           nch = row.charAt(x - 1);
           if (nch === '.' || nch === 'a') { c.fillRect(x * px, y * px, 1, px); }
@@ -90,41 +104,398 @@ var MINIMAP = (function () {
     c.fillStyle = '#f2d17b';
     var sites = MAP.sites || [];
     for (i = 0; i < sites.length; i++) {
-      var s = sites[i];
+      s = sites[i];
       c.fillRect(s.x * px, s.y * px, Math.max(2, s.w * px), Math.max(2, s.h * px));
     }
   }
 
-  function toTile(area, lx, ly) {
-    return {
-      x: (lx - area.x) / area.w * MAP.width,
-      y: (ly - area.y) / area.h * MAP.height
-    };
+  function viewInfo(g) {
+    var tl = null, br = null, hw = 20, hh = 20, wr;
+    if (typeof Art !== "undefined" && Art && typeof Art.screenToTile === "function") {
+      tl = Art.screenToTile(0, 0);
+      br = Art.screenToTile(g.LW, g.LH);
+      hw = Math.abs(br.x - tl.x) / 2;
+      hh = Math.abs(br.y - tl.y) / 2;
+    }
+    wr = 1.3 * Math.max(hw, hh);
+    if (!isFinite(wr) || wr <= 0.001) wr = 10;
+    return { s: g.r / wr, wr: wr, tl: tl, br: br };
   }
 
-  function contains(lx, ly) {
-    if (!shouldShow()) return false;
-    var a = mapArea();
-    return lx >= a.x && lx <= a.x + a.w && ly >= a.y && ly <= a.y + a.h;
+  function lootList(G) {
+    var out = [], i, j, a, sh, found;
+    if (!G || !G.agents) return out;
+    for (i = 0; i < G.agents.length; i++) {
+      a = G.agents[i];
+      if (!a || !a.active || a.state !== "attackShop" || !a._targetShop) continue;
+      sh = a._targetShop;
+      if (typeof sh.x !== "number" || typeof sh.y !== "number") continue;
+      found = false;
+      for (j = 0; j < out.length; j++) { if (out[j] === sh) { found = true; break; } }
+      if (!found) out.push(sh);
+    }
+    return out;
+  }
+
+  function squadList(G) {
+    var out = [], map = {}, i, o, k, e;
+    if (!G || !G.officers) return out;
+    for (i = 0; i < G.officers.length; i++) {
+      o = G.officers[i];
+      if (!o || typeof o.x !== "number" || typeof o.y !== "number") continue;
+      k = (o.squad === undefined || o.squad === null) ? "?" : String(o.squad);
+      e = map[k];
+      if (!e) { e = { key: o.squad, x: 0, y: 0, n: 0 }; map[k] = e; out.push(e); }
+      e.x += o.x; e.y += o.y; e.n++;
+    }
+    for (i = 0; i < out.length; i++) { out[i].x /= out[i].n; out[i].y /= out[i].n; }
+    return out;
+  }
+
+  function drawArrow(ctx, cx, cy, R, ang, size, fill, label, labelColor, meters, fontPx) {
+    var cos = Math.cos(ang), sin = Math.sin(ang);
+    var ax = cx + cos * R, ay = cy + sin * R;
+    var nx = -sin, ny = cos;
+    var tipX = ax + cos * size * 1.4, tipY = ay + sin * size * 1.4;
+    var baseX = ax - cos * size * 0.5, baseY = ay - sin * size * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(baseX + nx * size * 0.85, baseY + ny * size * 0.85);
+    ctx.lineTo(baseX - nx * size * 0.85, baseY - ny * size * 0.85);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#0b1420";
+    ctx.stroke();
+    if (label) {
+      ctx.fillStyle = labelColor;
+      ctx.font = "bold " + Math.max(7, Math.round(size * 1.15)) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, ax + cos * size * 0.5, ay + sin * size * 0.5);
+    }
+    var tx = cx + cos * (R + size * 2.6);
+    var ty = cy + sin * (R + size * 2.6);
+    ctx.font = "bold " + fontPx + "px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,14,22,0.9)";
+    ctx.strokeText(meters + "m", tx, ty);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(meters + "m", tx, ty);
+    return { x: ax, y: ay };
+  }
+
+  function draw(ctx, G) {
+    if (!available()) return;
+    if (typeof Art === "undefined" || !Art.camera) return;
+    buildBase();
+    var g = geom();
+    var cam = Art.camera;
+    var vi = viewInfo(g);
+    var s = vi.s;
+    var cxp = g.x, cyp = g.y;
+    var tNow = (G && typeof G.time === "number") ? G.time : Date.now() / 1000;
+    var sel = (typeof UI !== "undefined" && UI) ? UI.selected : undefined;
+    var i, dx, dy, d, ang, mt, pos, isSel, sz, lbl, sh, o, a2;
+    var sqs = squadList(G);
+    var loot = lootList(G);
+    var blipR = Math.max(1.5, Math.min(3, g.r * 0.025));
+
+    ctx.save();
+
+    if (hidden) {
+      var b = showButton();
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(16,21,29,0.9)";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#10151d";
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 9px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("map", b.x, b.y - 1);
+      ctx.font = "8px monospace";
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillText("J", b.x, b.y + b.r + 8);
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cxp, cyp, g.r, 0, Math.PI * 2);
+    ctx.clip();
+
+    // ground
+    ctx.fillStyle = "#222a33";
+    ctx.fillRect(cxp - g.r, cyp - g.r, g.r * 2, g.r * 2);
+    if (base) {
+      ctx.drawImage(base, cxp - cam.cx * s, cyp - cam.cy * s, MAP.width * s, MAP.height * s);
+    }
+
+    // current view rectangle
+    if (vi.tl && vi.br) {
+      var vx = cxp + (vi.tl.x - cam.cx) * s;
+      var vy = cyp + (vi.tl.y - cam.cy) * s;
+      var vw = (vi.br.x - vi.tl.x) * s;
+      var vh = (vi.br.y - vi.tl.y) * s;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.strokeRect(vx, vy, vw, vh);
+    }
+
+    // protest / rally areas
+    if (typeof CONFIG !== "undefined" && CONFIG.rallyZones) {
+      ctx.lineWidth = 1;
+      for (i = 0; i < CONFIG.rallyZones.length; i++) {
+        var rz = CONFIG.rallyZones[i];
+        if (!rz || typeof rz.x !== "number" || typeof rz.y !== "number") continue;
+        var zx = cxp + (rz.x - cam.cx) * s;
+        var zy = cyp + (rz.y - cam.cy) * s;
+        var zr = (typeof rz.r === "number" ? rz.r : 5) * s;
+        ctx.fillStyle = "rgba(240,160,48,0.18)";
+        ctx.strokeStyle = "rgba(240,160,48,0.45)";
+        ctx.beginPath();
+        ctx.arc(zx, zy, zr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // broken shops as dark red crosses
+    if (G && G.shops) {
+      var cr = Math.max(2, g.r * 0.02);
+      ctx.lineWidth = Math.max(1, cr * 0.6);
+      ctx.strokeStyle = "#7a1f1f";
+      for (i = 0; i < G.shops.length; i++) {
+        sh = G.shops[i];
+        if (!sh || !sh.broken) continue;
+        var bx = cxp + (sh.x - cam.cx) * s;
+        var by = cyp + (sh.y - cam.cy) * s;
+        ctx.beginPath();
+        ctx.moveTo(bx - cr, by - cr);
+        ctx.lineTo(bx + cr, by + cr);
+        ctx.moveTo(bx + cr, by - cr);
+        ctx.lineTo(bx - cr, by + cr);
+        ctx.stroke();
+      }
+    }
+
+    // shops being looted: flashing red dots
+    if (loot.length) {
+      var pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(tNow * 7));
+      ctx.fillStyle = "rgba(229,72,63," + pulse.toFixed(2) + ")";
+      for (i = 0; i < loot.length; i++) {
+        var lx = cxp + (loot[i].x - cam.cx) * s;
+        var ly = cyp + (loot[i].y - cam.cy) * s;
+        ctx.beginPath();
+        ctx.arc(lx, ly, blipR * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // officers: small blue dots
+    if (G && G.officers && G.officers.length) {
+      ctx.fillStyle = "#3f7fe0";
+      ctx.beginPath();
+      for (i = 0; i < G.officers.length; i++) {
+        o = G.officers[i];
+        if (!o || typeof o.x !== "number") continue;
+        var ox = cxp + (o.x - cam.cx) * s;
+        var oy = cyp + (o.y - cam.cy) * s;
+        ctx.moveTo(ox + blipR, oy);
+        ctx.arc(ox, oy, blipR, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+
+    // vehicles: small blue squares
+    if (G && G.vehicles && G.vehicles.length) {
+      ctx.fillStyle = "#3f7fe0";
+      var vs = blipR * 2;
+      for (i = 0; i < G.vehicles.length; i++) {
+        var v = G.vehicles[i];
+        if (!v || typeof v.x !== "number") continue;
+        ctx.fillRect(cxp + (v.x - cam.cx) * s - vs / 2, cyp + (v.y - cam.cy) * s - vs / 2, vs, vs);
+      }
+    }
+
+    // revealed rioters: red dots
+    if (G && G.agents && G.agents.length) {
+      ctx.fillStyle = "#e5483f";
+      for (i = 0; i < G.agents.length; i++) {
+        a2 = G.agents[i];
+        if (!a2 || !(a2.revealedUntil > tNow)) continue;
+        var ax = cxp + (a2.x - cam.cx) * s;
+        var ay = cyp + (a2.y - cam.cy) * s;
+        ctx.beginPath();
+        ctx.arc(ax, ay, blipR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // squad badges
+    for (i = 0; i < sqs.length; i++) {
+      var bx2 = cxp + (sqs[i].x - cam.cx) * s;
+      var by2 = cyp + (sqs[i].y - cam.cy) * s;
+      isSel = (sel !== undefined && sel !== null && String(sel) === String(sqs[i].key));
+      var br2 = Math.max(5, Math.min(11, g.r * 0.06)) * (isSel ? 1.25 : 1);
+      ctx.beginPath();
+      ctx.arc(bx2, by2, br2, 0, Math.PI * 2);
+      ctx.fillStyle = isSel ? "#f0c040" : "#2f6fd0";
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#0b1420";
+      ctx.stroke();
+      ctx.fillStyle = isSel ? "#1a1206" : "#ffffff";
+      ctx.font = "bold " + Math.max(7, Math.round(br2 * 1.15)) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      lbl = (sqs[i].key === undefined || sqs[i].key === null) ? "?" : String(sqs[i].key);
+      ctx.fillText(lbl, bx2, by2 + 0.5);
+    }
+
+    ctx.restore(); // clip
+
+    // rim
+    ctx.beginPath();
+    ctx.arc(cxp, cyp, g.r, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#10151d";
+    ctx.stroke();
+
+    // north marker
+    var nf = Math.max(9, Math.min(14, Math.round(g.r * 0.12)));
+    ctx.font = "bold " + nf + "px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(10,14,22,0.9)";
+    ctx.strokeText("N", cxp, cyp - g.r + nf * 0.9);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("N", cxp, cyp - g.r + nf * 0.9);
+
+    // edge arrows
+    arrows = [];
+    var asz = Math.max(5, Math.min(8, g.r * 0.05));
+    var df = Math.max(8, Math.min(12, Math.round(g.r * 0.07)));
+
+    for (i = 0; i < sqs.length; i++) {
+      dx = sqs[i].x - cam.cx;
+      dy = sqs[i].y - cam.cy;
+      d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= vi.wr) continue;
+      ang = Math.atan2(dy, dx);
+      isSel = (sel !== undefined && sel !== null && String(sel) === String(sqs[i].key));
+      sz = isSel ? asz * 1.5 : asz;
+      lbl = (sqs[i].key === undefined || sqs[i].key === null) ? "?" : String(sqs[i].key);
+      mt = Math.max(10, Math.round(d * 3.5 / 10) * 10);
+      pos = drawArrow(ctx, cxp, cyp, g.r, ang, sz,
+        isSel ? "#f0c040" : "#2f6fd0", lbl, isSel ? "#1a1206" : "#ffffff", mt, df);
+      arrows.push({ x: pos.x, y: pos.y, tx: sqs[i].x, ty: sqs[i].y });
+    }
+
+    for (i = 0; i < loot.length; i++) {
+      dx = loot[i].x - cam.cx;
+      dy = loot[i].y - cam.cy;
+      d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= vi.wr) continue;
+      ang = Math.atan2(dy, dx);
+      mt = Math.max(10, Math.round(d * 3.5 / 10) * 10);
+      pos = drawArrow(ctx, cxp, cyp, g.r, ang, asz, "#e5483f", "!", "#ffffff", mt, df);
+      arrows.push({ x: pos.x, y: pos.y, tx: loot[i].x, ty: loot[i].y });
+    }
+
+    // close button on top-right of rim
+    var cb = closeButton(g);
+    ctx.beginPath();
+    ctx.arc(cb.x, cb.y, cb.r, 0, Math.PI * 2);
+    ctx.fillStyle = "#10151d";
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#3a4553";
+    ctx.stroke();
+    var xx = cb.r * 0.45;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(cb.x - xx, cb.y - xx);
+    ctx.lineTo(cb.x + xx, cb.y + xx);
+    ctx.moveTo(cb.x + xx, cb.y - xx);
+    ctx.lineTo(cb.x - xx, cb.y + xx);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   function moveCamera(lx, ly) {
-    var a = mapArea();
-    var t = toTile(a, lx, ly);
-    var cam = Art.camera;
-    cam.cx = t.x;
-    cam.cy = t.y;
+    if (typeof Art === "undefined" || !Art.camera) return;
+    var g = geom();
+    var vi = viewInfo(g);
+    Art.camera.cx += (lx - g.x) / vi.s;
+    Art.camera.cy += (ly - g.y) / vi.s;
+  }
+
+  function contains(lx, ly) {
+    if (!available()) return false;
+    var g, cb, i, b;
+    if (hidden) {
+      b = showButton();
+      return d2(lx, ly, b.x, b.y) <= b.r * b.r;
+    }
+    g = geom();
+    cb = closeButton(g);
+    if (d2(lx, ly, cb.x, cb.y) <= cb.r * cb.r) return true;
+    for (i = 0; i < arrows.length; i++) {
+      if (d2(lx, ly, arrows[i].x, arrows[i].y) <= 144) return true;
+    }
+    return d2(lx, ly, g.x, g.y) <= g.r * g.r;
   }
 
   function mouseDown(lx, ly) {
-    if (!contains(lx, ly)) return false;
-    dragging = true;
-    moveCamera(lx, ly);
-    return true;
+    if (!available()) return false;
+    var g, cb, i, b;
+    if (hidden) {
+      b = showButton();
+      if (d2(lx, ly, b.x, b.y) <= b.r * b.r) {
+        hidden = false;
+        return true;
+      }
+      return false;
+    }
+    g = geom();
+    cb = closeButton(g);
+    if (d2(lx, ly, cb.x, cb.y) <= cb.r * cb.r) {
+      hidden = true;
+      dragging = false;
+      return true;
+    }
+    for (i = 0; i < arrows.length; i++) {
+      if (d2(lx, ly, arrows[i].x, arrows[i].y) <= 144) {
+        if (typeof Art !== "undefined" && Art.camera) {
+          Art.camera.cx = arrows[i].tx;
+          Art.camera.cy = arrows[i].ty;
+        }
+        return true;
+      }
+    }
+    if (d2(lx, ly, g.x, g.y) <= g.r * g.r) {
+      dragging = true;
+      moveCamera(lx, ly);
+      return true;
+    }
+    return false;
   }
 
   function mouseMove(lx, ly) {
     if (!dragging) return;
+    if (!available() || hidden) { dragging = false; return; }
     moveCamera(lx, ly);
   }
 
@@ -134,159 +505,7 @@ var MINIMAP = (function () {
 
   function toggle() {
     hidden = !hidden;
-  }
-
-  function draw(ctx, G) {
-    if (!shouldShow()) return;
-    buildBase();
-    var a = mapArea();
-    var t = CONFIG.tileSize;
-    var LW = MAP.width * t;
-    var LH = MAP.height * t;
-
-    // shadow
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.4)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 2;
-
-    // background image
-    ctx.drawImage(base, a.x, a.y, a.w, a.h);
-    ctx.restore();
-
-    // clip for live layer
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(a.x, a.y, a.w, a.h);
-    ctx.clip();
-
-    var sx = a.w / MAP.width;
-    var sy = a.h / MAP.height;
-    var i, o, path, col;
-
-    // agents batched by colour
-    if (G && G.agents) {
-      var colours = { calm: '#4f8fe6', mid: '#f0a030', hot: '#e5483f', riot: '#b000ff' };
-      var keys = ['calm', 'mid', 'hot', 'riot'];
-      var k, ag, mood, key;
-      for (k = 0; k < keys.length; k++) {
-        key = keys[k];
-        var any = false;
-        ctx.beginPath();
-        for (i = 0; i < G.agents.length; i++) {
-          ag = G.agents[i];
-          if (!ag.active) continue;
-          if (ag.revealedUntil && ag.revealedUntil > (G.time || 0)) {
-            if (key !== 'riot') continue;
-          } else {
-            mood = ag.mood || 0;
-            var kk = mood < 40 ? 'calm' : (mood <= 70 ? 'mid' : 'hot');
-            if (kk !== key) continue;
-          }
-          ctx.rect(a.x + ag.x * sx - 0.75, a.y + ag.y * sy - 0.75, 1.5, 1.5);
-          any = true;
-        }
-        if (any) {
-          ctx.fillStyle = colours[key];
-          ctx.fill();
-        }
-      }
-    }
-
-    // officers and vehicles outline then fill
-    var lists = [G && G.officers, G && G.vehicles];
-    var li, ent;
-    for (li = 0; li < 2; li++) {
-      var arr = lists[li];
-      if (!arr || !arr.length) continue;
-      ctx.fillStyle = '#10206a';
-      ctx.beginPath();
-      for (i = 0; i < arr.length; i++) {
-        ent = arr[i];
-        ctx.rect(a.x + ent.x * sx - 1, a.y + ent.y * sy - 1, 2, 2);
-      }
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      for (i = 0; i < arr.length; i++) {
-        ent = arr[i];
-        ctx.rect(a.x + ent.x * sx - 0.5, a.y + ent.y * sy - 0.5, 1, 1);
-      }
-      ctx.fill();
-    }
-
-    // fires pulse
-    if (typeof FX !== 'undefined' && FX && typeof FX.list === 'function') {
-      var fires = FX.list();
-      var pulse = 0.5 + 0.5 * Math.sin((G && G.time ? G.time : Date.now() / 1000) * 6);
-      var rad = 1.2 + pulse * 0.8;
-      ctx.fillStyle = '#ff7a1a';
-      ctx.beginPath();
-      for (i = 0; i < fires.length; i++) {
-        var f = fires[i];
-        ctx.moveTo(a.x + f.x * sx + rad, a.y + f.y * sy);
-        ctx.arc(a.x + f.x * sx, a.y + f.y * sy, rad, 0, Math.PI * 2);
-      }
-      ctx.fill();
-    }
-
-    // broken shops
-    if (G && G.shops) {
-      ctx.fillStyle = '#7a1f1f';
-      ctx.beginPath();
-      var shopCount = 0;
-      for (i = 0; i < G.shops.length; i++) {
-        if (G.shops[i].broken) {
-          ctx.rect(a.x + G.shops[i].x * sx - 1, a.y + G.shops[i].y * sy - 1, 2, 2);
-          shopCount++;
-        }
-      }
-      if (shopCount) ctx.fill();
-    }
-
-    // attacked landmarks pulsing ring
-    if (typeof LANDMARKS !== 'undefined' && LANDMARKS && typeof LANDMARKS.list === 'function') {
-      var lms = LANDMARKS.list(G);
-      var tt = (G && G.time ? G.time : Date.now() / 1000);
-      var rp = 0.5 + 0.5 * Math.sin(tt * 8);
-      for (i = 0; i < lms.length; i++) {
-        var lm = lms[i];
-        if (!lm.attackers || lm.attackers <= 0) continue;
-        ctx.beginPath();
-        ctx.strokeStyle = 'rgba(229,72,63,' + (0.4 + 0.6 * rp).toFixed(2) + ')';
-        ctx.lineWidth = 1.5;
-        var lr = 3 + rp * 2;
-        ctx.arc(a.x + (lm.x + (lm.w || 1) / 2) * sx, a.y + (lm.y + (lm.h || 1) / 2) * sy, lr, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-
-    // view rectangle
-    var tl = Art.screenToTile(0, 0);
-    var br = Art.screenToTile(LW, LH);
-    var vx = a.x + tl.x * sx;
-    var vy = a.y + tl.y * sy;
-    var vw = (br.x - tl.x) * sx;
-    var vh = (br.y - tl.y) * sy;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.strokeRect(vx, vy, vw, vh);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#ffffff';
-    ctx.strokeRect(vx, vy, vw, vh);
-
-    ctx.restore();
-
-    // frame
-    ctx.strokeStyle = 'rgba(10,14,22,0.85)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(a.x + 1, a.y + 1, a.w - 2, a.h - 2);
-
-    // title
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 9px monospace';
-    ctx.textBaseline = 'top';
-    ctx.fillText('MAP', a.x + 4, a.y + 3);
+    dragging = false;
   }
 
   api.draw = draw;
@@ -295,6 +514,7 @@ var MINIMAP = (function () {
   api.mouseUp = mouseUp;
   api.contains = contains;
   api.toggle = toggle;
+  api.isHidden = function () { return hidden; };
   api.forced = false;
   return api;
 })();

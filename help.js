@@ -62,6 +62,7 @@ var HELP = (function () {
       ln("wheel / + -", "zoom", 3);
       ln("drag / arrows", "pan", 3);
       ln("H", "low buildings", 3);
+      ln("J", "show / hide minimap", 3);
       sec("Go");
       ln("Enter", "START the match", 1);
     } else {
@@ -105,6 +106,7 @@ var HELP = (function () {
       ln("Q", "graphics quality (Low = faster)", 2);
       ln("wheel / drag", "zoom / pan", 3);
       ln("Esc", "cancel click mode", 2);
+      ln("J", "show / hide minimap", 3);
     }
     return pruneSections(lines);
   }
