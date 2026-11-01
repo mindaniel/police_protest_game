@@ -66,6 +66,9 @@ UI.init = function (g, game) {
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
+    if ((k === "j" || k === "J") && typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
+      MINIMAP.toggle(); e.preventDefault(); return;   /* show / hide the radar */
+    }
     if (UI.menuOpen) {   /* in-game menu: Esc/Enter resume, R restart, M main menu */
       if (k === "Escape" || e.code === "Enter") uiMenuAction("resume");
       else if (k === "r" || k === "R") uiMenuAction("restart");
@@ -106,6 +109,7 @@ UI.init = function (g, game) {
     }
     if (UI.screen === "planning") {
       if (e.code === "Enter") { uiStartPlay(); e.preventDefault(); }
+      else if (typeof FORCE !== "undefined" && FORCE.isOpen() && k !== "Tab" && FORCE.key(k)) { e.preventDefault(); }   /* planner cards */
       else if (uiOrderKey(e, k)) { /* standing orders */ }
       else if (uiSelectKey(k)) { /* squad selected */ }
       else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
@@ -988,7 +992,8 @@ UI.draw = function (ctx, g) {
 
   if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) MINIMAP.draw(ctx, g);
 
-  if (typeof HELP !== "undefined" && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {
+  var forceOpen = UI.screen === "planning" && typeof FORCE !== "undefined" && FORCE.isOpen();   /* the planner covers the middle */
+  if (typeof HELP !== "undefined" && !forceOpen && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {
     HELP.draw(ctx, {
       canvas: UI.Game.canvas, screen: UI.screen, mode: UI.mode || null, paused: false,
       loadout: Police.getLoadout(g, UI.selected),
