@@ -122,3 +122,7 @@ protester it is a wrong arrest and pushes the mood of everyone nearby up.
 - `maps/` - real neighbourhoods baked from OpenStreetMap (one file per map).
 - `tests/` - `node tests/test_police.js`, `tests/test_escort.js`, `tests/test_sim.js`, `tests/check_map.js`.
 - `tools/` - map builders (`osmget.py`, `osm2map.py`) and `tools/dev/` DeepSeek helpers.
+
+## Credits
+- Map data (c) OpenStreetMap contributors, ODbL.
+- Eiffel Tower: "( FREE ) La tour Eiffel" (https://sketchfab.com/3d-models/free-la-tour-eiffel-8553f94d06e24cb4b0fde1080f281674) by SDC PERFORMANCE (https://sketchfab.com/Lambo_SC04), CC BY 4.0. Rendered to a sprite with `tools/sprite/render_sprite.py`.

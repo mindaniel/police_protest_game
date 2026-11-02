@@ -907,6 +907,94 @@ var LANDMARKS_ART = (function () {
     return false;
   }
 
+  function _normStr(s) {
+    s = String(s || "").toLowerCase();
+    // strip combining accents
+    if (s.normalize) s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return s;
+  }
+
+  function _findSpriteEntry(name) {
+    if (typeof LANDMARK_SPRITES === "undefined" || !LANDMARK_SPRITES) return null;
+    var n = _normStr(name);
+    for (var k in LANDMARK_SPRITES) {
+      if (!Object.prototype.hasOwnProperty.call(LANDMARK_SPRITES, k)) continue;
+      var entry = LANDMARK_SPRITES[k];
+      if (!entry || !entry.match) continue;
+      for (var i = 0; i < entry.match.length; i++) {
+        var m = _normStr(entry.match[i]);
+        if (m && n.indexOf(m) !== -1) return entry;
+      }
+    }
+    return null;
+  }
+
+  function _ensureImage(entry) {
+    if (entry._img) return entry._img;
+    if (entry._imgFailed) return null;
+    var im = new Image();
+    im.onerror = function () { entry._imgFailed = true; };
+    im.src = entry.src;
+    entry._img = im;
+    return im;
+  }
+
+  function _drawSpriteAt(ctx, entry, cx, cy) {
+    if (!entry) return false;
+    var img = _ensureImage(entry);
+    if (!img || !img.complete || !img.naturalWidth) return false;
+    var p0 = proj(cx, cy, 0);
+    var p1 = proj(cx + 1, cy, 0);
+    var pxPerTile = Math.sqrt((p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y));
+    if (!(pxPerTile > 0)) return false;
+    var k = pxPerTile / entry.pxPerTile;
+    var w = img.naturalWidth * k;
+    var h = img.naturalHeight * k;
+    ctx.drawImage(img, p0.x - entry.ax * k, p0.y - entry.ay * k, w, h);
+    return true;
+  }
+
+  function drawSprite(ctx, lm) {
+    var entry = _findSpriteEntry(lm.name);
+    if (!entry) return false;
+    var cx = lm.x + lm.w * 0.5;
+    var cy = lm.y + lm.h * 0.5;
+    if (!_drawSpriteAt(ctx, entry, cx, cy)) return false;
+    lm._spriteMatched = entry;
+    return true;
+  }
+
+  function drawPlacedSprites(ctx, G) {
+    if (typeof LANDMARK_SPRITES === "undefined" || !LANDMARK_SPRITES) return;
+    var curMap = null;
+    try {
+      if (typeof CityGen !== "undefined" && CityGen && typeof CityGen.currentMap === "function") {
+        var cm = CityGen.currentMap();
+        if (cm) curMap = cm.id;
+      }
+    } catch (e) { curMap = null; }
+    if (!curMap) return;
+    var list = (G && G.landmarks) || (typeof LANDMARKS !== "undefined" ? LANDMARKS : null);
+    for (var k in LANDMARK_SPRITES) {
+      if (!Object.prototype.hasOwnProperty.call(LANDMARK_SPRITES, k)) continue;
+      var entry = LANDMARK_SPRITES[k];
+      if (!entry || entry.map !== curMap) continue;
+      if (typeof entry.x !== "number" || typeof entry.y !== "number") continue;
+      if (entry._usedInLandmark) continue;
+      // Skip if this entry already matched a landmark in the list
+      if (list && list.length) {
+        var matched = false;
+        for (var i = 0; i < list.length; i++) {
+          var elm = list[i] && list[i].lm;
+          if (!elm) continue;
+          if (_findSpriteEntry(elm.name) === entry) { matched = true; break; }
+        }
+        if (matched) continue;
+      }
+      _drawSpriteAt(ctx, entry, entry.x, entry.y);
+    }
+  }
+
   function draw(ctx, G, list) {
     if (!list || !list.length) return;
     var s = S();
@@ -923,13 +1011,16 @@ var LANDMARKS_ART = (function () {
 
       if (attackers > 0) drawRing(ctx, lm, t);
 
-      var tr = lm.type;
-      if (!drawSignature(ctx, lm, s, t, destroyed)) {
-        if (tr === "church") drawGenericChurch(ctx, lm, s, t, destroyed);
-        else if (tr === "gov") drawGenericGov(ctx, lm, s, t, destroyed);
-        else if (tr === "theatre") drawGenericTheatre(ctx, lm, s, t, destroyed);
-        else if (tr === "statue") drawGenericStatue(ctx, lm, s, t, destroyed);
-        else if (tr === "column") drawGenericColumn(ctx, lm, s, t, destroyed);
+      var drewSprite = drawSprite(ctx, lm);
+      if (!drewSprite) {
+        var tr = lm.type;
+        if (!drawSignature(ctx, lm, s, t, destroyed)) {
+          if (tr === "church") drawGenericChurch(ctx, lm, s, t, destroyed);
+          else if (tr === "gov") drawGenericGov(ctx, lm, s, t, destroyed);
+          else if (tr === "theatre") drawGenericTheatre(ctx, lm, s, t, destroyed);
+          else if (tr === "statue") drawGenericStatue(ctx, lm, s, t, destroyed);
+          else if (tr === "column") drawGenericColumn(ctx, lm, s, t, destroyed);
+        }
       }
 
       drawGraffiti(ctx, lm, stage, t);
@@ -954,6 +1045,7 @@ var LANDMARKS_ART = (function () {
 
       if (s >= 0.8) drawLabel(ctx, lm, s, attackers);
     }
+    drawPlacedSprites(ctx, G);
     ctx.restore();
   }
 
