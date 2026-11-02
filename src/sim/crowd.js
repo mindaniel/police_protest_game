@@ -92,15 +92,17 @@ var Crowd = (function () {
     if (!store || store.cols !== cols || store.rows !== rows || store.cell !== cell) {
       var buckets = new Array(cols * rows);
       for (var b = 0; b < buckets.length; b++) buckets[b] = [];
-      store = G._hashStore = { cols: cols, rows: rows, cell: cell, buckets: buckets };
+      store = G._hashStore = { cols: cols, rows: rows, cell: cell, buckets: buckets, used: [] };
       h = G._hash = { cell: cell, cols: cols, rows: rows, buckets: buckets };
     } else {
-      var bs = store.buckets;
-      for (var c = 0; c < bs.length; c++) bs[c].length = 0;
+      var bs = store.buckets, used = store.used;
+      for (var u = 0; u < used.length; u++) bs[used[u]].length = 0;
+      used.length = 0;
       h = G._hash;
       if (!h || h.buckets !== bs) h = G._hash = { cell: cell, cols: cols, rows: rows, buckets: bs };
     }
     var buckets2 = h.buckets;
+    var used2 = G._hashStore.used;
     var maxCx = cols - 1, maxCy = rows - 1;
     var list = G.agents;
     for (var i = 0; i < list.length; i++) {
@@ -109,14 +111,18 @@ var Crowd = (function () {
       var cx = Math.floor(a.x / cell), cy = Math.floor(a.y / cell);
       if (cx < 0) cx = 0; else if (cx > maxCx) cx = maxCx;
       if (cy < 0) cy = 0; else if (cy > maxCy) cy = maxCy;
-      buckets2[cy * cols + cx].push(a);
+      var bi = cy * cols + cx;
+      var bucket = buckets2[bi];
+      if (bucket.length === 0) used2.push(bi);
+      bucket.push(a);
     }
   }
 
-  function neighbors(G, x, y, radius) {
-    var out = [];
+  function neighbors(G, x, y, radius, out) {
+    var res = out || [];
+    res.length = 0;
     var h = G._hash;
-    if (!h) return out;
+    if (!h) return res;
     var cell = h.cell, cols = h.cols, rows = h.rows, buckets = h.buckets;
     var r2 = radius * radius;
     var cx0 = Math.floor((x - radius) / cell), cx1 = Math.floor((x + radius) / cell);
@@ -131,38 +137,53 @@ var Crowd = (function () {
         for (var i = 0; i < b.length; i++) {
           var a = b[i];
           var dx = a.x - x, dy = a.y - y;
-          if (dx * dx + dy * dy <= r2) out.push(a);
+          if (dx * dx + dy * dy <= r2) res.push(a);
         }
       }
     }
-    return out;
+    return res;
   }
 
   /* ---------------- BFS fields ---------------- */
   /* Distance (in tiles) from every walkable tile to the nearest source tile. */
   function bfsFrom(G, sources) {
-    var W = MAP.width, H = MAP.height;
-    var dist = new Float32Array(W * H);
+    var W = MAP.width, H = MAP.height, N = W * H;
+    var wall = ensureWallGrid(G);
+    var dist = new Float32Array(N);
     dist.fill(Infinity);
-    var queue = [];
-    var i;
+    var q = G._bfsQ;
+    if (!q || q.length !== N) q = G._bfsQ = new Int32Array(N);
+    var tail = 0, i, s;
     for (i = 0; i < sources.length; i++) {
-      var s = sources[i];
-      if (!inBounds(s.x, s.y) || isPathWall(G, s.x, s.y)) continue;
-      var si = s.y * W + s.x;
-      if (dist[si] !== Infinity) continue;
+      s = sources[i];
+      var sx = s.x, sy = s.y;
+      if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue;
+      var si = sy * W + sx;
+      if (wall[si] || dist[si] !== Infinity) continue;
       dist[si] = 0;
-      queue.push(si);
+      q[tail++] = si;
     }
     var head = 0;
-    while (head < queue.length) {
-      var idx = queue[head++];
+    while (head < tail) {
+      var idx = q[head++];
       var cx = idx % W, cy = (idx - cx) / W;
-      var cd = dist[idx];
-      if (cx > 0 && !isPathWall(G, cx - 1, cy) && dist[idx - 1] === Infinity) { dist[idx - 1] = cd + 1; queue.push(idx - 1); }
-      if (cx < W - 1 && !isPathWall(G, cx + 1, cy) && dist[idx + 1] === Infinity) { dist[idx + 1] = cd + 1; queue.push(idx + 1); }
-      if (cy > 0 && !isPathWall(G, cx, cy - 1) && dist[idx - W] === Infinity) { dist[idx - W] = cd + 1; queue.push(idx - W); }
-      if (cy < H - 1 && !isPathWall(G, cx, cy + 1) && dist[idx + W] === Infinity) { dist[idx + W] = cd + 1; queue.push(idx + W); }
+      var cd = dist[idx] + 1;
+      if (cx > 0) {
+        var n0 = idx - 1;
+        if (dist[n0] === Infinity && !wall[n0]) { dist[n0] = cd; q[tail++] = n0; }
+      }
+      if (cx < W - 1) {
+        var n1 = idx + 1;
+        if (dist[n1] === Infinity && !wall[n1]) { dist[n1] = cd; q[tail++] = n1; }
+      }
+      if (cy > 0) {
+        var n2 = idx - W;
+        if (dist[n2] === Infinity && !wall[n2]) { dist[n2] = cd; q[tail++] = n2; }
+      }
+      if (cy < H - 1) {
+        var n3 = idx + W;
+        if (dist[n3] === Infinity && !wall[n3]) { dist[n3] = cd; q[tail++] = n3; }
+      }
     }
     return dist;
   }
@@ -170,17 +191,21 @@ var Crowd = (function () {
   /* Flow field from the whole plaza, recomputed when the map changes. */
   function rebuildFlow(G) {
     var W = MAP.width, H = MAP.height;
-    var sources = [];
-    for (var y = 0; y < H; y++) {
-      for (var x = 0; x < W; x++) {
-        if (tileChar(x, y) === "P") sources.push({ x: x, y: y });
+    var src = G._plazaSrc;
+    if (!src || src.rows !== MAP.rows || src.w !== W || src.h !== H) {
+      var list = [];
+      for (var y = 0; y < H; y++) {
+        var row = MAP.rows[y];
+        for (var x = 0; x < W; x++) {
+          if (row.charCodeAt(x) === 80) list.push({ x: x, y: y });
+        }
       }
+      src = G._plazaSrc = { rows: MAP.rows, w: W, h: H, list: list };
     }
-    G.flow = bfsFrom(G, sources);
+    G._wallVer = (G._wallVer || 0) + 1;
+    G.flow = bfsFrom(G, src.list);
     G.flowVersion = (G.flowVersion || 0) + 1;
-    G._shopFields = null;   // invalidate per-shop caches
-    G._siteFields = null;
-    G._zoneFields = null;
+    /* cached fields are kept and marked stale by their own ver; they rebuild lazily */
   }
 
   /* Half extents (length/width) of a vehicle type, kept local to crowd. */
@@ -236,12 +261,12 @@ var Crowd = (function () {
   /* Cached per-shop BFS field (cheap: 6 shops, rebuilt only on map change). */
   function shopField(G, shop) {
     if (!G._shopFields) G._shopFields = {};
-    if (Object.prototype.hasOwnProperty.call(G._shopFields, shop.id)) {
-      return G._shopFields[shop.id];
-    }
+    var e = G._shopFields[shop.id];
+    if (e && e.ver === G.flowVersion) return e.f;
+    if (e && !fieldBudgetOK(G)) return e.f;
     var acc = shopAccessTiles(G, shop);
     var f = acc.length ? bfsFrom(G, acc) : null;
-    G._shopFields[shop.id] = f;
+    G._shopFields[shop.id] = { f: f, ver: G.flowVersion };
     return f;
   }
 
@@ -250,13 +275,15 @@ var Crowd = (function () {
     var sites = CONFIG.blockSites || [];
     if (!sites[i]) return null;
     if (!G._siteFields) G._siteFields = {};
-    if (Object.prototype.hasOwnProperty.call(G._siteFields, i)) return G._siteFields[i];
+    var e = G._siteFields[i];
+    if (e && e.ver === G.flowVersion) return e.f;
+    if (e && !fieldBudgetOK(G)) return e.f;
     var s = sites[i], src = [];
     for (var y = s.y; y < s.y + s.h; y++) {
       for (var x = s.x; x < s.x + s.w; x++) src.push({ x: x, y: y });
     }
     var f = bfsFrom(G, src);
-    G._siteFields[i] = f;
+    G._siteFields[i] = { f: f, ver: G.flowVersion };
     return f;
   }
 
@@ -299,9 +326,11 @@ var Crowd = (function () {
     var zs = CONFIG.rallyZones || [];
     if (!zs[i]) return null;
     if (!G._zoneFields) G._zoneFields = {};
-    if (Object.prototype.hasOwnProperty.call(G._zoneFields, i)) return G._zoneFields[i];
+    var e = G._zoneFields[i];
+    if (e && e.ver === G.flowVersion) return e.f;
+    if (e && !fieldBudgetOK(G)) return e.f;
     var f = bfsFrom(G, zs[i].tiles || [{ x: zs[i].x, y: zs[i].y }]);
-    G._zoneFields[i] = f;
+    G._zoneFields[i] = { f: f, ver: G.flowVersion };
     return f;
   }
 
@@ -335,10 +364,14 @@ var Crowd = (function () {
 
   /* Dispersal (disperse.js): a field toward one exit tile, cached until the flow changes. */
   function fieldTo(G, x, y) {
-    if (!G._fieldTo || G._fieldToVer !== G.flowVersion) { G._fieldTo = {}; G._fieldToVer = G.flowVersion; }
+    if (!G._fieldTo) G._fieldTo = {};
     var k = x + "," + y;
-    if (!G._fieldTo[k]) G._fieldTo[k] = bfsFrom(G, [{ x: x, y: y }]);
-    return G._fieldTo[k];
+    var e = G._fieldTo[k];
+    if (e && e.ver === G.flowVersion) return e.f;
+    if (e && !fieldBudgetOK(G)) return e.f;
+    var f = bfsFrom(G, [{ x: x, y: y }]);
+    G._fieldTo[k] = { f: f, ver: G.flowVersion };
+    return f;
   }
   /* A peaceful protester stops protesting and walks down the field (out of the city). */
   function sendAway(G, a, field) {
@@ -1043,15 +1076,43 @@ var Crowd = (function () {
     }
   }
 
+  function ensureWallGrid(G) {
+    var W = MAP.width, H = MAP.height;
+    var w = G._wallGrid;
+    if (w && w.ver === G._wallVer && w.w === W && w.h === H && w.rows === MAP.rows) return w.grid;
+    var g = (w && w.grid && w.grid.length === W * H) ? w.grid : new Uint8Array(W * H);
+    g.set(staticSolid());
+    var sets = [G.blocked, G.vehBlocked, G.fireBlocked];
+    for (var si = 0; si < 3; si++) {
+      var s = sets[si];
+      if (!s || s.size === 0) continue;
+      s.forEach(function (k) {
+        var c = k.indexOf(",");
+        var x = +k.slice(0, c), y = +k.slice(c + 1);
+        if (x >= 0 && y >= 0 && x < W && y < H) g[y * W + x] = 1;
+      });
+    }
+    G._wallGrid = { ver: G._wallVer, w: W, h: H, rows: MAP.rows, grid: g };
+    return g;
+  }
+
+  function fieldBudgetOK(G) {
+    var b = (G._fieldBudget === undefined) ? 2 : G._fieldBudget;
+    if (b <= 0) return false;
+    G._fieldBudget = b - 1;
+    return true;
+  }
+
   /* ---------------- main update ---------------- */
   function update(G, dt) {
     if (!G.flow) rebuildFlow(G);
     if (!G.vehBlocked) G.vehBlocked = new Set();
     G.time += dt;
+    G._fieldBudget = 2;   /* at most 2 stale fields rebuilt this step */
 
-    var agents = G.agents, i;
+    var agents = G.agents, n = agents.length, i;
     var zoneMode = !!(CONFIG.rallyZones && CONFIG.rallyZones.length);
-    for (i = 0; i < agents.length; i++) {
+    for (i = 0; i < n; i++) {
       var pa = agents[i];
       if (!pa.pending || G.time < pa.spawnAt) continue;
       pa.pending = false;
@@ -1069,25 +1130,29 @@ var Crowd = (function () {
     /* mood changes slowly: each agent updates it every 4th step (staggered),
      * with the time since its last update; neighbour lists stay per step */
     G._moodTick = ((G._moodTick || 0) + 1) & 3;
-    for (i = 0; i < agents.length; i++) {
+    var moodTick = G._moodTick;
+    for (i = 0; i < n; i++) {
       var am = agents[i];
       if (!am.active) continue;
-      am._nbrs = neighbors(G, am.x, am.y, queryR);
+      var nbm = am._nbrs;
+      if (!nbm) nbm = am._nbrs = [];
+      neighbors(G, am.x, am.y, queryR, nbm);
       am._moodDt = (am._moodDt || 0) + dt;
-      if (((i + G._moodTick) & 3) === 0) { updateMood(G, am, am._nbrs, am._moodDt); am._moodDt = 0; }
+      if (((i + moodTick) & 3) === 0) { updateMood(G, am, nbm, am._moodDt); am._moodDt = 0; }
     }
 
-    for (i = 0; i < agents.length; i++) {
+    for (i = 0; i < n; i++) {
       var sa = agents[i];
       if (!sa.active || sa.role !== "peaceful") continue;
       if (zoneMode) tendZone(G, sa);
       else if (sa._site >= 0) applySite(G, sa);
     }
 
-    for (i = 0; i < agents.length; i++) {
+    var lodTick = G._lodTick;
+    for (i = 0; i < n; i++) {
       var mv = agents[i];
       if (!mv.active) continue;
-      var ownStep = ((i + G._lodTick) & 3) === 0;
+      var ownStep = ((i + lodTick) & 3) === 0;
 
       /* decide INNER on the agent's own 4th step */
       if (ownStep) {
@@ -1109,8 +1174,10 @@ var Crowd = (function () {
       if (mv._inner) {
         if (ownStep) {
           /* refresh neighbours and move with dt*4 */
-          mv._nbrs = neighbors(G, mv.x, mv.y, queryR);
-          moveAgent(G, mv, mv._nbrs || [], dt * 4);
+          var nbi = mv._nbrs;
+          if (!nbi) nbi = mv._nbrs = [];
+          neighbors(G, mv.x, mv.y, queryR, nbi);
+          moveAgent(G, mv, nbi, dt * 4);
         }
         inner++;
       } else {
@@ -1120,7 +1187,7 @@ var Crowd = (function () {
 
     G.stats.innerAgents = inner;
 
-    for (i = 0; i < agents.length; i++) {
+    for (i = 0; i < n; i++) {
       var a = agents[i];
       if (a.active && a.role === "rioter") updateRioter(G, a, dt);
     }
@@ -1153,14 +1220,20 @@ var Crowd = (function () {
     if (!G.vehBlocked) G.vehBlocked = new Set();
     var next = new Set();
     var W = MAP.width, H = MAP.height;
-    for (var vi = 0; vi < G.vehicles.length; vi++) {
-      var v = G.vehicles[vi];
-      if (typeof v._px !== "number") { v._px = v.x; v._py = v.y; v._still = 0; }
-      var moved = Math.abs(v.x - v._px) + Math.abs(v.y - v._py);
-      if (moved >= 0.05) { v._still = 0; v._px = v.x; v._py = v.y; }
-      else { v._still = (v._still || 0) + 0.25; v._px = v.x; v._py = v.y; }
-      var parked = v._still >= 1.5;
-      if (!parked) continue;
+    var sg = staticSolid();
+    var t = G.time || 0;
+    var vehs = G.vehicles;
+    for (var vi = 0; vi < vehs.length; vi++) {
+      var v = vehs[vi];
+      if (typeof v._parkX !== "number" || typeof v._parkY !== "number" || typeof v._parkSince !== "number") {
+        v._parkX = v.x; v._parkY = v.y; v._parkSince = t;
+      }
+      var adx = v.x - v._parkX, ady = v.y - v._parkY;
+      if (adx * adx + ady * ady > 0.09) {   /* moved more than 0.3 tiles: not parked */
+        v._parkX = v.x; v._parkY = v.y; v._parkSince = t;
+        continue;
+      }
+      if (t - v._parkSince < 2) continue;   /* parked for under 2 seconds */
       var d = vehDims(v.type);
       var hl = d.L + 0.25, hw = d.W + 0.25;
       var ang = (typeof v.ang === "number") ? v.ang : 0;
@@ -1169,10 +1242,9 @@ var Crowd = (function () {
       var x0 = Math.max(0, Math.floor(v.x - r)), x1 = Math.min(W - 1, Math.floor(v.x + r));
       var y0 = Math.max(0, Math.floor(v.y - r)), y1 = Math.min(H - 1, Math.floor(v.y + r));
       for (var ty = y0; ty <= y1; ty++) {
+        var rowBase = ty * W;
         for (var tx = x0; tx <= x1; tx++) {
-          if (!inBounds(tx, ty)) continue;
-          var ch = MAP.rows[ty].charAt(tx);
-          if (ch === "#" || ch === "S" || ch === "W") continue;
+          if (sg[rowBase + tx]) continue;
           var dx = (tx + 0.5) - v.x, dy = (ty + 0.5) - v.y;
           var lx = dx * ca + dy * sa;
           var ly = -dx * sa + dy * ca;
