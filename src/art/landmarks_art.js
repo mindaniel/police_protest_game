@@ -929,13 +929,27 @@ var LANDMARKS_ART = (function () {
     return null;
   }
 
+  function _viewEntry(entry) {
+    if (entry && entry.views) {
+      var v = (typeof Art !== "undefined" && Art.getView) ? Art.getView() : "tilt";
+      var sub = entry.views[v] || entry.views.tilt || entry.views.top;
+      if (sub) return sub;
+    }
+    return entry;
+  }
+
   function _ensureImage(entry) {
-    if (entry._img) return entry._img;
-    if (entry._imgFailed) return null;
+    var view = (typeof Art !== "undefined" && Art.getView) ? Art.getView() : "tilt";
+    var key = "_img_" + view;
+    if (!entry.views) key = "_img";
+    if (entry[key]) return entry[key];
+    if (entry[key + "_failed"]) return null;
+    var sub = _viewEntry(entry);
+    if (!sub || !sub.src) { entry[key + "_failed"] = true; return null; }
     var im = new Image();
-    im.onerror = function () { entry._imgFailed = true; };
-    im.src = entry.src;
-    entry._img = im;
+    im.onerror = (function (k) { return function () { entry[k + "_failed"] = true; }; })(key);
+    im.src = sub.src;
+    entry[key] = im;
     return im;
   }
 
@@ -943,14 +957,18 @@ var LANDMARKS_ART = (function () {
     if (!entry) return false;
     var img = _ensureImage(entry);
     if (!img || !img.complete || !img.naturalWidth) return false;
+    var sub = _viewEntry(entry);
+    var basePx = (sub && sub.pxPerTile) || entry.pxPerTile;
+    var ax = (sub && typeof sub.ax === "number") ? sub.ax : entry.ax;
+    var ay = (sub && typeof sub.ay === "number") ? sub.ay : entry.ay;
     var p0 = proj(cx, cy, 0);
     var p1 = proj(cx + 1, cy, 0);
     var pxPerTile = Math.sqrt((p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y));
     if (!(pxPerTile > 0)) return false;
-    var k = pxPerTile / entry.pxPerTile;
+    var k = pxPerTile / basePx;
     var w = img.naturalWidth * k;
     var h = img.naturalHeight * k;
-    ctx.drawImage(img, p0.x - entry.ax * k, p0.y - entry.ay * k, w, h);
+    ctx.drawImage(img, p0.x - ax * k, p0.y - ay * k, w, h);
     return true;
   }
 

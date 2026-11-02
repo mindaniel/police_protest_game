@@ -71,6 +71,12 @@ UI.init = function (g, game) {
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
+if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) {
+      var _vm = Art.toggleView();
+      if (typeof UI !== "undefined" && UI.say) UI.say(_vm === "top" ? "View: Top-down" : "View: Tilted");
+      e.preventDefault();
+      return;
+    }
     if ((k === "j" || k === "J") && typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
       MINIMAP.toggle(); e.preventDefault(); return;   /* show / hide the radar */
     }

@@ -95,6 +95,9 @@ var SETTINGS = (function () {
         hint: "Bigger letters in menus and in the game"
       });
     }
+if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
+      out.push({ id: "view", label: "View", value: function () { return Art.getView() === "top" ? "Top-down" : "Tilted (3D)"; }, change: function () { Art.toggleView(); }, hint: "Tilted looks 3D; top-down hides nothing (\\ or F3)" });
+    }
     if (has(MINIMAP) && typeof MINIMAP.isHidden === "function") {
       out.push({
         id: "minimap",

@@ -8,7 +8,9 @@
 var Art = (function () {
   "use strict";
 
-  var TS = 32, ZU = 18;                  // world units per tile, per height unit
+  var TS = 32, ZU = 18;                  // world units per tile, per height unit (ZU set by setView)
+  var VIEW_ZU = { top: 6, tilt: 26 };    // view modes: top-down / tilted 3D
+  var viewMode = "tilt", _savedView = false;
   var SQUAD_COLORS = ["#e63946", "#f4a261", "#2a9d8f", "#e9c46a", "#9b5de5", "#00b4d8"];
   var GT = 32;                           // ground texture pixels per tile
 
@@ -59,6 +61,52 @@ var Art = (function () {
   function sqCol(s) { return SQUAD_COLORS[((s % 6) + 6) % 6]; }
 
   /* ---------- camera / projection ---------- */
+  function loadView() {
+    if (_savedView) return;
+    _savedView = true;
+    try {
+      var v = localStorage.getItem("ppg_view");
+      if (v === "top" || v === "tilt") viewMode = v;
+    } catch (e) {}
+    ZU = VIEW_ZU[viewMode];
+  }
+
+  function setView(mode) {
+    if (mode !== "top" && mode !== "tilt") mode = "tilt";
+    viewMode = mode;
+    ZU = VIEW_ZU[viewMode];
+    try { localStorage.setItem("ppg_view", viewMode); } catch (e) {}
+    /* keep the camera centred on the same map point */
+    var ccx = cam.cx, ccy = cam.cy;
+    if (W > 0 && H > 0) {
+      buildCity();
+      buildGround();
+      buildProps();
+      cam.cx = ccx; cam.cy = ccy;
+      updateCamera();
+      invalidate();
+      SC.bg = null;
+      SC.strips = [];
+      SC.k = 0;
+      SC.ver = -1;
+      SC.lastK = 0;
+      SC.zoomAt = 0;
+      if (typeof document !== "undefined") buildCache();
+    } else {
+      invalidate();
+      SC.bg = null;
+      SC.strips = [];
+      SC.k = 0;
+      SC.ver = -1;
+      SC.lastK = 0;
+      SC.zoomAt = 0;
+    }
+  }
+
+  function getView() { return viewMode; }
+
+  function toggleView() { setView(viewMode === "tilt" ? "top" : "tilt"); return viewMode; }
+
   function updateCamera() {
     cam.fit = LW / (W * TS);
     cam.zoom = clamp(cam.zoom, 1, 6 * Math.max(1, W / 100));   /* big maps can zoom in further */
@@ -696,6 +744,7 @@ var Art = (function () {
   function invalidate() { _dirty = true; }
 
   function init(G) {
+    loadView();
     _G = G;
     var resized = W !== MAP.width || H !== MAP.height;
     W = MAP.width; H = MAP.height;
@@ -1173,10 +1222,15 @@ var Art = (function () {
   function drawTree(ctx, tr) {
     var s = cam.S * tr.s;
     P(tr.x, tr.y, 0);
+    var bx = _px, by = _py;
+    P(tr.x, tr.y, 0.38 * tr.s);
+    var ty = _py;
     ctx.fillStyle = "#7a5a3a";
-    ctx.fillRect(_px - 0.8 * s, _py - 7 * s, 1.6 * s, 7 * s);
-    disc(ctx, _px, _py - 11 * s, 6 * s, "#5f9a52");
-    disc(ctx, _px - 1.6 * s, _py - 12.5 * s, 4 * s, "#79b467");
+    ctx.fillRect(bx - 0.8 * s, ty, 1.6 * s, by - ty);
+    P(tr.x, tr.y, 0.60 * tr.s);
+    disc(ctx, _px, _py, 6 * s, "#5f9a52");
+    P(tr.x, tr.y, 0.69 * tr.s);
+    disc(ctx, _px - 1.6 * s, _py, 4 * s, "#79b467");
   }
   function drawLamp(ctx, l) {
     var s = cam.S;
@@ -1794,7 +1848,10 @@ var Art = (function () {
     groundEnd: groundEnd,
     panBy: panScreen,
     centerOn: centerOn,
-    camera: cam
+    camera: cam,
+    setView: setView,
+    getView: getView,
+    toggleView: toggleView
   };
 })();
 
