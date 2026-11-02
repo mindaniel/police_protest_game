@@ -101,6 +101,11 @@ var Art = (function () {
     cam.cy += (dly / cam.S) / TS;
     updateCamera();
   }
+  /* Jump the view to tile (x, y), zooming in to at least minZoom (alerts, minimap). */
+  function centerOn(x, y, minZoom) {
+    if (minZoom) cam.zoom = clamp(Math.max(cam.zoom, minZoom), 1, 6);
+    cam.cx = x; cam.cy = y; updateCamera();
+  }
   function zoomAt(lx, ly, f) {
     var a = screenToTile(lx, ly);
     cam.zoom = clamp(cam.zoom * f, 1, 6);
@@ -1658,6 +1663,7 @@ var Art = (function () {
     groundBegin: groundBegin,
     groundEnd: groundEnd,
     panBy: panScreen,
+    centerOn: centerOn,
     camera: cam
   };
 })();

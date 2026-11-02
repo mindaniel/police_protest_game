@@ -142,6 +142,7 @@ UI.init = function (g, game) {
       }
     }
     if (k === "t" || k === "T") { UI.Game.speed = UI.Game.speed === 1 ? 2 : 1; return; }
+    if (typeof ALERTS !== "undefined" && ALERTS.key(k)) { e.preventDefault(); return; }   /* Backspace: newest alert */
     if (UI.Game.paused) return;
     if (uiOrderKey(e, k)) { /* standing orders */ }
     else if (uiSelectKey(k)) { /* squad selected */ }
@@ -257,6 +258,7 @@ UI.init = function (g, game) {
       var mp = UI.toLogical(e);
       if (uiMenuClick(mp.x, mp.y)) return;
       if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G, e.shiftKey)) return;
+      if (UI.screen === "playing" && typeof ALERTS !== "undefined" && ALERTS.click(mp.x, mp.y, G)) return;
     }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
@@ -1109,6 +1111,7 @@ function uiDrawScreen(ctx, g) {
   }
 
   if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen())) SQUADPLAN.draw(ctx, w, h, g);
+  if (UI.screen === "playing" && typeof ALERTS !== "undefined") ALERTS.draw(ctx, w, h, g);
   if (UI.screen === "planning" || UI.screen === "playing") uiDrawMenu(ctx, w, h);
 
   if (UI.Game.paused && UI.screen === "playing" && !UI.menuOpen) {

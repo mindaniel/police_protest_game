@@ -325,7 +325,8 @@ function frame(now) {
     for (var i = 0; i < nSteps; i++) {
       Crowd.update(G, step);
       if (typeof Police !== "undefined") Police.update(G, step);
-      if (typeof RESIST !== "undefined") RESIST.update(G, step);   /* rioters run or stand their ground */
+      if (typeof RESIST !== "undefined") RESIST.update(G, step);
+      if (typeof ALERTS !== "undefined") ALERTS.update(G, step);   /* clickable event pop-ups */   /* rioters run or stand their ground */
       if (typeof FX !== "undefined") FX.update(G, step);
       if (typeof GAS !== "undefined") GAS.update(G, step);
       if (typeof BAR !== "undefined") BAR.update(G, step);
@@ -395,6 +396,7 @@ function restartGame(newCity) {
   if (typeof TRANSPORT !== "undefined") TRANSPORT.init(G);
   if (typeof NIGHT !== "undefined") NIGHT.init(G);
   if (typeof DEBRIEF !== "undefined") DEBRIEF.init(G);
+  if (typeof ALERTS !== "undefined") ALERTS.clear(G);
   if (typeof Art !== "undefined") Art.init(G);
   Game.paused = false;
   Game.speed = 1;
