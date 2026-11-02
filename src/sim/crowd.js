@@ -695,7 +695,7 @@ var Crowd = (function () {
       a.stamina = Math.min(100, a.stamina + C.staminaRegen * dt);
       if (a._exhausted && a.stamina >= C.staminaMinToRun) a._exhausted = false;
     } else {
-      var dir = desiredDir(G, a);
+      var dir = (a.braced && typeof RESIST !== "undefined" && RESIST.braceDir) ? RESIST.braceDir(a) : desiredDir(G, a);   /* braced rioters bunch up */
       /* Running: rioters breaking shops or fleeing, and agitated agents sprint
        * while they still have stamina; exhausted agents fall back to walking. */
       var wantsRun = (a.role === "rioter" && (a.state === "attackShop" || a.state === "flee")) ||
@@ -1103,6 +1103,71 @@ var Crowd = (function () {
     return true;
   }
 
+  function buildOfficerGrid(G) {
+    var cell = 8;
+    var cols = Math.ceil(MAP.width / cell) + 1;
+    var rows = Math.ceil(MAP.height / cell) + 1;
+    var buckets = new Array(cols * rows);
+    for (var b = 0; b < buckets.length; b++) buckets[b] = null;
+    function add(x, y) {
+      var cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+      if (cx < 0) cx = 0; else if (cx >= cols) cx = cols - 1;
+      if (cy < 0) cy = 0; else if (cy >= rows) cy = rows - 1;
+      var bi = cy * cols + cx;
+      if (!buckets[bi]) buckets[bi] = [];
+      buckets[bi].push(x, y);
+    }
+    var officers = G.officers || [];
+    for (var i = 0; i < officers.length; i++) {
+      var o = officers[i];
+      if (!o || o.active === false) continue;
+      if (typeof o.x !== "number" || typeof o.y !== "number") continue;
+      add(o.x, o.y);
+    }
+    var vehicles = G.vehicles || [];
+    for (var v = 0; v < vehicles.length; v++) {
+      var vh = vehicles[v];
+      if (!vh || vh.active === false) continue;
+      if (typeof vh.x !== "number" || typeof vh.y !== "number") continue;
+      add(vh.x, vh.y);
+    }
+    G._offGrid = { cell: cell, cols: cols, rows: rows, buckets: buckets };
+  }
+
+  function nearOfficer(G, x, y, radius) {
+    var g = G._offGrid;
+    if (!g) return false;
+    var cell = g.cell, cols = g.cols, rows = g.rows, buckets = g.buckets;
+    var r2 = radius * radius;
+    var cx0 = Math.floor((x - radius) / cell), cx1 = Math.floor((x + radius) / cell);
+    var cy0 = Math.floor((y - radius) / cell), cy1 = Math.floor((y + radius) / cell);
+    if (cx0 < 0) cx0 = 0; if (cy0 < 0) cy0 = 0;
+    if (cx1 >= cols) cx1 = cols - 1; if (cy1 >= rows) cy1 = rows - 1;
+    for (var cy = cy0; cy <= cy1; cy++) {
+      var rowBase = cy * cols;
+      for (var cx = cx0; cx <= cx1; cx++) {
+        var b = buckets[rowBase + cx];
+        if (!b) continue;
+        for (var k = 0; k < b.length; k += 2) {
+          var dx = b[k] - x, dy = b[k + 1] - y;
+          if (dx * dx + dy * dy <= r2) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function inCameraView(x, y) {
+    if (typeof Art === "undefined" || !Art.camera) return false;
+    var cam = Art.camera;
+    if (typeof cam.cx !== "number" || typeof cam.cy !== "number") return false;
+    var zoom = cam.zoom > 0 ? cam.zoom : 1;
+    var halfW = 20 / zoom + 2;
+    var halfH = 13 / zoom + 2;
+    var dx = x - cam.cx, dy = y - cam.cy;
+    return dx >= -halfW && dx <= halfW && dy >= -halfH && dy <= halfH;
+  }
+
   /* ---------------- main update ---------------- */
   function update(G, dt) {
     if (!G.flow) rebuildFlow(G);
@@ -1120,6 +1185,19 @@ var Crowd = (function () {
       if (zoneMode && pa.role === "peaceful") assignZone(G, pa);
     }
     rebuildHash(G);
+
+    /* LOD: coarse officer/vehicle grid, rebuilt once per update */
+    buildOfficerGrid(G);
+
+    /* LOD: sim level recomputed every 0.5s, staggered by index */
+    G._simAcc = (G._simAcc || 0) + dt;
+    G._simTick = (G._simTick || 0) + 1;
+    var simTick = G._simTick;
+    var fullRefresh = false;
+    if (G._simAcc >= 0.5) {
+      G._simAcc = 0;
+      fullRefresh = true;
+    }
 
     var queryR = Math.max(CONFIG.moodSpreadRadius, CONFIG.sepRadius);
 
@@ -1152,6 +1230,23 @@ var Crowd = (function () {
     for (i = 0; i < n; i++) {
       var mv = agents[i];
       if (!mv.active) continue;
+
+      /* recompute sim level every 0.5s, staggered by index */
+      if (fullRefresh || (((i + simTick) & 15) === 0)) {
+        var forceNear = false;
+        if (mv.role === "rioter") forceNear = true;   /* rioters are few and drive the action */
+        if (mv.state === "flee" || mv.state === "brace") forceNear = true;
+        if (mv.arrested || mv.escorting) forceNear = true;
+        if (mv._shop && typeof mv._shop.x === "number" && typeof mv._shop.y === "number") {
+          var sdx = mv._shop.x - mv.x, sdy = mv._shop.y - mv.y;
+          if (sdx * sdx + sdy * sdy <= 9) forceNear = true;
+        }
+        var near;
+        if (forceNear) near = true;
+        else near = nearOfficer(G, mv.x, mv.y, 18) || inCameraView(mv.x, mv.y);
+        mv._simNear = near;
+      }
+
       var ownStep = ((i + lodTick) & 3) === 0;
 
       /* decide INNER on the agent's own 4th step */
@@ -1180,8 +1275,13 @@ var Crowd = (function () {
           moveAgent(G, mv, nbi, dt * 4);
         }
         inner++;
-      } else {
+      } else if (mv._simNear !== false) {   /* unknown level counts as near */
         moveAgent(G, mv, mv._nbrs || [], dt);
+      } else {
+        /* far: run every 3rd step, staggered by index, with dt*3 */
+        if (((i % 3) === (simTick % 3))) {
+          moveAgent(G, mv, mv._nbrs || [], dt * 3);
+        }
       }
     }
 

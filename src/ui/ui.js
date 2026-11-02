@@ -51,6 +51,130 @@ function uiLabel(ctx, text, tx, ty, col, font) {
   ctx.fillText(text, p.x, p.y);
 }
 
+function uiSquadsOfType(g, loadout) {
+  var i, s, seen = {}, list = [];
+  function add(sq) {
+    if (sq == null || seen[sq]) return;
+    seen[sq] = true;
+    list.push(sq);
+  }
+  for (i = 0; i < g.officers.length; i++) {
+    if (Police.getLoadout(g, g.officers[i].squad) === loadout) add(g.officers[i].squad);
+  }
+  for (i = 0; i < g.vehicles.length; i++) {
+    if (Police.getLoadout(g, g.vehicles[i].squad) === loadout) add(g.vehicles[i].squad);
+  }
+  return list;
+}
+
+function uiSquadBusy(g, s) {
+  var i, o, cx = 0, cy = 0, n = 0;
+  var ord = g.orders && g.orders[s];
+  if (ord && (ord.order === "guard" || ord.order === "push")) return true;
+  for (i = 0; i < g.officers.length; i++) {
+    o = g.officers[i];
+    if (o.squad !== s) continue;
+    if (o.busy || o.arrestTarget) return true;
+    cx += o.x; cy += o.y; n++;
+  }
+  for (i = 0; i < g.vehicles.length; i++) {
+    if (g.vehicles[i].squad !== s) continue;
+    cx += g.vehicles[i].x; cy += g.vehicles[i].y; n++;
+  }
+  if (n > 0) {
+    cx /= n; cy /= n;
+    for (i = 0; i < g.agents.length; i++) {
+      var a = g.agents[i];
+      if (!a.active || a.role !== "rioter") continue;
+      if ((a.revealedUntil || 0) > g.time) {
+        var dx = a.x - cx, dy = a.y - cy;
+        if (dx * dx + dy * dy <= 36) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function uiSelectType(g, k) {
+  var types = ["none", "motorbike", "mounted", "car", "watertruck", "barriertruck"];
+  var names = ["foot", "motorbike", "mounted", "car", "water truck", "barrier truck"];
+  var idx = parseInt(k, 10) - 1;
+  if (k === "0") idx = 9;   /* keep 0 harmless for squad 10 direct select */
+  if (idx < 0 || idx >= types.length) return false;
+  var loadout = types[idx];
+  var list = uiSquadsOfType(g, loadout);
+  if (list.length === 0) {
+    UI.say("No " + names[idx] + " squad");
+    return true;
+  }
+  var now = Date.now();
+  var key = loadout;
+  if (UI._lastTypeKey === key && now - UI._lastTypeKeyTime < 1500 && UI._lastTypeList && UI._lastTypeList.length === list.length) {
+    UI._lastTypeCursor = (UI._lastTypeCursor + 1) % list.length;
+  } else {
+    UI._lastTypeCursor = 0;
+  }
+  UI._lastTypeKey = key;
+  UI._lastTypeKeyTime = now;
+  UI._lastTypeList = list;
+
+  var target = null;
+  if (UI._lastTypeCursor === 0) {
+    /* first press: FREE squads first, then nearest to mouse tile / camera centre */
+    var mx, my;
+    if (UI.lastTile) { mx = UI.lastTile.x; my = UI.lastTile.y; }
+    else if (typeof Art !== "undefined" && Art.camera) { mx = Art.camera.cx; my = Art.camera.cy; }
+    else { mx = 0; my = 0; }
+    var free = [], busy = [], i, sq;
+    for (i = 0; i < list.length; i++) {
+      sq = list[i];
+      if (uiSquadBusy(g, sq)) busy.push(sq); else free.push(sq);
+    }
+    var pool = free.length ? free : busy;
+    var best = null, bestD = Infinity;
+    for (i = 0; i < pool.length; i++) {
+      sq = pool[i];
+      var sx = 0, sy = 0, c = 0, j;
+      for (j = 0; j < g.officers.length; j++) {
+        if (g.officers[j].squad === sq) { sx += g.officers[j].x; sy += g.officers[j].y; c++; }
+      }
+      for (j = 0; j < g.vehicles.length; j++) {
+        if (g.vehicles[j].squad === sq) { sx += g.vehicles[j].x; sy += g.vehicles[j].y; c++; }
+      }
+      if (c) { sx /= c; sy /= c; }
+      var d = (sx - mx) * (sx - mx) + (sy - my) * (sy - my);
+      if (d < bestD) { bestD = d; best = sq; }
+    }
+    target = best;
+    UI._lastTypeCursor = 0;
+  } else {
+    target = list[UI._lastTypeCursor];
+  }
+  if (target == null) return true;
+
+  UI.selected = target;
+  UI.selVehicle = false;
+  var busyTxt = uiSquadBusy(g, target) ? "busy" : "free";
+  UI.say("Squad " + (target + 1) + " (" + names[idx] + ", " + busyTxt + ")");
+
+  /* centre camera if off-screen */
+  var cx = 0, cy = 0, c = 0, ii;
+  for (ii = 0; ii < g.officers.length; ii++) {
+    if (g.officers[ii].squad === target) { cx += g.officers[ii].x; cy += g.officers[ii].y; c++; }
+  }
+  for (ii = 0; ii < g.vehicles.length; ii++) {
+    if (g.vehicles[ii].squad === target) { cx += g.vehicles[ii].x; cy += g.vehicles[ii].y; c++; }
+  }
+  if (c) { cx /= c; cy /= c; }
+  if (typeof Art !== "undefined" && Art.camera) {
+    var cam = Art.camera;
+    var onScreen = (cx >= cam.cx - cam.w / 2 && cx <= cam.cx + cam.w / 2 &&
+                    cy >= cam.cy - cam.h / 2 && cy <= cam.cy + cam.h / 2);
+    if (!onScreen && Art.centerOn) Art.centerOn(cx, cy);
+  }
+  return true;
+}
+
 function uiSelectKey(k) {
   var n = parseInt(k, 10);
   if (k === "0") n = 10;   /* reinforcement squads 7-10 use keys 7, 8, 9, 0 */
@@ -124,7 +248,8 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       if (e.code === "Enter") { uiStartPlay(); e.preventDefault(); }
       else if (typeof FORCE !== "undefined" && FORCE.isOpen() && k !== "Tab" && FORCE.key(k)) { e.preventDefault(); }   /* planner cards */
       else if (uiOrderKey(e, k)) { /* standing orders */ }
-      else if (uiSelectKey(k)) { /* squad selected */ }
+      else if ((k >= "1" && k <= "6" && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* type select */ }
+      else if (uiSelectKey((e.code && /^Digit[0-9]$/.test(e.code) ? e.code.charAt(5) : k))) { /* squad selected (Shift+digit = squad N) */ }
       else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
@@ -151,7 +276,8 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     if (typeof ALERTS !== "undefined" && ALERTS.key(k)) { e.preventDefault(); return; }   /* Backspace: newest alert */
     if (UI.Game.paused) return;
     if (uiOrderKey(e, k)) { /* standing orders */ }
-    else if (uiSelectKey(k)) { /* squad selected */ }
+    else if ((k >= "1" && k <= "6" && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* squad by type */ }
+    else if (uiSelectKey((e.code && /^Digit[0-9]$/.test(e.code) ? e.code.charAt(5) : k))) { /* squad selected (Shift+digit = squad N) */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
     else if ((k === "m" || k === "M") && typeof DISPERSE !== "undefined") {
       if (e.shiftKey || !DISPERSE.exitOf(G)) { UI.mode = "exit"; UI.say("Click near the map edge where the crowd should leave"); }
@@ -203,6 +329,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
 
   var cv = game.canvas;
   cv.addEventListener("mousemove", function (e) {
+    UI.lastTile = UI.toTile(e);
     UI.hover = UI.toTile(e);
     if (!UI._press) cv.style.cursor = (UI.screen !== "title" && UI.pickSquad(e) >= 0) ? "pointer" : (UI.mode ? "crosshair" : "default");
   });
@@ -982,42 +1109,80 @@ function uiDrawScreen(ctx, g) {
 
   if (UI.screen === "planning") uiPlanningLayer(ctx, g);
 
-  // Selected squad ring + move target marker
+  // Selected squad highlight (screen-constant) + move target marker
   var first = null;
   uiGround(ctx, true);
-  ctx.strokeStyle = "#ffc107";
-  ctx.lineWidth = 2;
   for (i = 0; i < g.officers.length; i++) {
     var o = g.officers[i];
     if (o.squad !== UI.selected) continue;
     if (!first) first = o;
-    if (UI.selVehicle) continue;   /* only the vehicle is selected */
-    ctx.beginPath();
-    ctx.arc(o.x * ts, o.y * ts, 9, 0, Math.PI * 2);
-    ctx.stroke();
   }
-  for (i = 0; i < g.vehicles.length; i++) {
-    if (g.vehicles[i].squad !== UI.selected) continue;
-    ctx.lineWidth = UI.selVehicle ? 3 : 1;
-    ctx.beginPath();
-    ctx.arc(g.vehicles[i].x * ts, g.vehicles[i].y * ts, UI.selVehicle ? 22 : 18, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.lineWidth = 2;
+  uiGround(ctx, false);
+
+  if (typeof Art !== "undefined" && Art.project) {
+    ctx.save();
+    if (Art.screenBegin) Art.screenBegin(ctx);
+    /* flat yellow ellipse under each selected officer's feet */
+    var j;
+    for (j = 0; j < g.officers.length; j++) {
+      var oo = g.officers[j];
+      if (oo.squad !== UI.selected) continue;
+      if (UI.selVehicle) continue;
+      var sp = Art.project(oo.x, oo.y, 0);
+      ctx.beginPath();
+      ctx.ellipse(sp.x, sp.y, 7, 3.5, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(20,26,38,0.7)";
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,193,7,0.85)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    /* selected vehicle: screen-constant rounded-rect outline */
+    for (j = 0; j < g.vehicles.length; j++) {
+      var vv = g.vehicles[j];
+      if (vv.squad !== UI.selected) continue;
+      if (!UI.selVehicle) continue;
+      var vp = Art.project(vv.x, vv.y, 0);
+      var rw = 44, rh = 26, rr = 8;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(vp.x - rw / 2, vp.y - rh / 2, rw, rh, rr);
+      } else {
+        ctx.rect(vp.x - rw / 2, vp.y - rh / 2, rw, rh);
+      }
+      ctx.strokeStyle = "rgba(20,26,38,0.7)";
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,193,7,0.85)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    /* red arrest-target circle, screen-constant radius 8 */
+    if (first && first.arrestTarget && first.arrestTarget.active) {
+      var ap = Art.project(first.arrestTarget.x, first.arrestTarget.y, 0);
+      ctx.beginPath();
+      ctx.arc(ap.x, ap.y, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(20,26,38,0.7)";
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+      ctx.strokeStyle = "#e03131";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+    if (Art.screenEnd) Art.screenEnd(ctx);
+    ctx.restore();
   }
-  if (first && first.arrestTarget && first.arrestTarget.active) {
-    ctx.strokeStyle = "#e03131";
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.arc(first.arrestTarget.x * ts, first.arrestTarget.y * ts, 10, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = "#ffc107";
-  }
+
+  uiGround(ctx, true);
   if (first) {
     var mx = first.homeX * ts, my = first.homeY * ts;
-    ctx.lineWidth = 2.5;
+    var zk = (typeof Art !== "undefined" && Art.camera && Art.camera.S) ? 1 / Art.camera.S : 1;   /* same size on screen at any zoom */
+    ctx.strokeStyle = "#ffc107";
+    ctx.lineWidth = 2.5 * zk;
     ctx.beginPath();
-    ctx.moveTo(mx - 7, my); ctx.lineTo(mx + 7, my);
-    ctx.moveTo(mx, my - 7); ctx.lineTo(mx, my + 7);
+    ctx.moveTo(mx - 7 * zk, my); ctx.lineTo(mx + 7 * zk, my);
+    ctx.moveTo(mx, my - 7 * zk); ctx.lineTo(mx, my + 7 * zk);
     ctx.stroke();
   }
   if (UI.screen === "playing" && UI.hover) {

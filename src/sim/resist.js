@@ -31,8 +31,30 @@ var RESIST = (function () {
     return n;
   }
 
-  function nearestOfficerDist(G, r) {
-    var best = Infinity;
+  function groupCentroid(G, r) {
+    var sx = r.x, sy = r.y, n = 1;
+    var near = [];
+    try {
+      near = (typeof Crowd !== "undefined" && Crowd.neighbors) ? Crowd.neighbors(G, r.x, r.y, 3) : [];
+    } catch (e) {
+      near = [];
+    }
+    var i, a;
+    for (i = 0; i < near.length; i++) {
+      a = near[i];
+      if (!a || a === r || !a.active) continue;
+      if (a.role === "rioter" || (a.role === "peaceful" && a.mood >= 70)) {
+        sx += a.x;
+        sy += a.y;
+        n++;
+      }
+    }
+    return { x: sx / n, y: sy / n };
+  }
+
+  function nearestOfficer(G, r) {
+    var best = null;
+    var bestD = Infinity;
     var officers = G.officers || [];
     var i, o, dx, dy, d2;
     for (i = 0; i < officers.length; i++) {
@@ -41,10 +63,10 @@ var RESIST = (function () {
       dx = o.x - r.x;
       dy = o.y - r.y;
       d2 = dx * dx + dy * dy;
-      if (d2 < best) best = d2;
+      if (d2 < bestD) { bestD = d2; best = o; }
     }
-    if (best === Infinity) return Infinity;
-    return Math.sqrt(best);
+    if (!best) return { officer: null, dist: Infinity };
+    return { officer: best, dist: Math.sqrt(bestD) };
   }
 
   function makeFlee(G, r) {
@@ -52,6 +74,30 @@ var RESIST = (function () {
     r._fleeUntil = G.time + CONFIG.fleeSeconds;
     r._flow = G.flow;
     r._targetShop = null;
+  }
+
+  function beginBrace(G, r, cen) {
+    if (!r.braced) {
+      r._preBraceState = r.state;
+    }
+    r.state = "brace";
+    r.braced = true;
+    r._braceX = cen.x;
+    r._braceY = cen.y;
+    r._braceUntil = G.time + 6;
+    var rev = G.time + 2;
+    if (typeof r.revealedUntil !== "number" || r.revealedUntil < rev) {
+      r.revealedUntil = rev;
+    }
+    r._standing = true;
+  }
+
+  function endBrace(r) {
+    if (!r.braced) return;
+    r.braced = false;
+    r.state = (typeof r._preBraceState === "string") ? r._preBraceState : "walk";
+    r._preBraceState = null;
+    r._standing = false;
   }
 
   function update(G, dt) {
@@ -67,15 +113,66 @@ var RESIST = (function () {
 
       if (typeof r._friendsAt !== "number" || (G.time - r._friendsAt) >= 0.5) {
         r._friends = countFriends(G, r);
+        var cen = groupCentroid(G, r);
+        r._cx = cen.x;
+        r._cy = cen.y;
         r._friendsAt = G.time;
       }
 
-      var od = nearestOfficerDist(G, r);
+      var no = nearestOfficer(G, r);
+      var od = no.dist;
+      var friends = (typeof r._friends === "number") ? r._friends : 0;
 
+      // --- BRACED handling ---
+      if (r.braced) {
+        if (G.time >= r._braceUntil || od > 12) {
+          endBrace(r);
+        } else {
+          // refresh brace centroid and timer while police stay near
+          if (typeof r._cx === "number" && typeof r._cy === "number") {
+            r._braceX = r._cx;
+            r._braceY = r._cy;
+          }
+          if (od <= 9) {
+            r._braceUntil = G.time + 6;
+          }
+          // mood rises slowly toward 100 (never suspicion)
+          if (typeof r.mood !== "number") r.mood = 0;
+          if (r.mood < 100) r.mood = clamp(r.mood + 3 * dt, 0, 100);
+          // visible
+          var rev = G.time + 2;
+          if (typeof r.revealedUntil !== "number" || r.revealedUntil < rev) {
+            r.revealedUntil = rev;
+          }
+          // shove nearby officers (non-graphic)
+          if (no.officer && od <= 1.6) {
+            var o = no.officer;
+            if (typeof o.stamina !== "number") o.stamina = 100;
+            o.stamina = clamp(o.stamina - 4 * dt, 0, 100);
+          }
+        }
+        continue;
+      }
+
+      // --- BIG group: prepare to fight back ---
+      if (friends >= 6 && od <= 9) {
+        beginBrace(G, r, { x: (typeof r._cx === "number" ? r._cx : r.x), y: (typeof r._cy === "number" ? r._cy : r.y) });
+        continue;
+      }
+
+      // --- SMALL group: run away early ---
+      if (friends <= 3 && od <= 7 && no.officer && r.state !== "flee") {
+        makeFlee(G, r);
+        r._fleeFromX = no.officer.x;
+        r._fleeFromY = no.officer.y;
+        r._standing = false;
+        continue;
+      }
+
+      // --- MEDIUM / existing behaviour ---
       if (od <= 4.5 && r.state !== "flee") {
         if (typeof r._resistNext !== "number" || G.time >= r._resistNext) {
           r._resistNext = G.time + 2;
-          var friends = typeof r._friends === "number" ? r._friends : 0;
           var flee = false;
           if (friends <= 1) {
             flee = Math.random() < 0.9;
@@ -86,6 +183,10 @@ var RESIST = (function () {
           }
           if (flee) {
             makeFlee(G, r);
+            if (no.officer) {
+              r._fleeFromX = no.officer.x;
+              r._fleeFromY = no.officer.y;
+            }
             r._standing = false;
           } else {
             r._standing = true;
@@ -96,9 +197,9 @@ var RESIST = (function () {
 
       if (r._standing && typeof r._standUntil === "number" && G.time < r._standUntil) {
         if (od <= 2) {
-          var rev = G.time + 1;
-          if (typeof r.revealedUntil !== "number" || r.revealedUntil < rev) {
-            r.revealedUntil = rev;
+          var rev2 = G.time + 1;
+          if (typeof r.revealedUntil !== "number" || r.revealedUntil < rev2) {
+            r.revealedUntil = rev2;
           }
         }
       } else if (r._standing && typeof r._standUntil === "number" && G.time >= r._standUntil) {
@@ -125,6 +226,7 @@ var RESIST = (function () {
     if (officers === 0) return 1;
     var rate = officers / (officers + helpers * 0.8);
     if (helpers === 0) rate = 1;
+    if (target.braced) rate *= 0.5;
     return clamp(rate, 0.15, 1);
   }
 
@@ -145,6 +247,7 @@ var RESIST = (function () {
     }
     if (helpers < officers + 2) return false;
     var chancePerSec = 0.25 * (helpers - officers - 1) / 4;
+    if (target.braced) chancePerSec *= 2;
     if (chancePerSec > 0.6) chancePerSec = 0.6;
     if (chancePerSec <= 0) return false;
     var p = chancePerSec * dt;
@@ -161,6 +264,7 @@ var RESIST = (function () {
       }
     }
 
+    if (target.braced) endBrace(target);
     makeFlee(G, target);
     target._standing = false;
     target.revealedUntil = G.time + 6;
@@ -186,12 +290,25 @@ var RESIST = (function () {
     return true;
   }
 
+  function braceDir(a) {
+    if (!a || !a.braced) return null;
+    if (typeof a._braceX !== "number" || typeof a._braceY !== "number") return null;
+    var dx = a._braceX - a.x;
+    var dy = a._braceY - a.y;
+    var d2 = dx * dx + dy * dy;
+    if (d2 <= 0.8 * 0.8) return null;
+    var d = Math.sqrt(d2);
+    return { x: dx / d, y: dy / d };
+  }
+
   function hint(G, agent) {
     if (!enabled()) return null;
     if (!isRioter(agent)) return null;
     if (typeof agent.revealedUntil !== "number" || agent.revealedUntil < G.time) return null;
+    if (agent.braced) return "bracing - will fight back";
     var friends = (typeof agent._friends === "number") ? agent._friends : 0;
     if (friends <= 1) return "alone - will run";
+    if (friends >= 6) return "big crowd - will brace";
     if (friends >= 4) return "crowd - will resist";
     return "with friends - may resist";
   }
@@ -205,6 +322,17 @@ var RESIST = (function () {
     for (i = 0; i < agents.length; i++) {
       r = agents[i];
       if (!r || !r.active || r.role !== "rioter") continue;
+      if (r.braced) {
+        var px = r.x * ts;
+        var py = r.y * ts;
+        ctx.save();
+        ctx.fillStyle = "#ffdd00";
+        ctx.font = "bold " + Math.max(8, Math.floor(ts * 0.5)) + "px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("!", px, py - ts * 0.35);
+        ctx.restore();
+        continue;
+      }
       if (!r._standing) continue;
       if (typeof r._standUntil === "number" && G.time >= r._standUntil) continue;
       var nearOfficer = false;
@@ -216,13 +344,13 @@ var RESIST = (function () {
         if (dx * dx + dy * dy <= 2 * 2) { nearOfficer = true; break; }
       }
       if (!nearOfficer) continue;
-      var px = r.x * ts;
-      var py = r.y * ts;
+      var px2 = r.x * ts;
+      var py2 = r.y * ts;
       ctx.save();
       ctx.fillStyle = "#ff9900";
       ctx.font = "bold " + Math.max(8, Math.floor(ts * 0.5)) + "px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("!", px, py - ts * 0.35);
+      ctx.fillText("!", px2, py2 - ts * 0.35);
       ctx.restore();
     }
   }
@@ -231,6 +359,7 @@ var RESIST = (function () {
     update: update,
     arrestRate: arrestRate,
     breakFree: breakFree,
+    braceDir: braceDir,
     hint: hint,
     draw: draw
   };
