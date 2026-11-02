@@ -224,25 +224,135 @@ def dominant_rotation(ctx, elements):
     return -math.radians(peak)
 
 def step5_roads(ctx, elements):
+    if not hasattr(ctx, 'road_lines') or ctx.road_lines is None:
+        ctx.road_lines = []
+    if not hasattr(ctx, 'crossings') or ctx.crossings is None:
+        ctx.crossings = []
+
+    major_highways = {
+        'motorway', 'trunk', 'primary', 'secondary',
+        'motorway_link', 'trunk_link', 'primary_link', 'secondary_link'
+    }
+    minor_highways = {
+        'tertiary', 'tertiary_link', 'residential',
+        'unclassified', 'living_street'
+    }
+    service_highways = {'service', 'track'}
+
+    default_lanes = {
+        'motorway': 4,
+        'trunk': 4,
+        'primary': 4,
+        'secondary': 4,
+        'motorway_link': 4,
+        'trunk_link': 4,
+        'primary_link': 4,
+        'secondary_link': 4,
+        'tertiary': 2,
+        'tertiary_link': 2,
+        'residential': 2,
+        'unclassified': 2,
+        'living_street': 2,
+        'service': 1,
+        'track': 1,
+    }
+
     for e in elements:
-        t = e.get('tags') or {}
-        if e.get('type') != 'way' or 'geometry' not in e: continue
-        cls = classify_highway(t)
-        if not cls: continue
-        ch, wm, is_road = cls
+        if e.get('type') != 'node':
+            continue
+        tags = e.get('tags') or {}
+        if tags.get('highway') != 'crossing':
+            continue
+
+        lat = e.get('lat')
+        lon = e.get('lon')
+        if lat is None or lon is None:
+            continue
+
+        tx, ty = ctx.to_tile(lat, lon)
+        if 0 <= tx < ctx.w and 0 <= ty < ctx.h:
+            ctx.crossings.append([
+                round(tx, 1),
+                round(ty, 1)
+            ])
+
+    for e in elements:
+        tags = e.get('tags') or {}
+        if e.get('type') != 'way' or 'geometry' not in e:
+            continue
+
+        cls_info = classify_highway(tags)
+        if not cls_info:
+            continue
+
+        ch, wm, is_road = cls_info
+        hw = tags.get('highway')
+
         pts = ctx.geom_to_tiles(e['geometry'])
-        # minimum widths so traffic works: real roads fit two cars plus pavements (4 tiles),
-        # alleys/service roads and pedestrian streets one car (2), footpaths stay 1
-        hw = t.get('highway')
-        if ch == 'a': mt = 1
-        elif hw in ('service', 'track', 'pedestrian') or ch == 'P': mt = 2
-        elif hw in ('trunk', 'primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link'): mt = 4
-        else: mt = 3
+        if len(pts) < 2:
+            continue
+
+        if ch == 'a':
+            mt = 1
+        elif hw in ('service', 'track', 'pedestrian') or ch == 'P':
+            mt = 2
+        elif hw in (
+            'motorway', 'trunk', 'primary', 'secondary',
+            'tertiary', 'motorway_link', 'trunk_link',
+            'primary_link', 'secondary_link', 'tertiary_link'
+        ):
+            mt = 4
+        else:
+            mt = 3
+
         if ch == 'P':
             raster_stroke(ctx, pts, wm, 'P', is_road=True, min_tiles=mt)
         else:
             raster_stroke(ctx, pts, wm, ch, is_road=True, min_tiles=mt)
-        if t.get('bridge') == 'yes':
+
+        if not is_road or ch in ('a', 'P'):
+            continue
+
+        if hw in major_highways:
+            road_class = 'major'
+        elif hw in minor_highways:
+            road_class = 'minor'
+        elif hw in service_highways:
+            road_class = 'service'
+        else:
+            continue
+
+        try:
+            width_metres = float(str(tags.get('width', wm)).replace('m', '').strip())
+        except (TypeError, ValueError):
+            width_metres = float(wm)
+
+        width_tiles = width_metres / 4.0
+        if hw == 'service' and tags.get('service') == 'alley':
+            width_tiles = max(width_tiles, 2.0)
+
+        width_tiles = max(0.5, round(width_tiles * 2.0) / 2.0)
+
+        try:
+            lanes = int(float(str(tags.get('lanes', '')).strip()))
+            if lanes < 1:
+                lanes = default_lanes.get(hw, 2)
+        except (TypeError, ValueError):
+            lanes = default_lanes.get(hw, 2)
+
+        flat_points = []
+        for tx, ty in pts:
+            flat_points.extend((round(tx, 1), round(ty, 1)))
+
+        ctx.road_lines.append({
+            'c': road_class,
+            'w': width_tiles,
+            'l': lanes,
+            'o': 1 if tags.get('oneway') == 'yes' else 0,
+            'p': flat_points
+        })
+
+        if tags.get('bridge') == 'yes':
             for ty in range(ctx.h):
                 for tx in range(ctx.w):
                     pass  # handled by stroke overlay
@@ -572,6 +682,9 @@ def step13_trees(ctx, elements):
 def write_js(ctx, name, mid, out):
     rows = [''.join(r) for r in ctx.grid]
     shops = ctx.shops[:22]
+    roads = getattr(ctx, 'road_lines', [])
+    crossings = getattr(ctx, 'crossings', [])
+
     lines = []
     lines.append('/* Generated by osm2map.py from OpenStreetMap data. (c) OpenStreetMap contributors, ODbL. */')
     lines.append('var REALMAPS = REALMAPS || [];')
@@ -581,10 +694,14 @@ def write_js(ctx, name, mid, out):
     for r in rows:
         lines.append('    ' + json.dumps(r) + ',')
     lines.append('  ],')
-    lines.append('  shops: %s,' % json.dumps(shops))
-    lines.append('  plaza: %s,' % json.dumps(ctx.plaza))
-    lines.append('  sites: %s,' % json.dumps(getattr(ctx, 'sites', []), ensure_ascii=False))
-    lines.append('  decor: { trees: %s, terraces: [], metro: [] } });' % json.dumps(ctx.trees))
+    lines.append('  shops: %s,' % json.dumps(shops, separators=(',', ':')))
+    lines.append('  plaza: %s,' % json.dumps(ctx.plaza, separators=(',', ':')))
+    lines.append('  sites: %s,' % json.dumps(getattr(ctx, 'sites', []), ensure_ascii=False, separators=(',', ':')))
+    lines.append('  roads: %s,' % json.dumps(roads, separators=(',', ':')))
+    lines.append('  crossings: %s,' % json.dumps(crossings, separators=(',', ':')))
+    lines.append('  decor: { trees: %s, terraces: [], metro: [] } });' %
+                 json.dumps(ctx.trees, separators=(',', ':')))
+
     with open(out, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
 

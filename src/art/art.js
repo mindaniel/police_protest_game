@@ -864,17 +864,151 @@ var Art = (function () {
   }
 
   function drawShield(ctx, o, c, sn) {
-    var ox = o.x + c * 0.3, oy = o.y + sn * 0.3, w = 0.26;
+    var firm = o.stance === "firm";
+    var fwd, side, w, z0, z1, tilt;
+    if (firm) {
+      /* raised in front, across the officer: 0.55 tall, 0.32 wide */
+      fwd = 0.22; side = 0.0; w = 0.16; z0 = 0.10; z1 = 0.65; tilt = 0.0;
+    } else {
+      /* held at the side, offset to the officer's left (across heading): 0.45 x 0.26 */
+      fwd = 0.10; side = 0.20; w = 0.13; z0 = 0.04; z1 = 0.49; tilt = 0.08;
+    }
+    var ox = o.x + c * fwd + sn * side, oy = o.y + sn * fwd - c * side;
+    /* corners in ground-plane offsets: across heading = (sn,-c) */
+    var ax = sn * w, ay = -c * w;
+    /* slight angle: shift the far edge along heading */
+    var bx = ax + c * tilt, by = ay + sn * tilt;
+    var x0, y0, x1, y1, x2, y2, x3, y3;
+
+    P(ox + bx, oy + by, z0); x0 = _px; y0 = _py;
+    P(ox - bx, oy - by, z0); x1 = _px; y1 = _py;
+    P(ox - bx, oy - by, z1); x2 = _px; y2 = _py;
+    P(ox + bx, oy + by, z1); x3 = _px; y3 = _py;
+
+    /* polycarbonate body: light-blue fill */
     ctx.beginPath();
-    P(ox + sn * w, oy - c * w, 0.05); ctx.moveTo(_px, _py);
-    P(ox - sn * w, oy + c * w, 0.05); ctx.lineTo(_px, _py);
-    P(ox - sn * w, oy + c * w, 0.95); ctx.lineTo(_px, _py);
-    P(ox + sn * w, oy - c * w, 0.95); ctx.lineTo(_px, _py);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
     ctx.closePath();
-    ctx.fillStyle = "rgba(170,195,220,0.85)";
+    ctx.fillStyle = "rgba(160,205,240,0.80)";
     ctx.fill();
-    ctx.strokeStyle = "#2c3a4c"; ctx.lineWidth = Math.max(0.6, 0.6 * cam.S);
+
+    /* dark rim */
+    var rw = Math.max(1, 0.02 * CONFIG.tileSize * cam.S);
+    ctx.strokeStyle = "rgba(20,30,45,0.9)";
+    ctx.lineWidth = rw;
     ctx.stroke();
+
+    /* highlight stripe: thin band down the middle */
+    var hx0, hy0, hx1, hy1, hx2, hy2, hx3, hy3;
+    P(ox + ax * 0.45, oy + ay * 0.45, z0 + (z1 - z0) * 0.15); hx0 = _px; hy0 = _py;
+    P(ox - ax * 0.45, oy - ay * 0.45, z0 + (z1 - z0) * 0.15); hx1 = _px; hy1 = _py;
+    P(ox - ax * 0.45, oy - ay * 0.45, z1 - (z1 - z0) * 0.15); hx2 = _px; hy2 = _py;
+    P(ox + ax * 0.45, oy + ay * 0.45, z1 - (z1 - z0) * 0.15); hx3 = _px; hy3 = _py;
+    ctx.beginPath();
+    ctx.moveTo(hx0, hy0);
+    ctx.lineTo(hx1, hy1);
+    ctx.lineTo(hx2, hy2);
+    ctx.lineTo(hx3, hy3);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(235,244,252,0.30)";
+    ctx.fill();
+
+    /* dark horizontal band with POLICE hint */
+    var bz0 = z0 + (z1 - z0) * 0.52, bz1 = bz0 + (z1 - z0) * 0.16;
+    var b0x, b0y, b1x, b1y, b2x, b2y, b3x, b3y;
+    P(ox + ax, oy + ay, bz0); b0x = _px; b0y = _py;
+    P(ox - ax, oy - ay, bz0); b1x = _px; b1y = _py;
+    P(ox - ax, oy - ay, bz1); b2x = _px; b2y = _py;
+    P(ox + ax, oy + ay, bz1); b3x = _px; b3y = _py;
+    ctx.beginPath();
+    ctx.moveTo(b0x, b0y);
+    ctx.lineTo(b1x, b1y);
+    ctx.lineTo(b2x, b2y);
+    ctx.lineTo(b3x, b3y);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(15,25,40,0.85)";
+    ctx.fill();
+  }
+
+  function drawWheel(ctx, x, y, c, sn, r, s) {
+    /* ellipse squashed across the heading */
+    var ax = c, ay = sn, bx = -sn, by = c;
+    ctx.beginPath();
+    var n = 14, i, u, v, a, ca, sa;
+    for (i = 0; i <= n; i++) {
+      a = (i / n) * Math.PI * 2;
+      ca = Math.cos(a) * r;
+      sa = Math.sin(a) * r * 0.62;
+      P(x + ax * ca + bx * sa, y + ay * ca + by * sa, r);
+      if (i === 0) ctx.moveTo(_px, _py); else ctx.lineTo(_px, _py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#1c2028";
+    ctx.fill();
+    /* hub */
+    P(x, y, r);
+    var hx = _px, hy = _py;
+    var hr = Math.max(0.8, 0.30 * r * CONFIG.tileSize * cam.S);
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 0.62, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#8a929e";
+    ctx.fill();
+  }
+
+  function angScreen(c) {
+    return 0;
+  }
+
+  function drawMotorbike(ctx, o, t, s, c, sn) {
+    var lean = typeof o._lean === "number" ? o._lean : 0;
+    var lx = -sn * lean * 0.12, ly = c * lean * 0.12;   /* lateral lean shift */
+    var bx = o.x + lx, by = o.y + ly;
+    var fast = (o.speed || 0) > 1.2 || Math.abs(o.vx || 0) + Math.abs(o.vy || 0) > 1.2;
+    var TS = CONFIG.tileSize * cam.S;
+    var lw = Math.max(1, Math.min(0.06 * TS, 0.05 * TS + 0.5));
+    var zAx = 0.13, wR = 0.13;
+    /* rear and front wheel positions (total length ~0.85 tiles) */
+    var rf = -0.30, ff = 0.30;
+
+    /* exhaust */
+    P(bx + c * rf + sn * 0.08, by + sn * rf - c * 0.08, 0.15);
+    var ex0 = _px, ey0 = _py;
+    P(bx + c * (rf - 0.08) + sn * 0.08, by + sn * (rf - 0.08) - c * 0.08, 0.15);
+    ctx.strokeStyle = "#6b7280";
+    ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(ex0, ey0); ctx.lineTo(_px, _py); ctx.stroke();
+
+    /* body: white/blue hull along heading */
+    obox(ctx, bx, by, c, sn, rf + 0.02, ff - 0.04, 0.14, zAx, 0.40, "#f2f5f8", [32, 48, 74], [39, 75, 143, 0.24, 0.32]);   /* side colours are [r,g,b]; band [r,g,b,z0,z1] */
+    /* lower blue fairing */
+    obox(ctx, bx, by, c, sn, rf + 0.02, ff - 0.08, 0.15, zAx + 0.02, 0.26, "#274b8f", [26, 47, 87], null);
+    /* front fairing / nose */
+    obox(ctx, bx, by, c, sn, ff - 0.12, ff + 0.02, 0.12, 0.16, 0.42, "#eef3f8", [32, 48, 74], [43, 99, 184, 0.3, 0.36]);
+    /* seat */
+    obox(ctx, bx, by, c, sn, rf + 0.05, rf + 0.20, 0.09, 0.38, 0.44, "#151a20", [14, 18, 24], null);
+    /* windscreen (translucent) */
+    obox(ctx, bx, by, c, sn, ff - 0.04, ff + 0.03, 0.10, 0.42, 0.58, "rgba(200,225,245,0.55)", [160, 190, 220], null);
+    /* handlebars across the heading */
+    P(bx + c * (ff - 0.05) + sn * 0.15, by + sn * (ff - 0.05) - c * 0.15, 0.50);
+    var hx0 = _px, hy0 = _py;
+    P(bx + c * (ff - 0.05) - sn * 0.15, by + sn * (ff - 0.05) + c * 0.15, 0.50);
+    ctx.strokeStyle = "#2a303a";
+    ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(hx0, hy0); ctx.lineTo(_px, _py); ctx.stroke();
+    /* rear light bar */
+    P(bx + c * rf, by + sn * rf, 0.44);
+    var lbx = _px, lby = _py;
+    var on = fast && (Math.floor(t * 4) % 2) === 0;
+    var lwR = Math.max(2, 0.05 * TS);
+    var lhR = Math.max(1.5, 0.035 * TS);
+    ctx.fillStyle = on ? "#3b7bff" : "#1d2f55";
+    ctx.fillRect(lbx - lwR * 0.5, lby - lhR * 0.5, lwR, lhR);
+    /* wheels drawn after body */
+    drawWheel(ctx, bx + c * rf, by + sn * rf, c, sn, wR, s);
+    drawWheel(ctx, bx + c * ff, by + sn * ff, c, sn, wR, s);
   }
 
   var OFF_SPECS = {};
@@ -887,44 +1021,40 @@ var Art = (function () {
   }
   function drawOfficerAt(ctx, o, t, s, ang, c, sn) {
     var firm = o.stance === "firm", bike = o.baseSpeed >= CONFIG.motorbikeSpeed;
-    if (bike) {
-      ctx.strokeStyle = "#22262e"; ctx.lineWidth = Math.max(1, 1.6 * s);
-      P(o.x - c * 0.38, o.y - sn * 0.38, 0.12); var ax = _px, ay = _py;
-      P(o.x + c * 0.4, o.y + sn * 0.4, 0.12);
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(_px, _py); ctx.stroke();
-      disc(ctx, ax, ay, 1.8 * s, "#22262e"); disc(ctx, _px, _py, 1.8 * s, "#22262e");
-      ctx.strokeStyle = sqCol(o.squad); ctx.lineWidth = Math.max(1, 2 * s);
-      P(o.x - c * 0.25, o.y - sn * 0.25, 0.32); ax = _px; ay = _py;
-      P(o.x + c * 0.3, o.y + sn * 0.3, 0.38);
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(_px, _py); ctx.stroke();
-    }
+    var lo = Police.getLoadout(_G, o.squad);
+    var riot = (lo === "none" || lo === "van" || lo === "truck" || lo === "barriertruck" || lo === "watertruck");
+    var horse = lo === "mounted";
+    if (bike) drawMotorbike(ctx, o, t, s, c, sn);
     var front = c + sn > 0;
-    var horse = typeof Police !== "undefined" && Police.getLoadout(_G, o.squad) === "mounted";
     if (horse && typeof UNITS !== "undefined") { P(o.x, o.y, 0); UNITS.drawHorse(ctx, _px, _py, ang, s * 1.9, t, o.panicUntil > _G.time); }
-    if (firm && !front) drawShield(ctx, o, c, sn);
+    if (riot && firm && !front) drawShield(ctx, o, c, sn);
     P(o.x, o.y, bike ? 0.25 : 0);
     var bx = _px, by = _py - (horse ? 11 * s : 0), r = 3.2 * s, hb = 9 * s;
-    var lo = Police.getLoadout(_G, o.squad);
     var liaison = typeof LIAISON !== "undefined" && lo === "liaison";
     if (typeof PEOPLE !== "undefined") {
-      /* officer sprites: patrol uniform, riot gear (firm), medic, liaison vest */
-      var kind = lo === "ambulance" ? "medic" : (liaison ? "liaison" : (firm ? "riot" : "officer"));
-      var ospec = OFF_SPECS[kind] || (OFF_SPECS[kind] = { kind: kind, hat: kind === "riot" ? "riothelmet" : (kind === "officer" ? "cap" : null) });
+      /* riot loadouts always use riot sprite + helmet; patrol crews keep patrol look */
+      var kind, hat;
+      if (lo === "ambulance") { kind = "medic"; hat = null; }
+      else if (liaison) { kind = "liaison"; hat = null; }
+      else if (riot) { kind = "riot"; hat = "riothelmet"; }
+      else { kind = "officer"; hat = "cap"; }
+      var ospec = OFF_SPECS[kind] || (OFF_SPECS[kind] = { kind: kind, hat: hat });
+      if (ospec.hat !== hat) ospec.hat = hat;
       var spd = Math.sqrt((o.tx - o.x) * (o.tx - o.x) + (o.ty - o.y) * (o.ty - o.y)) > 0.1 ? o.speed || 1.5 : 0;
       var osp = PEOPLE.sprite(ospec, Q_BOB && !horse && !bike ? PEOPLE.frameFor(o.id | 0, spd, t) : 0, Math.round(_rs * s * 100) / 100);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(osp.c, _rs * bx - osp.ax, _rs * by - osp.ay);
       setScreen(ctx);
     } else {
-      capsule(ctx, bx, by, r, hb, firm ? "#151a22" : "#16294a");
-      capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, firm ? "#2a323f" : "#24406e");
+      capsule(ctx, bx, by, r, hb, riot ? "#151a22" : "#16294a");
+      capsule(ctx, bx - r * 0.25, by - 0.4 * s, r * 0.72, hb - 0.8 * s, riot ? "#2a323f" : "#24406e");
       if (liaison) { ctx.fillStyle = LIAISON.vestColor; ctx.fillRect(bx - r, by - hb * 0.75, r * 2, hb * 0.5); }
-      else if (!firm) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
-      disc(ctx, bx, by - hb - 2 * s, 2.6 * s, firm ? "#0f1218" : "#1b2c4a");
-      if (firm) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
+      else if (!riot) { ctx.fillStyle = "#d9f24a"; ctx.fillRect(bx - r, by - hb * 0.62, r * 2, 1.6 * s); }
+      disc(ctx, bx, by - hb - 2 * s, 2.6 * s, riot ? "#0f1218" : "#1b2c4a");
+      if (riot) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
     }
     disc(ctx, bx, by - hb - 6 * s, Math.max(1, 1.3 * s), sqCol(o.squad));   /* squad colour dot */
-    if (firm && front) drawShield(ctx, o, c, sn);
+    if (riot && (!firm || front)) drawShield(ctx, o, c, sn);
     if (typeof o.stamina === "number" && o.stamina < 100) {
       var bw = 9 * s, frac = clamp(o.stamina / 100, 0, 1), yb = by - hb - 8 * s;
       ctx.fillStyle = "rgba(20,25,35,0.6)"; ctx.fillRect(bx - bw / 2, yb, bw, Math.max(1, 1.3 * s));
