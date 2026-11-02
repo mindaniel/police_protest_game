@@ -18,7 +18,7 @@ Paste this to start a new Claude Code session on any machine:
 
 ## Sending jobs
 - `python tools/dev/ds_pool.py check JOB1 JOB2`: runs the filter only.
-- `python tools/dev/ds_pool.py run JOB1 JOB2 JOB3 --accounts 1,2,3 --gap 600`: each job goes to whichever account is free first. Each account rests `--gap` seconds after a job (keep 600: one account must not be asked more often than once every 10 minutes, or it gets rate-limited). With 3 accounts, 3 jobs run at the same time.
+- `python tools/dev/ds_pool.py run JOB1 JOB2 JOB3 --accounts 1,2,3 --gap 600`: each job goes to whichever account is free first. Each account rests `--gap` seconds after a job (keep 600: one account must not be asked more often than once every 10 minutes, or it gets rate-limited; the rest times are saved in `WORK/ds_free.json`, so separate runs also respect the gap). With 3 accounts, 3 jobs run at the same time.
   - A rate-limited job is re-queued, and that account rests 20 minutes.
   - A logged-out account is dropped. Ask the user to run `login N` at the machine.
 - Run long batches in the background and read the log. The browser is closed after every job. Check that no stray Edge or Chrome processes are left behind.

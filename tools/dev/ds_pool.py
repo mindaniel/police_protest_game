@@ -193,8 +193,32 @@ def test(n):
         return "account %d: %s" % (n, a.ask("Reply with just the word: ok", 120).strip()[:40])
 
 
+FREE_FILE = WORK / "ds_free.json"   # when each account may be asked again, kept between runs
+
+
+def load_free(accounts):
+    try:
+        saved = json.loads(FREE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        saved = {}
+    return {n: float(saved.get(str(n), 0.0)) for n in accounts}
+
+
+def save_free(n, t):
+    try:
+        saved = json.loads(FREE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        saved = {}
+    saved[str(n)] = max(t, float(saved.get(str(n), 0.0)))
+    FREE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FREE_FILE.write_text(json.dumps(saved), encoding="utf-8")
+
+
 def run(jobs, accounts, gap):
-    todo, lock, free = list(jobs), threading.Lock(), {n: 0.0 for n in accounts}
+    todo, lock, free = list(jobs), threading.Lock(), load_free(accounts)
+    for n in accounts:
+        if free[n] > time.time():
+            print("account %d rests until %s" % (n, time.strftime("%H:%M", time.localtime(free[n]))), flush=True)
 
     def worker(n):
         while True:
@@ -208,6 +232,7 @@ def run(jobs, accounts, gap):
                 if not todo:
                     return
                 job = todo.pop(0)
+                save_free(n, time.time() + gap)   # reserve now so a parallel run skips this account
             src, dst = WORK / "prompts" / (job + ".md"), WORK / "replies" / (job + ".md")
             prompt = src.read_text(encoding="utf-8")
             print("%s acct %d -> %s (%d chars)" % (time.strftime("%H:%M"), n, job, len(prompt)), flush=True)
@@ -218,12 +243,14 @@ def run(jobs, accounts, gap):
                 dst.write_text(text, encoding="utf-8")
                 print("%s acct %d <- %s saved %s (%d chars)" % (time.strftime("%H:%M"), n, job, dst, len(text)), flush=True)
                 free[n] = time.time() + gap
+                save_free(n, free[n])
             except Exception as e:
                 msg = str(e)
                 print("%s acct %d !! %s: %s" % (time.strftime("%H:%M"), n, job, msg[:200]), flush=True)
                 if "RATE_LIMITED" in msg:
                     with lock: todo.append(job)
                     free[n] = time.time() + 1200
+                    save_free(n, free[n])
                 elif "LOGGED_OUT" in msg:
                     with lock: todo.append(job)
                     return                      # drop this account
