@@ -11,6 +11,8 @@ var Art = (function () {
   var TS = 32, ZU = 18;                  // world units per tile, per height unit (ZU set by setView)
   var VIEW_ZU = { top: 6, tilt: 26 };    // view modes: top-down / tilted 3D
   var viewMode = "tilt", _savedView = false;
+  /* zoom detail levels (far / mid / near) */
+  var MAX_ZOOM = 14; var FAR_DIRTY = true; var FC = { c: null, key: "", w: 0, h: 0 }; var FARG = {}; var FARORDER = [];
   var SQUAD_COLORS = ["#e63946", "#f4a261", "#2a9d8f", "#e9c46a", "#9b5de5", "#00b4d8"];
   var GT = 32;                           // ground texture pixels per tile
 
@@ -107,9 +109,168 @@ var Art = (function () {
 
   function toggleView() { setView(viewMode === "tilt" ? "top" : "tilt"); return viewMode; }
 
+  function detail() {
+    return cam.zoom < 1.8 ? "far" : (cam.zoom > 4 ? "near" : "mid");
+  }
+
+  function cullMargin() {
+    return (2 * TS + HMAXZ * ZU) * cam.S + 24;
+  }
+
+  function visibleWorld(x, y, z, m) {
+    if (m === undefined) m = cullMargin();
+    P(x, y, z || 0);
+    return _px >= -m && _px <= LW + m && _py >= -m && _py <= LH + m;
+  }
+
+  function visibleRowRange() {
+    var v = viewIso(0), m = (2 * TS + HMAXZ * ZU);
+    var y0 = v.y0 - m, y1 = v.y1 + m;
+    return { d0: Math.max(0, Math.floor(y0 / TS) - 1), d1: Math.min(ND - 1, Math.ceil(y1 / TS) + 1) };
+  }
+
+  function spriteScale(s) {
+    var k = _rs * s;
+    var q = k > 4 ? Math.round(k * 2) / 2 : Math.round(k * 4) / 4;
+    return q < 0.25 ? 0.25 : q;
+  }
+
+  function farKey() {
+    return cam.OX.toFixed(3) + "," + cam.OY.toFixed(3) + "," + cam.S.toFixed(5) + "," +
+      _rs + "," + cityVer + "," + viewMode + "," + (lowMode ? 1 : 0) + "," + W + "," + H;
+  }
+
+  function farAdd(col, x, y) {
+    var g = FARG[col];
+    if (!g) g = FARG[col] = { n: 0, xs: [], ys: [] };
+    if (!g.n) FARORDER.push(col);   /* order list is cleared every frame */
+    P(x, y, 0);
+    g.xs[g.n] = _px; g.ys[g.n] = _py; g.n++;
+  }
+
+  function farRoundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w * 0.5, h * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function drawFarVehicles(ctx, G) {
+    if (!G || !G.vehicles) return;
+    var m = cullMargin(), s = cam.S, i, v, w, h, r, x, y;
+    for (i = 0; i < G.vehicles.length; i++) {
+      v = G.vehicles[i];
+      if (!v || !visibleWorld(v.x, v.y, 0, m)) continue;
+      P(v.x, v.y, 0); x = _px; y = _py;
+      w = (v.type === "car" ? 1.8 : 2.6) * TS * s;
+      if (w < 5) w = 5;
+      h = Math.max(3, w * 0.45);
+      r = Math.min(3, h * 0.45);
+      ctx.fillStyle = v.type === "ambulance" ? "#f2f5f9" : (v.type === "watertruck" ? "#3b8ae0" : sqCol(v.squad));
+      farRoundRect(ctx, x - w * 0.5, y - h * 0.5, w, h, r);
+      ctx.fill();
+    }
+  }
+
+  function drawFarUnits(ctx, G) {
+    var i, a, o, col, g, k, r, m = cullMargin(), s = cam.S;
+    for (i = 0; i < FARORDER.length; i++) FARG[FARORDER[i]].n = 0;
+    FARORDER.length = 0;
+
+    if (G) {
+      if (G.agents) for (i = 0; i < G.agents.length; i++) {
+        a = G.agents[i];
+        if (!a.active) continue;
+        if (!visibleWorld(a.x, a.y, 0, m)) continue;
+        col = (a.role === "rioter" && G.time < a.revealedUntil) ? "#ff2338" : (a.mood > 65 ? "#d62839" : "#4a8fe7");
+        farAdd(col, a.x, a.y);
+      }
+      if (G.officers) for (i = 0; i < G.officers.length; i++) {
+        o = G.officers[i];
+        if (!visibleWorld(o.x, o.y, 0, m)) continue;
+        farAdd(sqCol(o.squad), o.x, o.y);
+      }
+      if (G.detainees) for (i = 0; i < G.detainees.length; i++) {
+        var d = G.detainees[i];
+        if (!visibleWorld(d.x, d.y, 0, m)) continue;
+        farAdd("#8d96a2", d.x, d.y);
+      }
+    }
+
+    r = Math.max(2, 0.35 * TS * s * _rs) * 0.5;
+    for (k = 0; k < FARORDER.length; k++) {
+      col = FARORDER[k];
+      g = FARG[col];
+      if (!g.n) continue;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      for (i = 0; i < g.n; i++) ctx.rect(g.xs[i] - r, g.ys[i] - r, r * 2, r * 2);
+      ctx.fill();
+    }
+
+    drawFarVehicles(ctx, G);
+
+    if (G && G.barriers) {
+      ctx.fillStyle = "#d9dde3";
+      for (i = 0; i < G.barriers.length; i++) {
+        var b = G.barriers[i];
+        if (!visibleWorld(b.x + 0.5, b.y + 0.5, 0, m)) continue;
+        P(b.x + 0.5, b.y + 0.5, 0);
+        var bw = Math.max(4, TS * s);
+        ctx.fillRect(_px - bw * 0.5, _py - 2, bw, 4);
+      }
+    }
+  }
+
+  function drawFarCache(ctx, G) {
+    if (typeof document === "undefined") {
+      drawBackdrop(ctx);
+      drawGround(ctx);
+      var rr = visibleRowRange(), d;
+      if (diags) for (d = rr.d0; d <= rr.d1; d++) if (diags[d]) fillSet(ctx, d);
+      return;
+    }
+    var cw = Math.max(1, Math.ceil(LW * _rs)), ch = Math.max(1, Math.ceil(LH * _rs));
+    if (!FC.c || FC.w !== cw || FC.h !== ch) {
+      FC.c = document.createElement("canvas");
+      FC.c.width = cw; FC.c.height = ch;
+      FC.w = cw; FC.h = ch;
+      FC.key = "";
+      FAR_DIRTY = true;
+    }
+    var key = farKey();
+    if (FAR_DIRTY || key !== FC.key) {
+      var g = FC.c.getContext("2d");
+      g.setTransform(_rs, 0, 0, _rs, 0, 0);
+      g.clearRect(0, 0, LW, LH);
+      drawBackdrop(g);
+      drawGround(g);
+      var rr2 = visibleRowRange(), d2;
+      if (diags) for (d2 = rr2.d0; d2 <= rr2.d1; d2++) if (diags[d2]) fillSet(g, d2);
+      FC.key = key;
+      FAR_DIRTY = false;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(FC.c, 0, 0);
+    setScreen(ctx);
+  }
+
+  function drawFarScene(ctx, G, t) {
+    drawFarCache(ctx, G);
+    drawFarUnits(ctx, G);
+  }
+
   function updateCamera() {
     cam.fit = LW / (W * TS);
-    cam.zoom = clamp(cam.zoom, 1, 6 * Math.max(1, W / 100));   /* big maps can zoom in further */
+    cam.zoom = clamp(cam.zoom, 1, MAX_ZOOM);
     cam.S = cam.fit * cam.zoom;
     var vw = LW / cam.S, vh = LH / cam.S;
     var x0 = W * TS - vw, y0 = H * TS - vh;
@@ -151,12 +312,12 @@ var Art = (function () {
   }
   /* Jump the view to tile (x, y), zooming in to at least minZoom (alerts, minimap). */
   function centerOn(x, y, minZoom) {
-    if (minZoom) cam.zoom = clamp(Math.max(cam.zoom, minZoom), 1, 6);
+    if (minZoom) cam.zoom = clamp(Math.max(cam.zoom, minZoom), 1, MAX_ZOOM);
     cam.cx = x; cam.cy = y; updateCamera();
   }
   function zoomAt(lx, ly, f) {
     var a = screenToTile(lx, ly);
-    cam.zoom = clamp(cam.zoom * f, 1, 6);
+    cam.zoom = clamp(cam.zoom * f, 1, MAX_ZOOM);
     updateCamera();
     var b = screenToTile(lx, ly);
     cam.cx += a.x - b.x;
@@ -741,7 +902,7 @@ var Art = (function () {
     }
   }
 
-  function invalidate() { _dirty = true; }
+  function invalidate() { _dirty = true; FAR_DIRTY = true; }
 
   function init(G) {
     loadView();
@@ -861,7 +1022,7 @@ var Art = (function () {
     var pal = agentPal(a);
     var base = revealed ? "#ff2338" : pal.base, dark = revealed ? "#b3121f" : pal.dark;
     var hid = hash2(a.id | 0, 3);
-    var placard = Q_PLACARDS && !revealed && hid % 4 === 0 && typeof PEOPLE === "undefined";   /* people.js draws its own signs */
+    var placard = Q_PLACARDS && !revealed && hid % 4 === 0 && typeof PEOPLE === "undefined";
     if (placard) {
       var wob = a.mood > 65 ? Math.sin(t * 9 + a.id) * 1.5 * s : 0;
       var px = bx + r * 1.1 + wob, top = by - hb - 7 * s;
@@ -874,7 +1035,6 @@ var Art = (function () {
     }
     var sp;
     if (typeof PEOPLE !== "undefined") {
-      /* realistic person sprite: 24 outfit types, shirt colour shows the mood */
       var shirt = revealed ? "#ff2338" : base;
       var sk = (a.blocDressed ? "b" : "c") + shirt;
       var specs = a._ppl || (a._ppl = {});
@@ -885,8 +1045,8 @@ var Art = (function () {
         specs[sk] = spec;
       }
       var fr = Q_BOB ? PEOPLE.frameFor(a.id | 0, Math.sqrt(sp2), t) : 0;
-      sp = PEOPLE.sprite(spec, fr, Math.round(_rs * s * 100) / 100);
-      by = _py;   /* the sprite has its own walk bob */
+      sp = PEOPLE.sprite(spec, fr, spriteScale(s));
+      by = _py;
     } else {
       sp = revealed ? agentSprite("R", dark, base, "#ff6b78") : agentSprite(pal.id, dark, base, pal.light);
     }
@@ -1081,7 +1241,6 @@ var Art = (function () {
     var bx = _px, by = _py - (horse ? 11 * s : 0), r = 3.2 * s, hb = 9 * s;
     var liaison = typeof LIAISON !== "undefined" && lo === "liaison";
     if (typeof PEOPLE !== "undefined") {
-      /* riot loadouts always use riot sprite + helmet; patrol crews keep patrol look */
       var kind, hat;
       if (lo === "ambulance") { kind = "medic"; hat = null; }
       else if (liaison) { kind = "liaison"; hat = null; }
@@ -1090,7 +1249,7 @@ var Art = (function () {
       var ospec = OFF_SPECS[kind] || (OFF_SPECS[kind] = { kind: kind, hat: hat });
       if (ospec.hat !== hat) ospec.hat = hat;
       var spd = Math.sqrt((o.tx - o.x) * (o.tx - o.x) + (o.ty - o.y) * (o.ty - o.y)) > 0.1 ? o.speed || 1.5 : 0;
-      var osp = PEOPLE.sprite(ospec, Q_BOB && !horse && !bike ? PEOPLE.frameFor(o.id | 0, spd, t) : 0, Math.round(_rs * s * 100) / 100);
+      var osp = PEOPLE.sprite(ospec, Q_BOB && !horse && !bike ? PEOPLE.frameFor(o.id | 0, spd, t) : 0, spriteScale(s));
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(osp.c, _rs * bx - osp.ax, _rs * by - osp.ay);
       setScreen(ctx);
@@ -1102,7 +1261,7 @@ var Art = (function () {
       disc(ctx, bx, by - hb - 2 * s, 2.6 * s, riot ? "#0f1218" : "#1b2c4a");
       if (riot) { ctx.fillStyle = "rgba(150,190,230,0.8)"; ctx.fillRect(bx - 1.8 * s, by - hb - 2.4 * s, 3.6 * s, 1.1 * s); }
     }
-    disc(ctx, bx, by - hb - 6 * s, Math.max(1, 1.3 * s), sqCol(o.squad));   /* squad colour dot */
+    disc(ctx, bx, by - hb - 6 * s, Math.max(1, 1.3 * s), sqCol(o.squad));
     if (riot && (!firm || front)) drawShield(ctx, o, c, sn);
     if (typeof o.stamina === "number" && o.stamina < 100) {
       var bw = 9 * s, frac = clamp(o.stamina / 100, 0, 1), yb = by - hb - 8 * s;
@@ -1264,34 +1423,31 @@ var Art = (function () {
   }
 
   function collect(G) {
-    var i;
+    var i, cm = cullMargin();
     poolN = 0; ghosts.length = 0;
     for (i = 0; i < buckets.length; i++) if (buckets[i]) buckets[i].length = 0;
-    for (i = 0; i < trees.length; i++) push(5, trees[i], trees[i].x, trees[i].y);
-    for (i = 0; i < lamps.length; i++) push(6, lamps[i], lamps[i].x, lamps[i].y);
-    for (i = 0; i < tprops.length; i++) push(7, tprops[i], tprops[i].x, tprops[i].y);
+    for (i = 0; i < trees.length; i++) if (visibleWorld(trees[i].x, trees[i].y, 0, cm)) push(5, trees[i], trees[i].x, trees[i].y);
+    for (i = 0; i < lamps.length; i++) if (visibleWorld(lamps[i].x, lamps[i].y, 0, cm)) push(6, lamps[i], lamps[i].x, lamps[i].y);
+    for (i = 0; i < tprops.length; i++) if (visibleWorld(tprops[i].x, tprops[i].y, 0, cm)) push(7, tprops[i], tprops[i].x, tprops[i].y);
     if (!G) return;
-    /* people outside the visible screen are skipped (cheap projection test);
-     * when people are only a few pixels tall they are drawn later as batched dots */
-    var cx0 = -24, cx1 = LW + 24, cy0 = -16, cy1 = LH + 48;
     lodDots = 15 * _rs * cam.S < (CONFIG.peopleLodPx || 9);
     lodN = 0;
     if (G.agents) for (i = 0; i < G.agents.length; i++) {
       var a = G.agents[i];
       if (!a.active) continue;
-      P(a.x, a.y, 0);
-      if (_px < cx0 || _px > cx1 || _py < cy0 || _py > cy1) continue;
+      if (!visibleWorld(a.x, a.y, 0, cm)) continue;
       if (lodDots) { lodList[lodN++] = a; continue; }
       push(0, a, a.x, a.y);
     }
     if (G.barriers) for (i = 0; i < G.barriers.length; i++) {
       var b = G.barriers[i];
+      if (!visibleWorld(b.x + 0.5, b.y + 0.5, 0, cm)) continue;
       if (typeof b._artAng !== "number") b._artAng = barrierAng(G, b);
       push(3, b, b.x + 0.5, b.y + 0.5);
     }
-    if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) push(2, G.vehicles[i], G.vehicles[i].x, G.vehicles[i].y);
-    if (G.officers) for (i = 0; i < G.officers.length; i++) push(1, G.officers[i], G.officers[i].x, G.officers[i].y);
-    if (G.detainees) for (i = 0; i < G.detainees.length; i++) push(4, G.detainees[i], G.detainees[i].x, G.detainees[i].y);
+    if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) if (visibleWorld(G.vehicles[i].x, G.vehicles[i].y, 0, cm)) push(2, G.vehicles[i], G.vehicles[i].x, G.vehicles[i].y);
+    if (G.officers) for (i = 0; i < G.officers.length; i++) if (visibleWorld(G.officers[i].x, G.officers[i].y, 0, cm)) push(1, G.officers[i], G.officers[i].x, G.officers[i].y);
+    if (G.detainees) for (i = 0; i < G.detainees.length; i++) if (visibleWorld(G.detainees[i].x, G.detainees[i].y, 0, cm)) push(4, G.detainees[i], G.detainees[i].x, G.detainees[i].y);
   }
 
   /* Far zoom: every visible person as a small dot, one path per colour. */
@@ -1650,7 +1806,8 @@ var Art = (function () {
   }
   function drawWater(ctx, G, t) {
     if (!G.waterFx || !(G.time < G.waterFx.until)) return;
-    var fx = G.waterFx, i, N = 26, s = cam.S;
+    var fx = G.waterFx, i, N = 26, s = cam.S, cm = cullMargin();
+    if (!visibleWorld(fx.x, fx.y, 0, cm) && !visibleWorld(fx.fromX, fx.fromY, 0, cm)) return;
     ctx.strokeStyle = "rgba(170,215,255,0.55)";
     ctx.lineWidth = Math.max(1.5, 3 * s);
     ctx.beginPath();
@@ -1670,10 +1827,11 @@ var Art = (function () {
 
   function drawSmoke(ctx, G, t) {
     if (!G.shops) return;
-    var i, k, s = cam.S;
+    var i, k, s = cam.S, cm = cullMargin();
     for (i = 0; i < G.shops.length; i++) {
       var sh = G.shops[i];
       if (!sh.broken) continue;
+      if (!visibleWorld(sh.x + 1, sh.y + 1, 0, cm)) continue;
       var nk = (typeof QUALITY !== "undefined") ? QUALITY.flag("smoke") : 7;
       for (k = 0; k < nk; k++) {
         var ph = (t * 0.22 + k / nk) % 1;
@@ -1727,24 +1885,24 @@ var Art = (function () {
     beginFrame(ctx, G);
     drawBackdrop(ctx);
     drawGround(ctx);
-    var d;
-    if (diags) for (d = 0; d < ND; d++) if (diags[d]) fillSet(ctx, d);
+    var rr = visibleRowRange(), d;
+    if (diags) for (d = rr.d0; d <= rr.d1; d++) if (diags[d]) fillSet(ctx, d);
     ctx.restore();
   }
   function drawAgents(ctx, G) {
     beginFrame(ctx, G);
-    var t = Date.now() / 1000, i;
-    if (G && G.agents) for (i = 0; i < G.agents.length; i++) if (G.agents[i].active) drawAgent(ctx, G.agents[i], t);
+    var t = Date.now() / 1000, i, cm = cullMargin();
+    if (G && G.agents) for (i = 0; i < G.agents.length; i++) if (G.agents[i].active && visibleWorld(G.agents[i].x, G.agents[i].y, 0, cm)) drawAgent(ctx, G.agents[i], t);
     ctx.restore();
   }
 
   function drawPolice(ctx, G) {
     beginFrame(ctx, G);
-    var t = Date.now() / 1000, i;
-    if (G.barriers) for (i = 0; i < G.barriers.length; i++) drawBarrier(ctx, G.barriers[i]);
-    if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) drawVehicle(ctx, G.vehicles[i], t);
-    if (G.officers) for (i = 0; i < G.officers.length; i++) drawOfficer(ctx, G.officers[i], t);
-    if (G.detainees) for (i = 0; i < G.detainees.length; i++) drawDetainee(ctx, G.detainees[i]);
+    var t = Date.now() / 1000, i, cm = cullMargin();
+    if (G.barriers) for (i = 0; i < G.barriers.length; i++) if (visibleWorld(G.barriers[i].x + 0.5, G.barriers[i].y + 0.5, 0, cm)) drawBarrier(ctx, G.barriers[i]);
+    if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) if (visibleWorld(G.vehicles[i].x, G.vehicles[i].y, 0, cm)) drawVehicle(ctx, G.vehicles[i], t);
+    if (G.officers) for (i = 0; i < G.officers.length; i++) if (visibleWorld(G.officers[i].x, G.officers[i].y, 0, cm)) drawOfficer(ctx, G.officers[i], t);
+    if (G.detainees) for (i = 0; i < G.detainees.length; i++) if (visibleWorld(G.detainees[i].x, G.detainees[i].y, 0, cm)) drawDetainee(ctx, G.detainees[i]);
     ctx.restore();
   }
 
@@ -1853,63 +2011,75 @@ var Art = (function () {
   function draw(ctx, G) {
     var nowT = Date.now() / 1000, fdt = lastDrawT ? Math.min(0.1, nowT - lastDrawT) : 0.016;
     lastDrawT = nowT;
-    smoothK = 1 - Math.exp(-fdt * 9);   /* about 0.14 per frame at 60 fps */
+    smoothK = 1 - Math.exp(-fdt * 9);
     if (typeof QUALITY !== "undefined") {
       Q_BOB = QUALITY.flag("agentBob"); Q_PLACARDS = QUALITY.flag("placards"); Q_GHOSTS = QUALITY.flag("ghosts");
     }
     beginFrame(ctx, G);
     var t = Date.now() / 1000, d, i, b;
-    var gr = ctx.createLinearGradient(0, 0, 0, LH);
-    gr.addColorStop(0, "#eef1f5"); gr.addColorStop(1, "#dde3ea");
-    ctx.fillStyle = gr;
-    ctx.fillRect(0, 0, LW, LH);
-    var cached = typeof document !== "undefined";
-    /* zoomed far out on a big map: flat strategy-map chunks + dots instead of the detailed city */
-    var ov = cached && typeof OVERVIEW !== "undefined" && OVERVIEW.use(G);
-    if (ov) {
-      OVERVIEW.draw(ctx, G);
-      OVERVIEW.peopleDots(ctx, G);
+    var det = detail();
+    if (det === "far") {
+      drawFarScene(ctx, G, t);
     } else {
-    if (cached) {
-      ensureCache();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      blit(ctx, SC.bg);
-      setScreen(ctx);
-    } else {
-      drawBackdrop(ctx);
-      drawGround(ctx);
-    }
-    drawDecals(ctx, G);
-    collect(G);
-    if (lodDots && lodN) drawLodPeople(ctx);   /* before buildings, so buildings hide people behind them */
-    /* landmarks are drawn with the row of their south edge, so people in front stay visible */
-    var lmRows = null;
-    if (typeof LANDMARKS !== "undefined" && typeof LANDMARKS_ART !== "undefined") {
-      var lml = LANDMARKS.list(G);
-      for (i = 0; i < lml.length; i++) {
-        var lmr = Math.max(0, Math.min(ND - 1, lml[i].lm.y + lml[i].lm.h - 1));
-        if (!lmRows) lmRows = {};
-        (lmRows[lmr] = lmRows[lmr] || []).push(lml[i]);
+      var gr = ctx.createLinearGradient(0, 0, 0, LH);
+      gr.addColorStop(0, "#eef1f5"); gr.addColorStop(1, "#dde3ea");
+      ctx.fillStyle = gr;
+      ctx.fillRect(0, 0, LW, LH);
+      var cached = typeof document !== "undefined";
+      var ov = cached && typeof OVERVIEW !== "undefined" && OVERVIEW.use(G);
+      if (ov) {
+        OVERVIEW.draw(ctx, G);
+        OVERVIEW.peopleDots(ctx, G);
+      } else {
+        if (cached) {
+          ensureCache();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          blit(ctx, SC.bg);
+          setScreen(ctx);
+        } else {
+          drawBackdrop(ctx);
+          drawGround(ctx);
+        }
+        drawDecals(ctx, G);
+        collect(G);
+        if (lodDots && lodN) drawLodPeople(ctx);
+        var lmRows = null;
+        if (typeof LANDMARKS !== "undefined" && typeof LANDMARKS_ART !== "undefined") {
+          var lml = LANDMARKS.list(G);
+          for (i = 0; i < lml.length; i++) {
+            var lmr = Math.max(0, Math.min(ND - 1, lml[i].lm.y + lml[i].lm.h - 1));
+            if (!lmRows) lmRows = {};
+            (lmRows[lmr] = lmRows[lmr] || []).push(lml[i]);
+          }
+        }
+        var rr = visibleRowRange();
+        for (d = 0; d < ND; d++) {
+          if (d >= rr.d0 && d <= rr.d1) {
+            b = buckets[d];
+            if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
+          }
+          if (cached) {
+            if ((d & 1) === 0 && SC.strips[d >> 1]) {
+              if (d + 1 >= rr.d0 && d <= rr.d1) {
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                blit(ctx, SC.strips[d >> 1]);
+                setScreen(ctx);
+              }
+            }
+          } else if (diags && diags[d] && d >= rr.d0 && d <= rr.d1) fillSet(ctx, d);
+          if (d >= rr.d0 && d <= rr.d1) {
+            if (shopTiles && shopTiles[d]) drawShopDecor(ctx, shopTiles[d], G, t);
+            if (lmRows && lmRows[d]) LANDMARKS_ART.draw(ctx, G, lmRows[d]);
+          }
+        }
+        if (ND >= rr.d0 && ND <= rr.d1) {
+          b = buckets[ND];
+          if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
+        }
       }
     }
-    for (d = 0; d < ND; d++) {
-      b = buckets[d];
-      if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
-      if (cached) {
-        if ((d & 1) === 0 && SC.strips[d >> 1]) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          blit(ctx, SC.strips[d >> 1]);
-          setScreen(ctx);
-        }
-      } else if (diags && diags[d]) fillSet(ctx, d);
-      if (shopTiles && shopTiles[d]) drawShopDecor(ctx, shopTiles[d], G, t);
-      if (lmRows && lmRows[d]) LANDMARKS_ART.draw(ctx, G, lmRows[d]);
-    }
-    b = buckets[ND];
-    if (b) for (i = 0; i < b.length; i++) drawObj(ctx, b[i], t);
-    }
     drawWater(ctx, G, t);
-    if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);   /* fire glow, drifting smoke, wet streets */
+    if (typeof ATMO !== "undefined") ATMO.draw(ctx, G);
     else drawSmoke(ctx, G, t);
     if (typeof FX !== "undefined") FX.draw(ctx, G);
     if (typeof BAR !== "undefined") BAR.draw(ctx, G);
@@ -1922,19 +2092,19 @@ var Art = (function () {
     if (typeof REINFORCE !== "undefined") REINFORCE.draw(ctx, G);
     if (typeof LINES !== "undefined") LINES.draw(ctx, G);
     if (typeof DISPERSE !== "undefined") DISPERSE.draw(ctx, G);
-    if (typeof MARCHES !== "undefined") MARCHES.draw(ctx, G);   /* planned march routes and banners */
+    if (typeof MARCHES !== "undefined") MARCHES.draw(ctx, G);
     if (typeof GAS !== "undefined") GAS.draw(ctx, G);
     if (typeof NIGHT !== "undefined") NIGHT.draw(ctx, G);
-    if (typeof ATMO !== "undefined") ATMO.drawNight(ctx, G);   /* headlights, police lights, fires through the dark */
+    if (typeof ATMO !== "undefined") ATMO.drawNight(ctx, G);
     if (typeof ORDERS !== "undefined") ORDERS.draw(ctx, G, typeof UI !== "undefined" ? UI.selected : -1, typeof UI !== "undefined" && UI.screen === "planning");
-    if (Q_GHOSTS) {
+    if (Q_GHOSTS && det !== "far") {
       ctx.globalAlpha = 0.28;
       for (i = 0; i < ghosts.length; i++) drawObj(ctx, ghosts[i], t);
       ctx.globalAlpha = 1;
     }
     drawTags(ctx, G);
     ctx.restore();
-    drawHiddenOutlines(ctx, G);   /* outline units hidden behind buildings */
+    if (det !== "far") drawHiddenOutlines(ctx, G);
   }
   return {
     invalidate: invalidate,
@@ -1943,6 +2113,7 @@ var Art = (function () {
     drawAgents: drawAgents,
     drawPolice: drawPolice,
     draw: draw,
+    detail: detail,
     project: project,
     screenToTile: screenToTile,
     groundBegin: groundBegin,

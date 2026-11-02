@@ -1177,7 +1177,7 @@ function uiDrawScreen(ctx, g) {
   uiGround(ctx, true);
   if (first) {
     var mx = first.homeX * ts, my = first.homeY * ts;
-    var zk = (typeof Art !== "undefined" && Art.camera && Art.camera.S) ? 1 / Art.camera.S : 1;   /* same size on screen at any zoom */
+    var zk = (typeof Art !== "undefined" && Art.camera && Art.camera.S) ? ts / (32 * Art.camera.S) : 1;   /* same size on screen at any zoom */
     ctx.strokeStyle = "#ffc107";
     ctx.lineWidth = 2.5 * zk;
     ctx.beginPath();
