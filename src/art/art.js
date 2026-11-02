@@ -1750,6 +1750,106 @@ var Art = (function () {
 
   /* graphics quality flags, read once per frame */
   var Q_BOB = true, Q_PLACARDS = true, Q_GHOSTS = true;
+  function drawHiddenOutlines(ctx, G) {
+    if (typeof Art !== "undefined" && Art.getView && Art.getView() === "top") return;
+    if (typeof lowMode !== "undefined" && lowMode) return;
+    if (typeof P !== "function" || typeof hAt !== "function") return;
+    var camS = (cam && cam.S) || 1;
+    var RAD = 0.28 * TS * camS;               /* officer marker radius (screen px) */
+    var VW = 0.9 * TS * camS, VH = 0.45 * TS * camS, VR = Math.min(VW, VH) * 0.32;
+    var DIA = 0.25 * TS * camS;               /* revealed-rioter diamond half-size */
+    var MARG = 60, PIE2 = Math.PI * 2;
+    var DARK = "rgba(10,12,16,0.92)", RED = "#e0392b";
+    var i, o, a, px, py, bx, by, y0, y1, h, col, list;
+
+    function hiddenAt(px, py) {                /* 6 tile lookups max */
+      bx = Math.floor(px);
+      y0 = Math.floor(py) + 1;
+      y1 = y0 + 5;
+      for (by = y0; by <= y1; by++) {
+        h = hAt(bx, by);
+        if (h > 0 && h * ZU > (by - py) * TS) return true;
+      }
+      return false;
+    }
+    function rr(x, y, w, hh, r) {              /* rounded rect path, centred */
+      var hw = w / 2, yh = hh / 2;
+      ctx.beginPath();
+      ctx.moveTo(x - hw + r, y - yh);
+      ctx.lineTo(x + hw - r, y - yh);
+      ctx.quadraticCurveTo(x + hw, y - yh, x + hw, y - yh + r);
+      ctx.lineTo(x + hw, y + yh - r);
+      ctx.quadraticCurveTo(x + hw, y + yh, x + hw - r, y + yh);
+      ctx.lineTo(x - hw + r, y + yh);
+      ctx.quadraticCurveTo(x - hw, y + yh, x - hw, y + yh - r);
+      ctx.lineTo(x - hw, y - yh + r);
+      ctx.quadraticCurveTo(x - hw, y - yh, x - hw + r, y - yh);
+      ctx.closePath();
+    }
+
+    setScreen(ctx);
+    ctx.globalAlpha = 0.9;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    /* officers: hollow circle + tiny dot in squad colour */
+    list = G.officers || [];
+    for (i = 0; i < list.length; i++) {
+      o = list[i];
+      if (!o) continue;
+      P(o.x, o.y, 0);
+      px = _px; py = _py;
+      if (px < -MARG || px > LW + MARG || py < -MARG || py > LH + MARG) continue;
+      if (!hiddenAt(o.x, o.y)) continue;
+      col = sqCol(o.squad);
+      ctx.beginPath();
+      ctx.arc(px, py, RAD, 0, PIE2);
+      ctx.lineWidth = 4; ctx.strokeStyle = DARK; ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(px, py, RAD * 0.34, 0, PIE2);
+      ctx.fillStyle = col;
+      ctx.fill();
+    }
+
+    /* vehicles: hollow rounded rectangle in squad colour */
+    list = G.vehicles || [];
+    for (i = 0; i < list.length; i++) {
+      o = list[i];
+      if (!o) continue;
+      P(o.x, o.y, 0);
+      px = _px; py = _py;
+      if (px < -MARG || px > LW + MARG || py < -MARG || py > LH + MARG) continue;
+      if (!hiddenAt(o.x, o.y)) continue;
+      col = sqCol(o.squad);
+      rr(px, py, VW, VH, VR);
+      ctx.lineWidth = 4; ctx.strokeStyle = DARK; ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+    }
+
+    /* revealed rioters: small red diamond */
+    list = G.agents || [];
+    for (i = 0; i < list.length; i++) {
+      a = list[i];
+      if (!a || a.role !== "rioter" || !(a.revealedUntil > G.time)) continue;
+      P(a.x, a.y, 0);
+      px = _px; py = _py;
+      if (px < -MARG || px > LW + MARG || py < -MARG || py > LH + MARG) continue;
+      if (!hiddenAt(a.x, a.y)) continue;
+      ctx.beginPath();
+      ctx.moveTo(px, py - DIA);
+      ctx.lineTo(px + DIA, py);
+      ctx.lineTo(px, py + DIA);
+      ctx.lineTo(px - DIA, py);
+      ctx.closePath();
+      ctx.lineWidth = 4; ctx.strokeStyle = DARK; ctx.stroke();
+      ctx.fillStyle = RED; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = RED; ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
   function draw(ctx, G) {
     var nowT = Date.now() / 1000, fdt = lastDrawT ? Math.min(0.1, nowT - lastDrawT) : 0.016;
     lastDrawT = nowT;
@@ -1834,6 +1934,7 @@ var Art = (function () {
     }
     drawTags(ctx, G);
     ctx.restore();
+    drawHiddenOutlines(ctx, G);   /* outline units hidden behind buildings */
   }
   return {
     invalidate: invalidate,
