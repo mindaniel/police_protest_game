@@ -41,7 +41,7 @@ Avoid long slash-separated word lists in prompts (a/b/c/d/…). They look like c
 ## After a reply
 1. Extract the js block into the file, then run `node -e "require('./X.js')"` for a syntax check.
 2. Wire it in: script tag in index.html, update hook in game.js (after `DISPERSE.update`), init at both init sites (after `DISPERSE.init`), draw in art.js. Guard every call with `typeof X !== "undefined"`.
-3. Tests must stay green: `node test_police.js` (35 PASS, takes about 60 s, so never use a short timeout) and `node test_escort.js` (6 PASS). City features stay gated behind citygen.js CONFIG keys, so the tests aren't affected.
+3. Tests must stay green: `node tests/test_police.js` (35 PASS, takes about 60 s, so never use a short timeout) and `node tests/test_escort.js` (6 PASS). City features stay gated behind citygen.js CONFIG keys, so the tests aren't affected.
 4. Run it in headless Edge or Chrome (`--headless=new --allow-file-access-from-files --screenshot`). Look at the screenshot and catch console errors. Common DeepSeek bugs: shadowed globals, treating `G.blocked` as an object instead of a Set, and replies cut off at the end.
 5. Commit with a clear message, then push to main so the user can use "Update and Play".
 

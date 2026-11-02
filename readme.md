@@ -22,11 +22,11 @@ Real-city maps (in `maps/`) are built from OpenStreetMap data, (c) OpenStreetMap
 Tests run headless with node:
 
 ```
-node test_police.js
-node test_escort.js
+node tests/test_police.js
+node tests/test_escort.js
 ```
 
-`node check_map.js` validates the map grid and that the plaza is reachable from
+`node tests/check_map.js` validates the map grid and that the plaza is reachable from
 the crowd spawn.
 
 ## The goal
@@ -113,3 +113,12 @@ protester it is a wrong arrest and pushes the mood of everyone nearby up.
 - `test_sim.js` - headless crowd-only scenarios.
 - `check_map.js` - map grid and reachability check.
 - `.gitignore` - ignore rules.
+## Folder layout
+- `index.html`, `style.css` - open index.html to play (works from file://, no build step).
+- `src/core/` - game loop, config, map loading, levels, settings, graphics quality.
+- `src/sim/` - simulation: crowd, police, driving, orders, tactics, units, effects.
+- `src/ui/` - screens and panels: HUD, help, force planner, squad orders, minimap, debrief.
+- `src/art/` - drawing: renderer, buildings, streets, people, vehicles, atmosphere.
+- `maps/` - real neighbourhoods baked from OpenStreetMap (one file per map).
+- `tests/` - `node tests/test_police.js`, `tests/test_escort.js`, `tests/test_sim.js`, `tests/check_map.js`.
+- `tools/` - map builders (`osmget.py`, `osm2map.py`) and `tools/dev/` DeepSeek helpers.

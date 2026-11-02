@@ -12,7 +12,7 @@ RULES
 - Plain ES5 classic scripts, no build step; must work by double-clicking index.html.
 - Script order in index.html: map.js, citygen.js, crowd.js, police.js, ui.js, art.js, game.js.
 - CONFIG lives in game.js and does not exist yet when the earlier files load, so read it only inside functions.
-- Tests (node test_police.js, expect 35/35; node test_escort.js, expect 6/6) load map/game/crowd/police through vm. They do NOT load citygen.js, art.js or ui.js, and they use the fixed map in map.js. Every city-mode feature must stay switched off unless citygen.js is loaded (it sets CONFIG.rallyZones, spawnTrickleSeconds, crowdBlocksPolice, lootJoinChance and so on).
+- Tests (node tests/test_police.js, expect 35/35; node tests/test_escort.js, expect 6/6) load map/game/crowd/police through vm. They do NOT load citygen.js, art.js or ui.js, and they use the fixed map in map.js. Every city-mode feature must stay switched off unless citygen.js is loaded (it sets CONFIG.rallyZones, spawnTrickleSeconds, crowdBlocksPolice, lootJoinChance and so on).
 - Never make mood raise suspicion. Fights stay non-graphic (shoving only).
 - Copy changes to the real project only after I approve, and first back up the real project to a dated folder.
 - Edge for headless screenshots: "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless=new --disable-gpu --allow-file-access-from-files --user-data-dir=<new folder> --window-size=1600,1024 --timeout=5000 --screenshot=<png> <file url>. Use a new --user-data-dir for each run and never kill msedge.exe processes. To time drawing, call ctx.getImageData(0,0,1,1) after each frame, otherwise the timing only measures recording.
