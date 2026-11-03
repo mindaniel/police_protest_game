@@ -22,6 +22,9 @@ var Art = (function () {
   var diags = null, shopTiles = null;
   var groundCv = null, _dirty = true, lowMode = false;
   var trees = [], lamps = [], tprops = [];
+  var TREE_CACHE = {};          /* key: variety + "|" + quantised scale -> {c, ax, ay} */
+  var TREE_VARS = null;         /* lazy-built list of variety descriptors */
+  var TREE_VAR_KEYS = ["decid", "conifer", "bush"];
   var buckets = [], ghosts = [];
   var palettes = null;
   var _G = null, _rs = 1, _px = 0, _py = 0;
@@ -254,6 +257,7 @@ var Art = (function () {
       drawBackdrop(g);
       drawGround(g);
       var rr2 = visibleRowRange(), d2;
+      paintFarTrees(g);
       if (diags) for (d2 = rr2.d0; d2 <= rr2.d1; d2++) if (diags[d2]) fillSet(g, d2);
       FC.key = key;
       FAR_DIRTY = false;
@@ -772,9 +776,37 @@ var Art = (function () {
         ch = tile(x, y);
         g.fillStyle = base[ch] || "#e3e8ee";
         g.fillRect(x * t, y * t, t + 1, t + 1);
-        if (ch === "G" && hash2(x, y) % 2 === 0) {
-          g.fillStyle = "rgba(90,140,70,0.18)";
-          g.fillRect(x * t + rnd(hash2(x, y)) * t * 0.6, y * t + rnd(hash2(y, x)) * t * 0.6, t * 0.3, t * 0.25);
+        if (ch === "G") {
+          var hh = hash2(x, y);
+          /* mossy variation patches */
+          if (hh % 2 === 0) {
+            g.fillStyle = "rgba(90,140,70,0.18)";
+            g.fillRect(x * t + rnd(hh) * t * 0.6, y * t + rnd(hash2(y, x)) * t * 0.6, t * 0.3, t * 0.25);
+          }
+          /* grass tufts: small green strokes deterministic on tile */
+          var nTuft = 3 + (hh % 4);
+          for (var ti = 0; ti < nTuft; ti++) {
+            var th = hash2(x * 7 + ti, y * 11 + ti);
+            var tx = x * t + rnd(th) * (t - 3) + 1;
+            var ty = y * t + rnd(hash2(th, 3)) * (t - 3) + 2;
+            g.strokeStyle = "rgba(70,120,50,0.65)";
+            g.lineWidth = 1;
+            g.beginPath();
+            g.moveTo(tx, ty + 2);
+            g.lineTo(tx - 0.8, ty);
+            g.moveTo(tx, ty + 2);
+            g.lineTo(tx + 0.8, ty);
+            g.stroke();
+          }
+          /* flower dots: sparse, 3 palette colours */
+          if (hh % 6 === 0) {
+            var fc = (hh % 3 === 0) ? "#f2f0d8" : (hh % 3 === 1 ? "#e9d36b" : "#e8a1b8");
+            var fx = x * t + (hash2(x + 1, y) % (t - 4)) + 2;
+            var fy = y * t + (hash2(x, y + 1) % (t - 4)) + 2;
+            g.fillStyle = fc;
+            g.beginPath(); g.arc(fx, fy, 1.2, 0, Math.PI * 2); g.fill();
+          }
+          continue;
         }
       }
     }
@@ -848,24 +880,272 @@ var Art = (function () {
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
     if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
     if (typeof STREETS !== "undefined") {
-      /* realistic asphalt, markings, crossings, paving and shadows */
       STREETS.paint(g, W, H, t, tile, paris() ? "paris" : "grid");
       if (paris()) THEME_PARIS.decor(g, t, tile);
     }
-    if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);   /* soft cast shadows */
+    if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);
     if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
+  }
+
+  function treeVariety(seed) {
+    var h = hash2(seed | 0, 977);
+    var r = (h >>> 0) / 4294967295;
+    if (r < 0.58) return "decid";
+    if (r < 0.82) return "conifer";
+    return "bush";
+  }
+
+  function makeTreeSprite(variety, k, seed) {
+    var h = hash2(seed | 0, 3131);
+    var r0 = rnd(h), r1 = rnd(h ^ 0x9e37), r2 = rnd(h ^ 0x51ed), r3 = rnd(h ^ 0x1b56);
+    /* world-unit dimensions (tile = 1.0) */
+    var trunkH, trunkW, canopyR, canopyTop, canopyW;
+    if (variety === "conifer") {
+      trunkH = 0.35 + r0 * 0.20; trunkW = 0.09;
+      canopyR = 0.34 + r1 * 0.08;        /* narrow */
+      canopyTop = 1.55 + r0 * 0.35;       /* taller */
+      canopyW = 0.70 + r1 * 0.10;
+    } else if (variety === "bush") {
+      trunkH = 0.10 + r0 * 0.06; trunkW = 0.07;
+      canopyR = 0.26 + r1 * 0.08;
+      canopyTop = 0.52 + r0 * 0.12;
+      canopyW = 0.58 + r1 * 0.10;
+    } else {
+      trunkH = 0.45 + r0 * 0.22; trunkW = 0.10;
+      canopyR = 0.44 + r1 * 0.10;
+      canopyTop = 1.05 + r0 * 0.25;
+      canopyW = 1.00 + r1 * 0.22;
+    }
+
+    /* colour variation per tree: base hue shift */
+    var gv = (r2 - 0.5) * 0.22;
+    var dark = [Math.round(30 + gv * 30), Math.round(72 + gv * 40), Math.round(34 + gv * 24)];
+    var mid = [Math.round(62 + gv * 40), Math.round(118 + gv * 50), Math.round(54 + gv * 34)];
+    var light = [Math.round(108 + gv * 50), Math.round(168 + gv * 54), Math.round(88 + gv * 36)];
+
+    /* world-space bounding box around the anchor (ground contact) */
+    var padU = 0.12;
+    var wU = canopyW + padU * 2;
+    var hU = canopyTop + padU * 2;
+    var w = Math.max(1, Math.ceil(wU * k));
+    var hh = Math.max(1, Math.ceil(hU * k));
+    var c = makeCanvas(w, hh), g = c.getContext("2d");
+    var cx = Math.floor(w * 0.5);
+    var baseY = hh - Math.floor(padU * k);                /* ground contact */
+    var trunkTop = baseY - trunkH * k;
+    var canopyTopY = baseY - canopyTop * k;
+    var canopyCy = canopyTopY + canopyR * k * 0.9;         /* canopy centre */
+    var canopyCx = cx;
+    var R = canopyR * k;
+
+    g.save();
+
+    /* soft dark oval shadow to the bottom-right */
+    var shX = cx + R * 0.45, shY = baseY + Math.max(1, 1 * k);
+    var shR = R * (variety === "bush" ? 1.0 : 1.25);
+    g.beginPath();
+    g.ellipse(shX, shY, shR, shR * 0.42, 0, 0, Math.PI * 2);
+    g.fillStyle = "rgba(28,44,26,0.28)";
+    g.fill();
+
+    /* trunk */
+    g.fillStyle = "#6b4a2e";
+    g.fillRect(cx - trunkW * k * 0.5, trunkTop, Math.max(1, trunkW * k), trunkH * k + 1);
+    g.fillStyle = "#8a623d";
+    g.fillRect(cx - trunkW * k * 0.5, trunkTop, Math.max(1, trunkW * k * 0.4), trunkH * k + 1);
+
+    /* canopy leaf clusters */
+    var clusters = [], i, ang, rad, dx, dy, col;
+    if (variety === "conifer") {
+      /* stacked cones: three tiers of overlapping circles, narrow at top */
+      var tiers = 4, ti;
+      for (ti = 0; ti < tiers; ti++) {
+        var u = ti / (tiers - 1);
+        var ty = canopyTopY + (baseY - trunkH * k * 0.9 - canopyTopY) * u;
+        var tr = R * (0.45 + u * 0.75);
+        var cc = ti === tiers - 1 ? dark : (ti === 0 ? light : mid);
+        clusters.push({ x: cx, y: ty, r: tr, c: cc });
+        clusters.push({ x: cx - tr * 0.45, y: ty + tr * 0.25, r: tr * 0.68, c: ti >= 2 ? dark : mid });
+        clusters.push({ x: cx + tr * 0.45, y: ty + tr * 0.25, r: tr * 0.68, c: dark });
+      }
+    } else if (variety === "bush") {
+      for (i = 0; i < 5; i++) {
+        ang = (i / 5) * Math.PI * 2 + r0 * Math.PI;
+        rad = R * 0.55;
+        dx = Math.cos(ang) * rad * 0.7;
+        dy = Math.sin(ang) * rad * 0.4;
+        col = (i % 3 === 0) ? dark : mid;
+        clusters.push({ x: canopyCx + dx, y: canopyCy + dy, r: R * 0.6, c: col });
+      }
+      clusters.push({ x: canopyCx - R * 0.25, y: canopyCy - R * 0.25, r: R * 0.62, c: light });
+      clusters.push({ x: canopyCx + R * 0.1, y: canopyCy - R * 0.05, r: R * 0.5, c: mid });
+    } else {
+      var n = 6 + (h % 2);
+      /* under-layer dark clusters spread wide */
+      for (i = 0; i < n; i++) {
+        ang = (i / n) * Math.PI * 2 + rnd(hash2(seed | 0, i * 7 + 3)) * 0.6;
+        rad = R * (0.55 + rnd(hash2(seed | 0, i * 5 + 9)) * 0.25);
+        dx = Math.cos(ang) * R * 0.55;
+        dy = Math.sin(ang) * R * 0.42;
+        col = (i % 3 === 0) ? dark : mid;
+        clusters.push({ x: canopyCx + dx, y: canopyCy + dy, r: rad, c: col });
+      }
+      /* mid layer slightly higher */
+      for (i = 0; i < 4; i++) {
+        ang = (i / 4) * Math.PI * 2 + 0.7;
+        rad = R * 0.5;
+        dx = Math.cos(ang) * R * 0.38;
+        dy = Math.sin(ang) * R * 0.30;
+        clusters.push({ x: canopyCx + dx, y: canopyCy - R * 0.10 + dy, r: rad, c: mid });
+      }
+      /* top-left highlight cluster */
+      clusters.push({ x: canopyCx - R * 0.32, y: canopyCy - R * 0.34, r: R * 0.66, c: light });
+      clusters.push({ x: canopyCx - R * 0.05, y: canopyCy - R * 0.22, r: R * 0.5, c: light });
+    }
+
+    /* draw dark under-layer first, then mid, then light so it reads as lit from top-left */
+    for (i = 0; i < clusters.length; i++) {
+      if (clusters[i].c === dark) drawLeafCluster(g, clusters[i].x, clusters[i].y, clusters[i].r, clusters[i].c, k);
+    }
+    for (i = 0; i < clusters.length; i++) {
+      if (clusters[i].c === mid) drawLeafCluster(g, clusters[i].x, clusters[i].y, clusters[i].r, clusters[i].c, k);
+    }
+    for (i = 0; i < clusters.length; i++) {
+      if (clusters[i].c === light) drawLeafCluster(g, clusters[i].x, clusters[i].y, clusters[i].r, clusters[i].c, k);
+    }
+
+    g.restore();
+    return { c: c, ax: cx, ay: baseY };
+  }
+
+  function drawLeafCluster(g, x, y, r, col, k) {
+    if (r < 0.5) r = 0.5;
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fillStyle = "rgb(" + (col[0] | 0) + "," + (col[1] | 0) + "," + (col[2] | 0) + ")";
+    g.fill();
+    /* subtle inner shading: a smaller darker circle offset down-right */
+    g.beginPath();
+    g.arc(x + r * 0.18, y + r * 0.18, r * 0.72, 0, Math.PI * 2);
+    g.fillStyle = "rgba(0,0,0,0.10)";
+    g.fill();
+  }
+
+  function treeSprite(variety, k, seed) {
+    /* few cached sizes: quantise by variety + seed bucket so the cache stays small */
+    var q = k > 40 ? Math.round(k / 8) * 8 : (k > 16 ? Math.round(k / 4) * 4 : Math.max(4, Math.round(k)));
+    var bucket = hash2(seed | 0, 17) % 4;   /* 4 distinct trees per size/variety */
+    var key = variety + "|" + q + "|" + bucket;
+    var e = TREE_CACHE[key];
+    if (e) return e;
+    var vseed = hash2(seed | 0, 17);
+    e = makeTreeSprite(variety, q, vseed);
+    TREE_CACHE[key] = e;
+    return e;
+  }
+
+  function paintFarTrees(g) {
+    var i, tr, s = cam.S, r, col, v;
+    for (i = 0; i < trees.length; i++) {
+      tr = trees[i];
+      if (!visibleWorld(tr.x, tr.y, 0, cullMargin())) continue;
+      v = tr.v || treeVariety(tr.sd || 1);
+      col = v === "conifer" ? "#3f7a48" : (v === "bush" ? "#4f8f5a" : "#5c9a52");
+      if (hash2(tr.sd || 1, 9) % 5 === 0) col = v === "conifer" ? "#356b3d" : "#4c8a46";
+      P(tr.x, tr.y, 0);
+      var baseR = (v === "bush" ? 0.30 : 0.48) * TS * s * tr.s;
+      r = Math.max(2, baseR);
+      /* soft shadow */
+      g.fillStyle = "rgba(0,0,0,0.16)";
+      g.beginPath();
+      g.ellipse(_px + r * 0.35, _py + r * 0.08, r * 0.85, r * 0.28, 0, 0, Math.PI * 2);
+      g.fill();
+      /* canopy blob (raised above ground) */
+      g.fillStyle = col;
+      g.beginPath();
+      g.arc(_px, _py - r * 0.9, r, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "rgba(255,255,255,0.14)";
+      g.beginPath();
+      g.arc(_px - r * 0.3, _py - r * 1.15, r * 0.55, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   function buildProps() {
     trees = []; lamps = [];
     tprops = paris() ? THEME_PARIS.props() : [];
-    var x, y;
+    var x, y, ch, i, runW, n;
+
+    /* park tile density hash so trees cluster with gaps */
+    function parkDensity(x, y) {
+      return (hash2(x * 3 + 1, y * 5 + 7) >>> 0) / 4294967295;
+    }
+
     for (y = 0; y < H; y++) {
       for (x = 0; x < W; x++) {
-        var ch = tile(x, y);
-        if (ch === "G" && hash2(x, y) % 3 === 0) {
-          trees.push({ x: x + 0.3 + rnd(hash2(x, y)) * 0.4, y: y + 0.3 + rnd(hash2(y, x)) * 0.4, s: 0.8 + rnd(hash2(x + 9, y)) * 0.5 });
+        ch = tile(x, y);
+
+        /* --- park 'G' tiles: most get a tree, clustered, with gaps --- */
+        if (ch === "G") {
+          var d = parkDensity(x, y);
+          var cluster = (hash2(x >> 1, y >> 1) % 5) * 0.15;
+          var p = 0.78 - cluster + (d - 0.5) * 0.35;
+          if (d < 0.72 && p > 0.42) {
+            var vx = x + 0.28 + rnd(hash2(x, y)) * 0.44;
+            var vy = y + 0.28 + rnd(hash2(y, x)) * 0.44;
+            var s = 0.80 + rnd(hash2(x + 9, y)) * 0.5;
+            var isBush = (d > 0.6) && (hash2(x + 3, y + 11) % 4 === 0);
+            var variety = isBush ? "bush" : ((hash2(x, y) % 100) < 26 ? "conifer" : "decid");
+            trees.push({ x: vx, y: vy, s: s, v: variety, sd: hash2(x, y) });
+          }
+          continue;
         }
+
+        /* --- street trees along wide boulevards (run width >= 4) --- */
+        if (ch === ".") {
+          /* vertical street width: count consecutive '.' in this column band */
+          runW = 1;
+          for (i = 1; i < 6 && tile(x + i, y) === "."; i++) runW++;
+          for (i = 1; i < 6 && tile(x - i, y) === "."; i++) runW++;
+          /* horizontal street width */
+          var runH = 1;
+          for (i = 1; i < 6 && tile(x, y + i) === "."; i++) runH++;
+          for (i = 1; i < 6 && tile(x, y - i) === "."; i++) runH++;
+
+          var isWideV = runW >= 4, isWideH = runH >= 4;
+          var place = false, sx = x + 0.5, sy = y + 0.5;
+          if (isWideV && !isWideH && (y % 3 === 1 || y % 4 === 2)) {
+            /* tree next to building edge on the left or right side, ON the pavement */
+            if (solidCh(tile(x - 1, y))) { sx = x + 0.22; sy = y + 0.5; place = true; }
+            else if (solidCh(tile(x + 1, y))) { sx = x + 0.78; sy = y + 0.5; place = true; }
+          }
+          if (isWideH && !isWideV && (x % 3 === 1 || x % 4 === 2)) {
+            if (solidCh(tile(x, y - 1))) { sx = x + 0.5; sy = y + 0.22; place = true; }
+            else if (solidCh(tile(x, y + 1))) { sx = x + 0.5; sy = y + 0.78; place = true; }
+          }
+          /* intersection of both wide streets: skip */
+          if (isWideV && isWideH) place = false;
+          if (place && hash2(x + 5, y + 3) % 5 !== 0) {
+            trees.push({ x: sx, y: sy, s: 0.85 + rnd(hash2(x, y + 1)) * 0.25, v: "decid", sd: hash2(x, y + 1) });
+          }
+        }
+
+        /* --- plaza 'P': trees around the edges, not the middle --- */
+        if (ch === "P") {
+          var edge = solidCh(tile(x - 1, y)) || solidCh(tile(x + 1, y)) ||
+                     solidCh(tile(x, y - 1)) || solidCh(tile(x, y + 1));
+          if (edge && hash2(x + 7, y + 1) % 3 !== 0) {
+            var px = x + 0.5, py = y + 0.5;
+            if (solidCh(tile(x - 1, y))) px = x + 0.22;
+            else if (solidCh(tile(x + 1, y))) px = x + 0.78;
+            else if (solidCh(tile(x, y - 1))) py = y + 0.22;
+            else if (solidCh(tile(x, y + 1))) py = y + 0.78;
+            trees.push({ x: px, y: py, s: 0.85 + rnd(hash2(x + 1, y)) * 0.3, v: hash2(x, y) % 100 < 20 ? "conifer" : "decid", sd: hash2(x + 1, y) });
+          }
+        }
+
+        /* --- street lamps (unchanged placement rules) --- */
         if (ch === "." && x % 7 === 3) {
           if (solidCh(tile(x, y - 1)) && tile(x, y + 1) === "." && tile(x, y + 2) === ".") lamps.push({ x: x + 0.5, y: y + 0.22 });
           if (solidCh(tile(x, y + 1)) && tile(x, y - 1) === "." && tile(x, y - 2) === ".") lamps.push({ x: x + 0.5, y: y + 0.78 });
@@ -1379,17 +1659,12 @@ var Art = (function () {
   }
 
   function drawTree(ctx, tr) {
-    var s = cam.S * tr.s;
+    var k = _rs * cam.S * TS * tr.s;   /* device px per tile */
+    var sp = treeSprite(tr.v || treeVariety(tr.sd || 1), k, tr.sd || 1);
     P(tr.x, tr.y, 0);
-    var bx = _px, by = _py;
-    P(tr.x, tr.y, 0.38 * tr.s);
-    var ty = _py;
-    ctx.fillStyle = "#7a5a3a";
-    ctx.fillRect(bx - 0.8 * s, ty, 1.6 * s, by - ty);
-    P(tr.x, tr.y, 0.60 * tr.s);
-    disc(ctx, _px, _py, 6 * s, "#5f9a52");
-    P(tr.x, tr.y, 0.69 * tr.s);
-    disc(ctx, _px - 1.6 * s, _py, 4 * s, "#79b467");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(sp.c, _rs * _px - sp.ax, _rs * _py - sp.ay);
+    setScreen(ctx);
   }
   function drawLamp(ctx, l) {
     var s = cam.S;
@@ -1513,10 +1788,7 @@ var Art = (function () {
       o = G.officers[i];
       ctx.moveTo(o.x + 0.36, o.y + 0.08); ctx.arc(o.x + 0.08, o.y + 0.08, 0.28, 0, Math.PI * 2);
     }
-    for (i = 0; i < trees.length; i++) {
-      ctx.moveTo(trees[i].x + 0.65 * trees[i].s, trees[i].y + 0.25);
-      ctx.arc(trees[i].x + 0.25, trees[i].y + 0.25, 0.4 * trees[i].s, 0, Math.PI * 2);
-    }
+    /* trees: no extra blob — the sprite has its own soft shadow */
     ctx.fillStyle = "rgba(50,62,85,0.2)";
     ctx.fill();
     if (G.vehicles) {

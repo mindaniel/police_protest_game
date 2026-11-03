@@ -806,9 +806,18 @@ var ORDERS = (function () {
     r.areaTargetX = null;
     r.areaTargetY = null;
     r.roamPauseUntil = 0;
+    r.roamBestDist = 1e9;
+    r.roamProgressT = G.time;
+    r.waypoints = [];
+    r.wpIndex = 0;
+    r.pauseUntil = 0;
+    r.autoRoute = false;
     r.order = "patrol";
     r.responding = false;
     r.savedOrder = null;
+    r.targetShop = null;
+    r.lastMoveX = null; r.lastMoveY = null;
+    Police.setStance(G, s, "calm");
   }
 
   function clearArea(G, s) {
@@ -926,6 +935,13 @@ var ORDERS = (function () {
       if (!a.active || !visibleViolent(G, a)) continue;
       if (inArea(area, a.x, a.y, 4)) return { x: a.x, y: a.y };
     }
+    if (typeof BAR !== "undefined" && BAR && BAR.list) {
+      var bl = BAR.list();
+      for (i = 0; i < bl.length; i++) {
+        if (bl[i].done) continue;
+        if (inArea(area, bl[i].x + 0.5, bl[i].y + 0.5, 4)) return { x: bl[i].x + 0.5, y: bl[i].y + 0.5 };
+      }
+    }
     return null;
   }
 
@@ -994,7 +1010,6 @@ var ORDERS = (function () {
     for (i = 0; i < G.orders.length; i++) {
       r = G.orders[i];
       if (r.order !== "patrol" || !r.area) continue;
-      if (!planning && i !== selected) continue;
       var a = r.area;
       var p0 = Art.project(a.x0, a.y0, 0);
       var p1 = Art.project(a.x1 + 1, a.y1 + 1, 0);
@@ -1014,9 +1029,27 @@ var ORDERS = (function () {
         ctx.font = "bold " + Math.max(10, Math.round(10 * Art.camera.S)) + "px sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText("S" + (i + 1) + " patrol", x + 4, y + 4);
+        ctx.fillText("S" + (i + 1) + " patrol area", x + 4, y + 4);
+      } else if (i === selected) {
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = RING.patrol;
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = RING.patrol;
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = RING.patrol;
+        ctx.font = "bold " + Math.max(10, Math.round(10 * Art.camera.S)) + "px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText("S" + (i + 1) + " patrol area", x + 4, y + 4);
       } else {
-        ctx.globalAlpha = 0.25;
+        ctx.globalAlpha = 0.04;
+        ctx.fillStyle = RING.patrol;
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 0.10;
         ctx.strokeStyle = RING.patrol;
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 6]);

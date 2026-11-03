@@ -157,21 +157,7 @@ function uiSelectType(g, k) {
   var busyTxt = uiSquadBusy(g, target) ? "busy" : "free";
   UI.say("Squad " + (target + 1) + " (" + names[idx] + ", " + busyTxt + ")");
 
-  /* centre camera if off-screen */
-  var cx = 0, cy = 0, c = 0, ii;
-  for (ii = 0; ii < g.officers.length; ii++) {
-    if (g.officers[ii].squad === target) { cx += g.officers[ii].x; cy += g.officers[ii].y; c++; }
-  }
-  for (ii = 0; ii < g.vehicles.length; ii++) {
-    if (g.vehicles[ii].squad === target) { cx += g.vehicles[ii].x; cy += g.vehicles[ii].y; c++; }
-  }
-  if (c) { cx /= c; cy /= c; }
-  if (typeof Art !== "undefined" && Art.camera) {
-    var cam = Art.camera;
-    var onScreen = (cx >= cam.cx - cam.w / 2 && cx <= cam.cx + cam.w / 2 &&
-                    cy >= cam.cy - cam.h / 2 && cy <= cam.cy + cam.h / 2);
-    if (!onScreen && Art.centerOn) Art.centerOn(cx, cy);
-  }
+  /* the camera stays put: the squad cam inset (squadcam.js) shows the squad */
   return true;
 }
 
@@ -184,6 +170,13 @@ function uiSelectKey(k) {
 
 UI.init = function (g, game) {
   UI.Game = game;
+  UI.titleMapIdx = 0;
+  if (typeof CityGen !== "undefined" && CityGen.maps && CityGen.currentMap) {
+    var ml = CityGen.maps(), cm = CityGen.currentMap(), mi;
+    for (mi = 0; mi < ml.length; mi++) {
+      if (ml[mi] === cm || (ml[mi] && cm && ml[mi].id === cm.id)) { UI.titleMapIdx = mi; break; }
+    }
+  }
 
   window.addEventListener("keydown", function (e) {
     var k = e.key;
@@ -224,16 +217,12 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       e.preventDefault(); return;
     }
     if (UI.screen === "title") {
-      if (typeof LEVELS !== "undefined") {
-        if (k === "ArrowRight") LEVELS.next();
-        else if (k === "ArrowLeft") LEVELS.prev();
-        else if (k >= "1" && k <= "4" && k.length === 1) LEVELS.set(LEVELS.list()[+k - 1].id);
+      if ((k === "m" || k === "M") && typeof CityGen !== "undefined") uiTitleMove(e.shiftKey ? -1 : 1);
+      if ((k === "ArrowRight" || k === "ArrowLeft") && typeof CityGen !== "undefined") {
+        uiTitleMove(k === "ArrowRight" ? 1 : -1);
+        e.preventDefault();
       }
-      if ((k === "m" || k === "M") && typeof CityGen !== "undefined") {
-        UI.say("Map: " + CityGen.nextMap(e.shiftKey ? -1 : 1).name);
-        restartGame(false);
-        UI.screen = "title";
-      }
+      if (k >= "1" && k <= "4" && k.length === 1) uiTitleSetLevel(+k);
       if ((k === "s" || k === "S") && typeof SETTINGS !== "undefined") SETTINGS.open("settings");
       if (e.code === "Enter") { uiStartLevel(); e.preventDefault(); }
       return;
@@ -331,6 +320,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
   cv.addEventListener("mousemove", function (e) {
     UI.lastTile = UI.toTile(e);
     UI.hover = UI.toTile(e);
+    if (UI.screen === "title" && typeof uiTitleHover === "function") { var th = UI.toLogical(e); uiTitleHover(th.x, th.y); }
     if (!UI._press) cv.style.cursor = (UI.screen !== "title" && UI.pickSquad(e) >= 0) ? "pointer" : (UI.mode ? "crosshair" : "default");
   });
   cv.addEventListener("mouseleave", function () {
@@ -345,7 +335,12 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
         var mml = UI.toLogical(e);
         if (MINIMAP.mouseDown(mml.x, mml.y)) { UI._mini = true; return; }   /* minimap: jump / drag the view */
       }
+      if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
+        var scl = UI.toLogical(e);
+        if (SQUADCAM.click(scl.x, scl.y)) { UI._press = null; return; }   /* squad cam: recentre / hide */
+      }
       UI._press = { x: e.clientX, y: e.clientY, drag: false };
+      if (UI.mode === "patrolArea" && !UI._areaA && (UI.screen === "planning" || UI.screen === "playing")) { UI._areaA = UI.toTile(e); UI._areaFresh = true; UI._areaDrag = false; }   /* patrol area: first corner on press */
     } else if (e.button === 2) {
       e.preventDefault();
       uiRightClick(e);
@@ -369,6 +364,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     if (!p) return;
     var dx = e.clientX - p.x, dy = e.clientY - p.y;
     if (!p.drag && dx * dx + dy * dy > 36) p.drag = true;
+    if (UI.mode === "patrolArea" && UI._areaA) { if (p.drag) UI._areaDrag = true; return; }   /* drawing the patrol rectangle, no pan */
     if (p.drag && typeof Art !== "undefined" && Art.panBy) {
       var r = cv.getBoundingClientRect(), ts = CONFIG.tileSize;
       Art.panBy(-dx / r.width * MAP.width * ts, -dy / r.height * MAP.height * ts);
@@ -383,6 +379,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       if (e.button === 0 && e.target === cv) { var sp = UI.toLogical(e); SETTINGS.click(sp.x, sp.y); if (!SETTINGS.isOpen()) uiSettingsClosed(); }
       UI._press = null; return;
     }
+    if (e.button === 0 && UI._press && UI.mode === "patrolArea" && UI._areaDrag && UI._areaA && uiPatrolAreaRelease(e)) { UI._press = null; cv.style.cursor = "default"; return; }
     if (e.button !== 0 || !UI._press) return;
     var wasDrag = UI._press.drag;
     UI._press = null;
@@ -551,6 +548,43 @@ function uiDrawMenu(ctx, w, h) {
 }
 
 /* Planning -> live play. */
+function uiLoadedMapIdx() {
+  if (typeof CityGen === "undefined" || !CityGen.maps || !CityGen.currentMap) return 0;
+  var list = CityGen.maps(), cur = CityGen.currentMap(), i;
+  for (i = 0; i < list.length; i++) {
+    if (list[i] === cur || (list[i] && cur && list[i].id === cur.id)) return i;
+  }
+  return 0;
+}
+
+function uiTitleMove(d) {
+  if (typeof CityGen === "undefined" || !CityGen.maps) return;
+  var list = CityGen.maps(), n = list.length;
+  if (!n) return;
+  var idx = (typeof UI.titleMapIdx === "number") ? UI.titleMapIdx : uiLoadedMapIdx();
+  UI.titleMapIdx = ((idx + (d || 0)) % n + n) % n;
+  return list[UI.titleMapIdx];
+}
+
+function uiTitleSetLevel(n) {
+  if (typeof LEVELS === "undefined" || !LEVELS.list || !LEVELS.set) return false;
+  var list = LEVELS.list();
+  n = parseInt(n, 10);
+  if (!(n >= 1 && n <= 4) || !list[n - 1]) return false;
+  LEVELS.set(list[n - 1].id);
+  return true;
+}
+
+function uiCommitChosenMap() {
+  if (typeof CityGen === "undefined" || !CityGen.setMap) return false;
+  if (typeof UI.titleMapIdx !== "number") UI.titleMapIdx = uiLoadedMapIdx();
+  if (UI.titleMapIdx === uiLoadedMapIdx()) return false;
+  CityGen.setMap(UI.titleMapIdx);
+  restartGame(false);
+  if (UI.screen === "title") UI.screen = "title";
+  return true;
+}
+
 function uiStartPlay() {
   UI.screen = "playing"; UI.mode = null;
   if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
@@ -558,17 +592,22 @@ function uiStartPlay() {
 
 /* Leave the title screen; rebuild the crowd when the difficulty changed. */
 function uiStartLevel() {
+  if (UI.screen === "title") uiCommitChosenMap();
   if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
   UI.screen = "planning";
 }
 
 function uiLeftClick(e) {
-  if (UI.screen === "title" && typeof LEVELS !== "undefined") {
-    var lp = UI.toLogical(e), id = LEVELS.hit(lp.x, lp.y);
-    if (id) { if (id === LEVELS.current().id) uiStartLevel(); else LEVELS.set(id); }
+  if (UI.screen === "title") {
+    var lp = UI.toLogical(e);
+    if (typeof uiTitleClick === "function" && uiTitleClick(lp.x, lp.y)) return;
+    if (typeof LEVELS !== "undefined") {
+      var id = LEVELS.hit(lp.x, lp.y);
+      if (id) { if (id === LEVELS.current().id) uiStartLevel(); else LEVELS.set(id); }
+    }
     return;
   }
-  if (UI.screen === "title" || UI.screen === "over") return;
+  if (UI.screen === "over") return;
   var t = UI.toTile(e);
   if (UI.screen === "playing" && typeof REINFORCE !== "undefined" && REINFORCE.pending()) {
     var ro = REINFORCE.order(G, t.x, t.y);
@@ -655,18 +694,28 @@ function uiOrderKey(e, k) {
   if (e.shiftKey) {
     var all = { H: "hold", G: "guard", R: "retreat", A: "auto" }[k.toUpperCase()];
     if (all) { ORDERS.setAll(G, all); UI.say("All squads: " + all.toUpperCase()); return true; }
-    if (k === "Y" || k === "y") { ORDERS.clearWaypoints(G, s); UI.say("Squad " + (s + 1) + " patrol route cleared"); return true; }
+    if (k === "Y" || k === "y") {
+      if (UI.mode === "patrolArea") { UI.mode = "waypoint"; UI._areaA = null; UI._areaDrag = false; UI.say("Patrol route mode: click 2-6 route points for squad " + (s + 1) + " (Esc when done)"); }
+      else { UI.mode = "waypoint"; UI._areaA = null; UI._areaDrag = false; UI.say("Click patrol route points for squad " + (s + 1) + " (Esc when done, Shift+Y clears)"); }
+      return true;
+    }
     if (k === "Z" || k === "z") { ORDERS.clearTrigger(G, s); UI.say("Squad " + (s + 1) + " trigger zone removed"); return true; }
     return false;
   }
   if (k === "o" || k === "O") {
     var name = ORDERS.cycle(G, s);
     if (name === "push") { UI.mode = "pushTarget"; UI.say("Squad " + (s + 1) + " PUSH: click the line to push to"); }
-    else if (name === "patrol" && ORDERS.get(G, s).waypoints.length < 2) { UI.mode = "waypoint"; UI.say("Squad " + (s + 1) + " PATROL: click 2-6 route points, Esc when done"); }
+    else if (name === "patrol") { UI.mode = "patrolArea"; UI._areaA = null; UI._areaDrag = false; UI.say("Squad " + (s + 1) + " PATROL: press Y and drag a rectangle, or click two opposite corners (Shift+Y for route points)"); }
     else UI.say("Squad " + (s + 1) + " order: " + name.toUpperCase());
     return true;
   }
-  if (k === "y" || k === "Y") { UI.mode = "waypoint"; UI.say("Click patrol points for squad " + (s + 1) + " (Esc when done, Shift+Y clears)"); return true; }
+  if (k === "y" || k === "Y") {
+    UI.mode = "patrolArea";
+    UI._areaA = null;
+    UI._areaDrag = false;
+    UI.say("Drag a rectangle for squad " + (s + 1) + "'s patrol area (or click two opposite corners; Esc cancels, Shift+Y = route points)");
+    return true;
+  }
   if (k === "z" || k === "Z") { UI.mode = "trigger"; UI.say("Click the centre of squad " + (s + 1) + "'s trigger zone: it responds to trouble there"); return true; }
   return false;
 }
@@ -679,14 +728,16 @@ function uiOrderClick(t) {
     ORDERS.setTarget(G, s, x, y); UI.mode = null; UI.say("Squad " + (s + 1) + " pushing forward (firm, shoves when packed)");
     return true;
   }
-if (UI.mode === "patrolArea") {
-    if (!UI._areaA) {
-      UI._areaA = { x: t.x, y: t.y };
-      UI.say("Now click the opposite corner");
+  if (UI.mode === "patrolArea") {
+    if (!UI._areaA || UI._areaFresh) {
+      if (!UI._areaA) UI._areaA = { x: t.x, y: t.y };
+      UI._areaFresh = false;
+      UI.say("Now click the opposite corner (or drag)");
     } else {
       ORDERS.setArea(G, UI.selected, UI._areaA.x, UI._areaA.y, t.x, t.y);
       UI.mode = null;
       UI._areaA = null;
+      UI._areaDrag = false;
       UI.say("Squad " + (UI.selected + 1) + " patrols this area");
     }
     return true;
@@ -705,6 +756,39 @@ if (UI.mode === "patrolArea") {
     return true;
   }
   return false;
+}
+function uiPatrolAreaOverlay(ctx, g) {
+  if (UI.mode !== "patrolArea" || !UI._areaA || !UI.hoverTile) return;
+  var ts = CONFIG.tileSize;
+  var ax = UI._areaA.x * ts, ay = UI._areaA.y * ts;
+  var bx = UI.hoverTile.x * ts, by = UI.hoverTile.y * ts;
+  var rx = Math.min(ax, bx), ry = Math.min(ay, by);
+  var rw = Math.abs(bx - ax) + ts, rh = Math.abs(by - ay) + ts;
+  ctx.save();
+  ctx.fillStyle = "rgba(42,157,143,0.12)";
+  ctx.fillRect(rx, ry, rw, rh);
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = "#2a9d8f";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
+  ctx.setLineDash([]);
+  ctx.font = "bold 11px Consolas, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "#2a9d8f";
+  ctx.fillText("S" + (UI.selected + 1) + " patrol area", rx + 4, ry + 4);
+  ctx.restore();
+}
+function uiPatrolAreaRelease(e) {
+  if (UI.mode !== "patrolArea" || !UI._areaDrag || !UI._areaA) return false;
+  var t = UI.toTile(e);
+  UI._areaDrag = false;
+  ORDERS.setArea(G, UI.selected, UI._areaA.x, UI._areaA.y, t.x, t.y);
+  UI.mode = null;
+  UI._areaA = null;
+  UI.hoverTile = null;
+  UI.say("Squad " + (UI.selected + 1) + " patrols this area");
+  return true;
 }
 function uiOrderHud(g) {
   if (typeof ORDERS === "undefined") return "";
@@ -840,7 +924,8 @@ var UI_CONTROLS = [
   "W then click : water cannon (needs the water truck)",
   "Esc : cancel B / L / W / A",
   "O : cycle the squad's standing order (hold, guard, patrol, push, retreat, auto)",
-  "Y then clicks : patrol route   Z then click : trigger zone (Shift+Y / Shift+Z clear)",
+  "Y then drag a rectangle : patrol area   Shift+Y then clicks : patrol route",
+  "Z then click : trigger zone (Shift+Z clears)",
   "Shift+H / G / R / A : every squad holds / guards / retreats / goes auto",
   "Space : pause     T : speed 1x / 2x     N (planning) : next map",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
@@ -1084,10 +1169,315 @@ UI.draw = function (ctx, g) {
   if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) SETTINGS.draw(ctx, MAP.width * CONFIG.tileSize, MAP.height * CONFIG.tileSize);
 };
 
+/* ---------- New title screen ---------- */
+var UI_TITLE = { bg: null, bw: 0, bh: 0, hover: -1, imgs: {}, ready: {} };
+
+function uiTitleRound(ctx, x, y, w, h, r) {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function uiTitleShadow(ctx, x, y, w, h, r, blur) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.65)";
+  ctx.shadowBlur = blur;
+  ctx.shadowOffsetY = Math.round(blur * 0.45);
+  uiTitleRound(ctx, x, y, w, h, r);
+  ctx.fillStyle = "rgba(0,0,0,0.001)";
+  ctx.fill();
+  ctx.restore();
+}
+
+function uiTitleBg(w, h) {
+  var t = UI_TITLE;
+  if (t.bg && t.bw === w && t.bh === h) return t.bg;
+  var cv = (typeof document !== "undefined") ? document.createElement("canvas") : null;
+  if (!cv) return null;
+  cv.width = w; cv.height = h;
+  var c = cv.getContext("2d");
+  var g = c.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#060a14"); g.addColorStop(0.45, "#0a1222");
+  g.addColorStop(0.8, "#101a2c"); g.addColorStop(1, "#16202f");
+  c.fillStyle = g; c.fillRect(0, 0, w, h);
+  var seed = 20240517;
+  function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  var i, n = 26;
+  c.save();
+  for (i = 0; i < n; i++) {
+    var lx = rnd() * w, ly = h * (0.42 + rnd() * 0.5), lr = (18 + rnd() * 70) * (h / 768);
+    var warm = rnd() > 0.55;
+    var rg = c.createRadialGradient(lx, ly, 0, lx, ly, lr);
+    var col = warm ? "255,190,110" : "120,170,255";
+    rg.addColorStop(0, "rgba(" + col + ",0.16)");
+    rg.addColorStop(1, "rgba(" + col + ",0)");
+    c.fillStyle = rg;
+    c.beginPath(); c.arc(lx, ly, lr, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+  /* skyline: two depth layers */
+  var layers = [{ col: "#0e1626", base: 0.72, step: 26 * (h / 768), maxH: 130 * (h / 768) },
+                { col: "#141d2d", base: 0.82, step: 34 * (h / 768), maxH: 90 * (h / 768) }];
+  for (var L = 0; L < layers.length; L++) {
+    var lyr = layers[L], x = -20;
+    c.fillStyle = lyr.col;
+    while (x < w + 20) {
+      var bw = lyr.step * (0.7 + rnd() * 1.6), bh = lyr.maxH * (0.25 + rnd() * 0.75);
+      var top = h * lyr.base - bh;
+      c.fillRect(x, top, bw, h - top);
+      if (rnd() > 0.55) c.fillRect(x + bw * 0.3, top - bh * 0.18, bw * 0.35, bh * 0.18);
+      /* window dots */
+      c.fillStyle = "rgba(255,206,140,0.55)";
+      var wx, wy;
+      for (wx = x + 4; wx < x + bw - 4; wx += 7 * (h / 768)) {
+        for (wy = top + 6; wy < h - 8; wy += 9 * (h / 768)) {
+          if (rnd() > 0.82) c.fillRect(wx, wy, 2 * (h / 768), 2.4 * (h / 768));
+        }
+      }
+      c.fillStyle = lyr.col;
+      x += bw + 2;
+    }
+  }
+  /* soft vignette */
+  var vg = c.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.5)");
+  c.fillStyle = vg; c.fillRect(0, 0, w, h);
+  t.bg = cv; t.bw = w; t.bh = h;
+  return cv;
+}
+
+function uiTitleThumb(id) {
+  var t = UI_TITLE;
+  if (!t.imgs[id]) {
+    if (typeof Image === "undefined") return null;
+    var im = new Image();
+    im.onload = function () { t.ready[id] = true; };
+    im.onerror = function () { t.imgs[id] = null; };
+    im.src = "maps/thumbs/" + id + ".png";
+    t.imgs[id] = im;
+  }
+  var img = t.imgs[id];
+  return (img && t.ready[id] && img.naturalWidth > 0) ? img : null;
+}
+
+var uiTitleScreen = function (ctx, g) {
+  var ts = CONFIG.tileSize, w = MAP.width * ts, h = MAP.height * ts;
+  var k = (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() : 1;
+  if (!(k > 0)) k = 1;
+  var small = Math.min(k, 1.6);
+  var accent = "#3d7dff", warm = "#ffc857";
+
+  var bg = uiTitleBg(w, h);
+  if (bg) ctx.drawImage(bg, 0, 0); else { ctx.fillStyle = "#0a1222"; ctx.fillRect(0, 0, w, h); }
+
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+
+  /* Title with subtle glow */
+  var titlePx = Math.round(Math.min(w * 0.062, 66 * small));
+  ctx.save();
+  ctx.font = "bold " + titlePx + "px Consolas, monospace";
+  ctx.shadowColor = "rgba(61,125,255,0.85)"; ctx.shadowBlur = titlePx * 0.55;
+  ctx.fillStyle = "#eaf1ff";
+  ctx.fillText("POLICE vs PROTESTORS", w / 2, h * 0.13);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#eaf1ff";
+  ctx.fillText("POLICE vs PROTESTORS", w / 2, h * 0.13);
+  ctx.restore();
+
+  var subPx = Math.round(15 * small);
+  ctx.font = subPx + "px Consolas, monospace";
+  ctx.fillStyle = "#93a7c4";
+  ctx.fillText("Hold the streets. Keep the peace. Watch the mood.", w / 2, h * 0.13 + titlePx * 0.78);
+
+  /* Carousel layout */
+  var maps = (typeof CityGen !== "undefined") ? CityGen.maps() : [];
+  if (!maps.length) maps = [{ id: "city", name: (typeof MAP !== "undefined" ? (MAP.realName || "City") : "City") }];
+  var idx = (typeof UI.titleMapIdx === "number") ? UI.titleMapIdx : 0;
+  if (idx < 0 || idx >= maps.length) idx = 0;
+  var cur = maps[idx], prev = maps[(idx - 1 + maps.length) % maps.length], next = maps[(idx + 1) % maps.length];
+
+  var cardW = Math.min(w * 0.34, 480 * small), cardH = cardW * 300 / 480;
+  var cardY = h * 0.26;
+  var sideW = cardW * 0.62, sideH = cardH * 0.62;
+  var sideY = cardY + (cardH - sideH) / 2;
+  var sideOff = cardW * 0.72;
+  var cx = w / 2;
+
+  function drawCard(map, x, y, cw, ch, alpha, sel) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    var rr = Math.round(12 * small);
+    uiTitleShadow(ctx, x, y, cw, ch, rr, sel ? 24 : 14);
+    uiTitleRound(ctx, x, y, cw, ch, rr);
+    ctx.fillStyle = "#0d1626"; ctx.fill();
+    ctx.strokeStyle = sel ? accent : "#26364e";
+    ctx.lineWidth = sel ? 3 : 1.5;
+    ctx.stroke();
+    uiTitleRound(ctx, x + 3, y + 3, cw - 6, ch - 6, rr - 2);
+    ctx.clip();
+    var img = uiTitleThumb(map.id);
+    var ix = x + 3, iy = y + 3, iw = cw - 6, ih = ch - 6;
+    if (img) {
+      var s = Math.max(iw / img.naturalWidth, ih / img.naturalHeight);
+      var dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+      ctx.drawImage(img, ix + (iw - dw) / 2, iy + (ih - dh) / 2, dw, dh);
+    } else {
+      var gr = ctx.createLinearGradient(ix, iy, ix, iy + ih);
+      gr.addColorStop(0, "#17243a"); gr.addColorStop(1, "#0b1322");
+      ctx.fillStyle = gr; ctx.fillRect(ix, iy, iw, ih);
+      ctx.font = "bold " + Math.round(18 * small) + "px Consolas, monospace";
+      ctx.fillStyle = "#cfe0f5"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      uiFitText(ctx, map.name || map.id, x + cw / 2, y + ch * 0.44, cw - 14);
+      ctx.font = Math.round(11 * small) + "px Consolas, monospace";
+      ctx.fillStyle = "#5d7597";
+      ctx.fillText("no preview", x + cw / 2, y + ch * 0.44 + 24 * small);
+    }
+    /* name strip */
+    ctx.fillStyle = "rgba(6,10,18,0.72)";
+    ctx.fillRect(ix, y + ch - 3 - Math.round(30 * small), iw, Math.round(30 * small));
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "bold " + Math.round(15 * small) + "px Consolas, monospace";
+    ctx.fillStyle = sel ? "#ffffff" : "#c8d6ea";
+    uiFitText(ctx, map.name || map.id, x + cw / 2, y + ch - 3 - Math.round(15 * small), cw - 14);
+    ctx.restore();
+  }
+
+  drawCard(prev, cx - cardW / 2 - sideOff - sideW, sideY, sideW, sideH, 0.4, false);
+  drawCard(next, cx + cardW / 2 + sideOff, sideY, sideW, sideH, 0.4, false);
+  drawCard(cur, cx - cardW / 2, cardY, cardW, cardH, 1, true);
+
+  /* Arrows */
+  var aR = Math.round(22 * small), aY = cardY + cardH / 2;
+  var aLx = cx - cardW / 2 - sideOff - sideW - aR * 1.8;
+  var aRx = cx + cardW / 2 + sideOff + sideW + aR * 1.8;
+  function arrow(x, dir, hover) {
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x, aY, aR, 0, Math.PI * 2);
+    ctx.fillStyle = hover ? "rgba(61,125,255,0.9)" : "rgba(22,32,50,0.9)";
+    ctx.fill();
+    ctx.strokeStyle = hover ? warm : "#3a4d6b"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = "#eaf1ff"; ctx.lineWidth = Math.round(3 * small); ctx.lineCap = "round";
+    ctx.beginPath();
+    var s = aR * 0.42;
+    ctx.moveTo(x + dir * s * 0.5, aY - s);
+    ctx.lineTo(x - dir * s * 0.5, aY);
+    ctx.lineTo(x + dir * s * 0.5, aY + s);
+    ctx.stroke();
+    ctx.restore();
+  }
+  arrow(aLx, 1, UI_TITLE.hover === 1);
+  arrow(aRx, -1, UI_TITLE.hover === 2);
+
+  /* Level buttons */
+  var lvY = cardY + cardH + Math.round(34 * small);
+  var list = (typeof LEVELS !== "undefined") ? LEVELS.list() : [];
+  var curId = (typeof LEVELS !== "undefined") ? LEVELS.current().id : null;
+  var btnW = Math.min(w * 0.19, 210 * small), btnH = Math.round(52 * small), gap = Math.round(12 * small);
+  var totW = list.length * btnW + (list.length - 1) * gap;
+  var bx0 = (w - totW) / 2;
+  UI_TITLE.levelRects = [];
+  for (var i = 0; i < list.length; i++) {
+    var lv = list[i], bx = bx0 + i * (btnW + gap), sel = (lv.id === curId);
+    var rr2 = Math.round(10 * small);
+    uiTitleShadow(ctx, bx, lvY, btnW, btnH, rr2, sel ? 16 : 8);
+    uiTitleRound(ctx, bx, lvY, btnW, btnH, rr2);
+    ctx.fillStyle = sel ? "rgba(61,125,255,0.92)" : (UI_TITLE.hover === 10 + i ? "#1d2c44" : "#121d30");
+    ctx.fill();
+    ctx.strokeStyle = sel ? warm : "#2c3f5c"; ctx.lineWidth = sel ? 2.5 : 1.2; ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "bold " + Math.round(14 * small) + "px Consolas, monospace";
+    ctx.fillStyle = sel ? "#ffffff" : "#c9d6e8";
+    ctx.fillText(lv.name, bx + btnW / 2, lvY + btnH * 0.38);
+    ctx.font = Math.round(10.5 * small) + "px Consolas, monospace";
+    ctx.fillStyle = sel ? "#dce7ff" : "#7288a6";
+    ctx.fillText(lv.crowdSize + " people", bx + btnW / 2, lvY + btnH * 0.72);
+    UI_TITLE.levelRects.push({ x: bx, y: lvY, w: btnW, h: btnH, id: lv.id });
+  }
+
+  /* Start button */
+  var stW = Math.min(w * 0.4, 440 * small), stH = Math.round(66 * small);
+  var stX = (w - stW) / 2, stY = lvY + btnH + Math.round(26 * small);
+  UI_TITLE.startRect = { x: stX, y: stY, w: stW, h: stH };
+  var hov = UI_TITLE.hover === 3;
+  var rr3 = Math.round(16 * small);
+  ctx.save();
+  ctx.shadowColor = "rgba(61,125,255,0.75)"; ctx.shadowBlur = hov ? 30 : 18;
+  uiTitleRound(ctx, stX, stY, stW, stH, rr3);
+  var sg = ctx.createLinearGradient(stX, stY, stX, stY + stH);
+  sg.addColorStop(0, hov ? "#4f8bff" : "#2f6ae0"); sg.addColorStop(1, hov ? "#2f6ae0" : "#1e4bb0");
+  ctx.fillStyle = sg; ctx.fill();
+  ctx.restore();
+  uiTitleRound(ctx, stX, stY, stW, stH, rr3);
+  ctx.strokeStyle = warm; ctx.lineWidth = 2; ctx.stroke();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "bold " + Math.round(24 * small) + "px Consolas, monospace";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("START", w / 2, stY + stH * 0.42);
+  ctx.font = Math.round(12 * small) + "px Consolas, monospace";
+  ctx.fillStyle = "#cfe0ff";
+  ctx.fillText("Enter", w / 2, stY + stH * 0.75);
+
+  /* Footer */
+  var fp = Math.round(11.5 * small);
+  ctx.font = fp + "px Consolas, monospace";
+  ctx.fillStyle = "#6c82a2"; ctx.textBaseline = "bottom";
+  ctx.fillText("Left/Right  map     1-4  level     Enter  start     S  settings     H  help", w / 2, h - Math.round(14 * small));
+};
+
+var uiTitleClick = function (x, y) {
+  var t = UI_TITLE;
+  function inR(r) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  /* arrows */
+  var ts = CONFIG.tileSize, w = MAP.width * ts, h = MAP.height * ts;
+  var k = (typeof Game !== "undefined" && Game.textScale) ? Game.textScale() : 1;
+  if (!(k > 0)) k = 1;
+  var small = Math.min(k, 1.6);
+  var cardW = Math.min(w * 0.34, 480 * small), cardH = cardW * 300 / 480;
+  var sideW = cardW * 0.62, sideOff = cardW * 0.72;
+  var aR = Math.round(22 * small), aY = h * 0.26 + cardH / 2;
+  var cx = w / 2;
+  var aLx = cx - cardW / 2 - sideOff - sideW - aR * 1.8;
+  var aRx = cx + cardW / 2 + sideOff + sideW + aR * 1.8;
+  function near(x0, y0, r) { var dx = x - x0, dy = y - y0; return dx * dx + dy * dy <= r * r; }
+  if (near(aLx, aY, aR * 1.3)) { if (typeof uiTitleMove === "function") uiTitleMove(-1); return true; }
+  if (near(aRx, aY, aR * 1.3)) { if (typeof uiTitleMove === "function") uiTitleMove(1); return true; }
+  /* level buttons */
+  if (t.levelRects) {
+    for (var i = 0; i < t.levelRects.length; i++) {
+      if (inR(t.levelRects[i])) {
+        if (typeof uiTitleSetLevel === "function") uiTitleSetLevel(i + 1);
+        return true;
+      }
+    }
+  }
+  if (inR(t.startRect)) { uiStartLevel(); return true; }
+  return false;
+};
+
+/* hover tracking for the title screen (called from UI.draw when screen==="title") */
+function uiTitleHover(x, y) {
+  var t = UI_TITLE;
+  t.hover = -1;
+  function inR(r) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  if (t.startRect && inR(t.startRect)) { t.hover = 3; return; }
+  if (t.levelRects) {
+    for (var i = 0; i < t.levelRects.length; i++) {
+      if (inR(t.levelRects[i])) { t.hover = 10 + i; return; }
+    }
+  }
+}
+
 function uiDrawScreen(ctx, g) {
   var ts = CONFIG.tileSize, w = MAP.width * ts, h = MAP.height * ts, i;
 
   if (UI.screen === "title") {
+    if (typeof uiTitleScreen === "function") { uiTitleScreen(ctx, g); return; }
     uiOverlay(ctx, "Police vs Protestors", [
       "Protesters pour out of houses and side streets and occupy the city.",
       "Hidden rioters and looters hit the shopping streets. Find and arrest them.",
@@ -1190,6 +1580,7 @@ function uiDrawScreen(ctx, g) {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(UI.hover.x * ts + 1, UI.hover.y * ts + 1, ts - 2, ts - 2);
   }
+  if (UI.mode === "patrolArea" && UI.screen === "playing") uiPatrolAreaOverlay(ctx, g);
   uiGround(ctx, false);
 
   // Top bar
@@ -1260,6 +1651,7 @@ function uiDrawScreen(ctx, g) {
   }
 
   if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) MINIMAP.draw(ctx, g);
+  if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
 
   var forceOpen = UI.screen === "planning" && typeof FORCE !== "undefined" && FORCE.isOpen();   /* the planner covers the middle */
   if (typeof HELP !== "undefined" && !forceOpen && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {

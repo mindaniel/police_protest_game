@@ -52,8 +52,18 @@ var SETTINGS = (function () {
       out.push({
         id: "map",
         label: "Map",
-        value: function () { return CityGen.currentMap().name; },
+        value: function () {
+          if (typeof UI !== "undefined" && UI.screen === "title" && typeof CityGen.maps === "function") {
+            var list = CityGen.maps();
+            if (list[UI.titleMapIdx]) return list[UI.titleMapIdx].name;
+          }
+          return CityGen.currentMap().name;
+        },
         change: function (dir) {
+          if (typeof UI !== "undefined" && UI.screen === "title" && typeof uiTitleMove === "function") {
+            uiTitleMove(dir);
+            return;
+          }
           if (typeof CityGen.nextMap === "function") {
             CityGen.nextMap(dir);
             _mapChanged = true;
@@ -157,7 +167,7 @@ if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
     { t: "k", k: "V", d: "show / hide force panel" },
     { t: "k", k: "+ / - (panel)", d: "how many of each unit" },
     { t: "k", k: "O", d: "standing order" },
-    { t: "k", k: "Y + clicks", d: "patrol route" },
+    { t: "k", k: "Y + drag", d: "patrol area (Shift+Y: route)" },
     { t: "k", k: "Z + click", d: "trigger zone" },
     { t: "k", k: "Shift+Y / Shift+Z", d: "clear route / zone" },
     { t: "k", k: "order", d: "change order with O" },

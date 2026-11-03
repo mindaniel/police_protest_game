@@ -1,123 +1,132 @@
 #!/usr/bin/env bash
-# update_and_play.sh - update the game from GitHub and open it in the browser.
-# Double-click this file (make it executable first: chmod +x update_and_play.sh).
+# update_and_play.sh - check for updates on GitHub, update only if needed, then play.
+# Make it executable once: chmod +x update_and_play.sh
 set -u
 
-# Move to the folder this script lives in.
-cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" || exit 0
+cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" || exit 1
 
-REPO_URL="https://codeload.github.com/mindaniel/police_protest_game/zip/refs/heads/main"
+API="https://api.github.com/repos/mindaniel/police_protest_game/commits/main"
+REPO_ZIP="https://codeload.github.com/mindaniel/police_protest_game/zip/refs/heads/main"
 ZIP_NAME="police_protest_game-main"
-STATUS=""
-NOTIFY=""
 
-# Determine platform for opening later.
-OS="$(uname -s 2>/dev/null || echo unknown)"
-
-# Helper: desktop notification if available (Linux), silent otherwise.
-notify() {
-    NOTIFY="$1"
-    if command -v notify-send >/dev/null 2>&1; then
-        notify-send "Police vs Protestors" "$1" >/dev/null 2>&1 || true
-    fi
-    echo "$1"
-}
-
-# Sanity check: the game must exist.
 if [ ! -f index.html ]; then
     echo "ERROR: index.html not found in $(pwd)" >&2
     exit 1
 fi
 
-UPDATED=0
-UP_TO_DATE=0
-OFFLINE=0
+start_game() {
+    if [ "$(uname -s 2>/dev/null || echo unknown)" = "Darwin" ]; then
+        nohup open "index.html" >/dev/null 2>&1 &
+    else
+        nohup xdg-open "index.html" >/dev/null 2>&1 &
+    fi
+    exit 0
+}
 
+# --- Git clone: fetch and compare, pull only if behind ----------------------
 if [ -d .git ] && command -v git >/dev/null 2>&1; then
-    # Git checkout: update only when there are no local changes to tracked files.
     if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-        STATUS="Local changes found - skipping update, playing current version"
-        notify "$STATUS"
-    else
-        OLD_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
-        if git fetch --quiet origin main >/dev/null 2>&1; then
-            # Try fast-forward merge; fall back to pull --ff-only.
-            if ! git merge --ff-only origin/main >/dev/null 2>&1; then
-                git pull --ff-only >/dev/null 2>&1 || true
-            fi
-            NEW_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
-            if [ -n "$NEW_HEAD" ] && [ "$NEW_HEAD" != "$OLD_HEAD" ]; then
-                SHORT="$(git rev-parse --short "$NEW_HEAD" 2>/dev/null || echo "$NEW_HEAD")"
-                SUBJ="$(git log -1 --pretty=%s "$NEW_HEAD" 2>/dev/null || echo '')"
-                STATUS="Updated to $SHORT - $SUBJ"
-                notify "$STATUS"
-                UPDATED=1
-            else
-                STATUS="Already up to date"
-                notify "$STATUS"
-                UP_TO_DATE=1
-            fi
-        else
-            STATUS="Offline - playing the last version"
-            notify "$STATUS"
-            OFFLINE=1
-        fi
-    fi
-else
-    # Not a git checkout (or no git): download the zip and overlay its files.
-    TMPDIR="$(mktemp -d 2>/dev/null || echo '')"
-    if [ -n "$TMPDIR" ]; then
-        trap 'rm -rf "$TMPDIR"' EXIT
+        echo "Local changes found - playing the current version"
+        start_game
     fi
 
-    DOWNLOAD_OK=0
-    if [ -n "$TMPDIR" ]; then
-        ZIPFILE="$TMPDIR/game.zip"
-        if command -v curl >/dev/null 2>&1; then
-            curl -fsSL "$REPO_URL" -o "$ZIPFILE" >/dev/null 2>&1 && DOWNLOAD_OK=1
-        elif command -v wget >/dev/null 2>&1; then
-            wget -q "$REPO_URL" -O "$ZIPFILE" >/dev/null 2>&1 && DOWNLOAD_OK=1
-        fi
-
-        if [ "$DOWNLOAD_OK" -eq 1 ] && [ -s "$ZIPFILE" ]; then
-            EXTRACT_DIR="$TMPDIR/extract"
-            mkdir -p "$EXTRACT_DIR"
-            UNZIP_OK=0
-            if command -v unzip >/dev/null 2>&1; then
-                unzip -q "$ZIPFILE" -d "$EXTRACT_DIR" >/dev/null 2>&1 && UNZIP_OK=1
-            elif command -v python3 >/dev/null 2>&1; then
-                python3 -m zipfile -e "$ZIPFILE" "$EXTRACT_DIR" >/dev/null 2>&1 && UNZIP_OK=1
-            fi
-
-            if [ "$UNZIP_OK" -eq 1 ] && [ -d "$EXTRACT_DIR/$ZIP_NAME" ]; then
-                # Copy new files over the game folder. Never delete anything.
-                cp -R "$EXTRACT_DIR/$ZIP_NAME/." . 2>/dev/null
-                date '+%Y-%m-%d %H:%M:%S' > .last_update 2>/dev/null || true
-                STATUS="Updated (zip) - playing the newest version"
-                notify "$STATUS"
-                UPDATED=1
-            else
-                STATUS="Download failed - playing the last version"
-                notify "$STATUS"
-                OFFLINE=1
-            fi
-        else
-            STATUS="Offline - playing the last version"
-            notify "$STATUS"
-            OFFLINE=1
-        fi
-    else
-        STATUS="Offline - playing the last version"
-        notify "$STATUS"
-        OFFLINE=1
+    if ! git fetch --quiet origin main >/dev/null 2>&1; then
+        echo "Offline - playing the last version"
+        start_game
     fi
+
+    OLD_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
+    REMOTE_HEAD="$(git rev-parse origin/main 2>/dev/null || echo '')"
+
+    if [ -n "$REMOTE_HEAD" ] && [ "$OLD_HEAD" = "$REMOTE_HEAD" ]; then
+        echo "Already up to date"
+        start_game
+    fi
+
+    if ! git merge --ff-only origin/main >/dev/null 2>&1; then
+        git pull --ff-only origin main >/dev/null 2>&1 || true
+    fi
+
+    NEW_HEAD="$(git rev-parse HEAD 2>/dev/null || echo '')"
+    if [ -z "$NEW_HEAD" ] || [ "$NEW_HEAD" = "$OLD_HEAD" ]; then
+        echo "Update failed - playing the current version"
+        start_game
+    fi
+
+    SHORT="$(git rev-parse --short "$NEW_HEAD" 2>/dev/null || echo "$NEW_HEAD")"
+    SUBJ="$(git log -1 --pretty=%s "$NEW_HEAD" 2>/dev/null || echo '')"
+    echo "Updated to $SHORT - $SUBJ"
+    start_game
 fi
 
-# Open the game in the default browser, detached.
-if [ "$OS" = "Darwin" ]; then
-    nohup open "index.html" >/dev/null 2>&1 &
-else
-    nohup xdg-open "index.html" >/dev/null 2>&1 &
+# --- Zip install: compare version.txt with the latest commit sha ------------
+LOCAL_SHA=""
+if [ -f version.txt ]; then
+    LOCAL_SHA="$(tr -d '[:space:]' < version.txt 2>/dev/null)"
 fi
 
-exit 0
+JSON=""
+if command -v curl >/dev/null 2>&1; then
+    JSON="$(curl -fsSL --max-time 10 -H "User-Agent: police-protest-game-updater" "$API" 2>/dev/null)" || JSON=""
+elif command -v wget >/dev/null 2>&1; then
+    JSON="$(wget -qO- --timeout=10 --header="User-Agent: police-protest-game-updater" "$API" 2>/dev/null)" || JSON=""
+fi
+
+REMOTE_SHA=""
+if [ -n "${JSON:-}" ]; then
+    REMOTE_SHA="$(printf '%s' "$JSON" \
+        | grep -o '"sha"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' \
+        | head -n 1 \
+        | grep -o '[0-9a-f]\{40\}' \
+        | head -n 1)"
+fi
+
+if [ -z "${REMOTE_SHA:-}" ]; then
+    echo "Offline or version check failed - playing the last version"
+    start_game
+fi
+
+if [ -n "$LOCAL_SHA" ] && [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
+    echo "Already up to date"
+    start_game
+fi
+
+echo "Update available - downloading..."
+TMPD="$(mktemp -d 2>/dev/null)" || TMPD=""
+if [ -z "$TMPD" ]; then
+    echo "Update failed - playing the last version"
+    start_game
+fi
+trap 'rm -rf "$TMPD"' EXIT
+
+ZIPFILE="$TMPD/game.zip"
+OK=0
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 120 "$REPO_ZIP" -o "$ZIPFILE" >/dev/null 2>&1 && OK=1
+elif command -v wget >/dev/null 2>&1; then
+    wget -q --timeout=120 "$REPO_ZIP" -O "$ZIPFILE" >/dev/null 2>&1 && OK=1
+fi
+if [ "$OK" -ne 1 ] || [ ! -s "$ZIPFILE" ]; then
+    echo "Download failed - playing the last version"
+    start_game
+fi
+
+EXDIR="$TMPD/x"
+mkdir -p "$EXDIR"
+UNZIP_OK=0
+if command -v unzip >/dev/null 2>&1; then
+    unzip -q "$ZIPFILE" -d "$EXDIR" >/dev/null 2>&1 && UNZIP_OK=1
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -m zipfile -e "$ZIPFILE" "$EXDIR" >/dev/null 2>&1 && UNZIP_OK=1
+elif command -v tar >/dev/null 2>&1; then
+    tar -xf "$ZIPFILE" -C "$EXDIR" >/dev/null 2>&1 && UNZIP_OK=1
+fi
+if [ "$UNZIP_OK" -ne 1 ] || [ ! -f "$EXDIR/$ZIP_NAME/index.html" ]; then
+    echo "Update failed - playing the last version"
+    start_game
+fi
+
+cp -R "$EXDIR/$ZIP_NAME/." . 2>/dev/null
+printf '%s\n' "$REMOTE_SHA" > version.txt 2>/dev/null || true
+echo "Updated to ${REMOTE_SHA:0:7} - playing the newest version"
+start_game

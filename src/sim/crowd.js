@@ -695,7 +695,9 @@ var Crowd = (function () {
       a.stamina = Math.min(100, a.stamina + C.staminaRegen * dt);
       if (a._exhausted && a.stamina >= C.staminaMinToRun) a._exhausted = false;
     } else {
-      var dir = (a.braced && typeof RESIST !== "undefined" && RESIST.braceDir) ? RESIST.braceDir(a) : desiredDir(G, a);   /* braced rioters bunch up */
+      var dir = (a.braced && typeof RESIST !== "undefined" && RESIST.braceDir) ? RESIST.braceDir(a) : null;   /* braced rioters bunch up */
+      if (!a.braced && a.state === "flee" && typeof RESIST !== "undefined" && RESIST.fleeDir) dir = RESIST.fleeDir(G, a);   /* run away from police */
+      if (!dir && !a.braced) dir = desiredDir(G, a);
       /* Running: rioters breaking shops or fleeing, and agitated agents sprint
        * while they still have stamina; exhausted agents fall back to walking. */
       var wantsRun = (a.role === "rioter" && (a.state === "attackShop" || a.state === "flee")) ||
@@ -936,6 +938,7 @@ var Crowd = (function () {
 
   function updateRioter(G, r, dt) {
     var C = CONFIG;
+    if (r.braced && typeof RESIST !== "undefined") return;   /* braced: RESIST handles steering, shoving, throwing */
     if (r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;   /* going for a landmark */
 
     if (r.state === "flee") {
@@ -957,7 +960,6 @@ var Crowd = (function () {
       }
       var dx = (shop.x + 0.5) - r.x, dy = (shop.y + 0.5) - r.y;
       if (Math.sqrt(dx * dx + dy * dy) < 1.6) {
-        /* smashing it: visible for as long as the smashing continues */
         r.revealedUntil = Math.max(r.revealedUntil, G.time + 0.2);
         r.violentUntil = Math.max(r.violentUntil, G.time + C.violentSeconds);
         var rate = 100 / C.breakSeconds;
@@ -969,7 +971,6 @@ var Crowd = (function () {
           rate = (100 / (C.shopBreakSeconds || 10)) * gm * sm * dm;
           startShutter(G, shop);
           if (guarded && G._guardTick !== G.time) {
-            /* per-second abort check: cheap approach, independent rolls */
             if (!r._guardAbortAt || G.time >= r._guardAbortAt) {
               r._guardAbortAt = Math.floor(G.time) + 1;
               if (Math.random() < (C.guardAbortChance || 0.35)) {
@@ -1001,11 +1002,10 @@ var Crowd = (function () {
           for (var i = 0; i < nb.length; i++) {
             if (nb[i].active) nb[i].mood = Math.min(100, nb[i].mood + C.shopBreakMoodSpike);
           }
-          /* random city mode: angry bystanders close by join the looting */
           for (i = 0; C.lootJoinChance && i < nb.length && joined < 2; i++) {
             var by = nb[i], bdx = by.x - r.x, bdy = by.y - r.y;
             if (!by.active || by.role !== "peaceful" || by.mood < 50 || bdx * bdx + bdy * bdy > 16) continue;
-            if (by.calmedUntil > G.time) continue;   /* talked down by liaison officers */
+            if (by.calmedUntil > G.time) continue;
             if (Math.random() >= C.lootJoinChance) continue;
             by.role = "rioter";
             by.state = "march";
@@ -1021,7 +1021,6 @@ var Crowd = (function () {
       return;
     }
 
-    /* vanguard: a small chance per second to break off and go for a shop now */
     if (Math.random() < C.vanguardChance * (typeof NIGHT !== "undefined" ? NIGHT.boldness(G) : 1) * dt) {
       var vt = pickTargetShop(G, r);
       if (vt) {
@@ -1032,7 +1031,6 @@ var Crowd = (function () {
       }
     }
 
-    /* march: decide whether it is time to go after a shop */
     var onPlaza = tileChar(Math.floor(r.x), Math.floor(r.y)) === "P";
     var nearShop = false;
     if (!onPlaza) {
@@ -1053,7 +1051,6 @@ var Crowd = (function () {
       }
     }
 
-    /* armed rioters close to police may throw (police.js sets G.officers) */
     if (r.hasTool && G.officers.length && G.time >= r._throwCd) {
       for (var oi = 0; oi < G.officers.length; oi++) {
         var off = G.officers[oi];

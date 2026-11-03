@@ -101,6 +101,7 @@ var LIAISON = (function () {
     }
   }
 
+
   function draw(ctx, G) {
     if (G !== lastG) init(G);
     var S = Art.camera.S;
@@ -192,6 +193,11 @@ var NIGHT = (function () {
   var offCanvas = null;
   var offW = 0, offH = 0;
   var logDusk = false, logNight = false;
+  var lightCells = [], lightCellW = 0, lightCellH = 0, lightCellSize = 16;
+  var maskCanvas = null, maskW = 0, maskH = 0, maskD = -1, maskCamKey = "", maskValid = false;
+  var lastCamX = 0, lastCamY = 0, lastCamZ = 0;
+  var maskCamX = 0, maskCamY = 0, maskCamZ = 0;
+  var layerCanvas = null, layerW = 0, layerH = 0, layerD = -1, layerCamX = 0, layerCamY = 0, layerCamZ = 0, layerValid = false, layerBuildFrame = -99, nightFrame = 0;
 
   function init(G) {
     lastG = G || null;
@@ -200,9 +206,147 @@ var NIGHT = (function () {
     gridW = 0; gridH = 0;
     lastGridTime = -999;
     logDusk = false; logNight = false;
+    layerValid = false;
+    layerD = -1;
+    layerCamX = 0; layerCamY = 0; layerCamZ = 0;
+    layerBuildFrame = -999;
+    nightFrame = 0;
     if (typeof MAP !== "undefined" && MAP.rows) {
       buildLights();
     }
+  }
+
+  function ensureLayerCanvas(w, h) {
+    if (!layerCanvas) layerCanvas = document.createElement("canvas");
+    if (layerW !== w || layerH !== h) {
+      layerCanvas.width = w; layerCanvas.height = h;
+      layerW = w; layerH = h;
+    }
+    return layerCanvas;
+  }
+
+  function buildNightLayer(G, d, fullW, fullH, rs0, S, zoom) {
+    var Q = 0.5;
+    var cw = Math.ceil(fullW * Q), ch = Math.ceil(fullH * Q);
+    var oc = ensureLayerCanvas(cw, ch);
+    var octx = oc.getContext("2d");
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalCompositeOperation = "source-over";
+    octx.globalAlpha = 1;
+    octx.clearRect(0, 0, cw, ch);
+    octx.fillStyle = "rgba(8,12,34," + d + ")";
+    octx.fillRect(0, 0, cw, ch);
+
+    var rs = rs0 * Q;
+    var tileDev = 32 * S * rs;
+    var margin = 400 * rs;
+    var minPool = 2 / rs;
+    var visL = visibleLights();
+    var i, pp, radDev;
+
+    function projTile(tx, ty) {
+      var pt = Art.project(tx, ty, 0);
+      return { x: pt.x * rs, y: pt.y * rs };
+    }
+
+    octx.globalCompositeOperation = "destination-out";
+    for (i = 0; i < visL.length; i++) {
+      var Lp = visL[i];
+      pp = projTile(Lp.x, Lp.y);
+      radDev = Lp.r * tileDev;
+      if (radDev * 2 < minPool) continue;
+      drawLightPool(octx, pp, radDev, Lp.peak, 1);
+    }
+    if (G.shops) {
+      for (i = 0; i < G.shops.length; i++) {
+        var s = G.shops[i];
+        if (s.broken) continue;
+        var sp = projTile(s.x + 0.5, s.y + 1.5);
+        var sd = 2.5 * tileDev;
+        if (sp.x < -margin || sp.y < -margin || sp.x > cw + margin || sp.y > ch + margin) continue;
+        if (sd * 2 < minPool) continue;
+        drawLightPool(octx, sp, sd, 0.6, 1);
+      }
+    }
+
+    octx.globalCompositeOperation = "lighter";
+    for (i = 0; i < visL.length; i++) {
+      var L3 = visL[i];
+      pp = projTile(L3.x, L3.y);
+      var gr3 = L3.r * 0.85 * tileDev;
+      if (gr3 * 2 < minPool) continue;
+      if (pp.x < -margin || pp.y < -margin || pp.x > cw + margin || pp.y > ch + margin) continue;
+      octx.globalAlpha = Math.min(1, 0.16 * d * L3.peak / 0.6);
+      octx.drawImage(sprite(L3.col), pp.x - gr3, pp.y - gr3, gr3 * 2, gr3 * 2);
+    }
+    if (zoom >= 2.5) {
+      for (i = 0; i < visL.length; i++) {
+        var L2 = visL[i];
+        var p3 = Art.project(L2.x, L2.y, 3);
+        var lx = p3.x * rs, ly = p3.y * rs;
+        if (lx < -margin || ly < -margin || lx > cw + margin || ly > ch + margin) continue;
+        var rg = (L2.r > 4.5 ? 0.42 : 0.32) * 32 * S * rs;
+        if (rg * 2 < minPool) continue;
+        octx.globalAlpha = Math.min(1, 0.7 * d);
+        octx.drawImage(sprite(L2.col || "255,211,138"), lx - rg, ly - rg, rg * 2, rg * 2);
+      }
+    }
+    octx.globalAlpha = 1;
+    octx.globalCompositeOperation = "source-over";
+
+    layerCanvas = oc;
+    layerW = cw; layerH = ch;
+    layerD = d;
+    var cam = Art.camera || {};
+    layerCamX = (typeof cam.cx === "number") ? cam.cx : 0;
+    layerCamY = (typeof cam.cy === "number") ? cam.cy : 0;
+    layerCamZ = zoom;
+    layerValid = true;
+    layerBuildFrame = nightFrame;
+  }
+
+  function visibleLights() {
+    var out = [];
+    if (!lightCells || !lightCells.length) return out;
+    if (!Art.camera) return out;
+    var cam = Art.camera;
+    var S = cam.S || 1;
+    var canvas = Art.canvas || (typeof document !== "undefined" ? null : null);
+    var cw = 0, ch = 0;
+    if (typeof Art.canvas !== "undefined" && Art.canvas) {
+      cw = Art.canvas.width; ch = Art.canvas.height;
+    } else if (typeof document !== "undefined") {
+      var el = document.getElementById("game");
+      if (el) { cw = el.width; ch = el.height; }
+    }
+    var viewW = cw / (32 * S);
+    var viewH = ch / (32 * S);
+    var cx = cam.cx, cy = cam.cy;
+    if (typeof cx !== "number") cx = 0;
+    if (typeof cy !== "number") cy = 0;
+    var maxR = 6.0; /* largest light radius in tiles, with margin */
+    var tx0 = cx - viewW * 0.5 - maxR;
+    var ty0 = cy - viewH * 0.5 - maxR;
+    var tx1 = cx + viewW * 0.5 + maxR;
+    var ty1 = cy + viewH * 0.5 + maxR;
+    var CELL = lightCellSize;
+    var gx0 = Math.floor(tx0 / CELL), gy0 = Math.floor(ty0 / CELL);
+    var gx1 = Math.floor(tx1 / CELL), gy1 = Math.floor(ty1 / CELL);
+    if (gx0 < 0) gx0 = 0; if (gy0 < 0) gy0 = 0;
+    if (gx1 >= lightCellW) gx1 = lightCellW - 1;
+    if (gy1 >= lightCellH) gy1 = lightCellH - 1;
+    for (var gy = gy0; gy <= gy1; gy++) {
+      for (var gx = gx0; gx <= gx1; gx++) {
+        var cell = lightCells[gy * lightCellW + gx];
+        if (!cell) continue;
+        for (var k = 0; k < cell.length; k++) {
+          var L = cell[k];
+          if (L.x < tx0 || L.x > tx1 || L.y < ty0 || L.y > ty1) continue;
+          out.push(L);
+        }
+      }
+    }
+    return out;
   }
 
   function buildLights() {
@@ -238,26 +382,64 @@ var NIGHT = (function () {
     for (var ly = 0; ly < H; ly++) for (var lx = 0; lx < W; lx++) {
       if ((rows[ly] || "").charAt(lx) === "a" && (lx + ly) % 5 === 0) candidates.push({ x: lx, y: ly });
     }
+    /* coarse spatial grid: cells are 16 tiles; the max spacing gap is 6, so
+       checking the 3x3 neighbourhood of cells catches every lamp within range */
+    var CELL = 16;
+    var gw = Math.ceil(W / CELL) + 1;
+    var gh = Math.ceil(H / CELL) + 1;
+    var buckets = new Array(gw * gh);
+    for (var b = 0; b < buckets.length; b++) buckets[b] = null;
+    function cellFor(x, y) {
+      var cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+      if (cx < 0) cx = 0; if (cy < 0) cy = 0;
+      if (cx >= gw) cx = gw - 1; if (cy >= gh) cy = gh - 1;
+      return cy * gw + cx;
+    }
+    function spaced(x, y, gap) {
+      var cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+      var gx0 = cx - 1, gx1 = cx + 1, gy0 = cy - 1, gy1 = cy + 1;
+      if (gx0 < 0) gx0 = 0; if (gy0 < 0) gy0 = 0;
+      if (gx1 >= gw) gx1 = gw - 1; if (gy1 >= gh) gy1 = gh - 1;
+      for (var yy = gy0; yy <= gy1; yy++) {
+        for (var xx = gx0; xx <= gx1; xx++) {
+          var list = buckets[yy * gw + xx];
+          if (!list) continue;
+          for (var k = 0; k < list.length; k++) {
+            if (Math.abs(list[k].x - 0.5 - x) < gap && Math.abs(list[k].y - 0.5 - y) < gap) return false;
+          }
+        }
+      }
+      return true;
+    }
     var kept = [];
-    for (var i = 0; i < candidates.length && kept.length < 200; i++) {
+    /* per-frame lookup grid, coarse buckets of 16x16 tiles */
+    lightCellSize = CELL;
+    lightCellW = gw;
+    lightCellH = gh;
+    lightCells = new Array(gw * gh);
+    for (var bi = 0; bi < lightCells.length; bi++) lightCells[bi] = null;
+    for (var i = 0; i < candidates.length; i++) {
       var c = candidates[i];
       var wdt = widthAt(c.x, c.y), lane = (rows[c.y] || "").charAt(c.x) === "a";
       var plaza = (rows[c.y] || "").charAt(c.x) === "P";
       var wide = plaza || wdt >= 3;
       /* wide streets: lamps every 3 tiles, bright white LED; normal streets: every 5, warm */
       var gap = lane ? 5 : (wide ? 4 : 6);
-      var ok = true;
-      for (var k = 0; k < kept.length; k++) {
-        if (Math.abs(kept[k].x - 0.5 - c.x) < gap && Math.abs(kept[k].y - 0.5 - c.y) < gap) { ok = false; break; }
-      }
-      if (!ok) continue;
+      if (!spaced(c.x, c.y, gap)) continue;
       var vary = 0.85 + hsh(c.x, c.y) * 0.3;     /* each lamp a little different */
-      kept.push({ x: c.x + 0.5, y: c.y + 0.5,
+      var lamp = { x: c.x + 0.5, y: c.y + 0.5,
         r: (lane ? 2.4 : (wide ? 5.2 : 3.8)) * vary,
         peak: Math.min(0.92, (lane ? 0.5 : (wide ? 0.88 : 0.72)) * vary),
-        col: wide ? "255,206,120" : "255,180,85" });   /* warm yellow street lights */
+        col: wide ? "255,206,120" : "255,180,85" };   /* warm yellow street lights */
+      kept.push(lamp);
+      var ci = cellFor(c.x, c.y);
+      if (!buckets[ci]) buckets[ci] = [];
+      buckets[ci].push(lamp);
+      if (!lightCells[ci]) lightCells[ci] = [];
+      lightCells[ci].push(lamp);
     }
     lightList = kept;
+    maskValid = false;
   }
 
   function darkness(G) {
@@ -405,137 +587,72 @@ var NIGHT = (function () {
     if (!CONFIG.nightCycle) return;
     var d = darkness(G);
     if (d <= 0.001) return;
+
     var canvas = ctx.canvas;
     var fullW = canvas.width, fullH = canvas.height;
-    // the shade is soft gradients only, so a quarter-resolution layer is enough
-    var Q = 0.25;
+    var Q = 0.5;
     var cw = Math.ceil(fullW * Q), ch = Math.ceil(fullH * Q);
-    var oc = ensureOffCanvas(cw, ch);
-    var octx = oc.getContext("2d");
-    octx.setTransform(1, 0, 0, 1, 0, 0);
-    octx.globalCompositeOperation = "source-over";
-    octx.globalAlpha = 1;
-    octx.clearRect(0, 0, cw, ch);
-    octx.fillStyle = "rgba(8,12,34," + d + ")";
-    octx.fillRect(0, 0, cw, ch);
-    octx.globalCompositeOperation = "destination-out";
 
     var rs0 = ctx.getTransform().a;
     if (!rs0 || !isFinite(rs0)) rs0 = 1;
-    var rs = rs0 * Q;
-    var S = Art.camera.S;
-    var tileDev = 32 * S * rs;
-    var margin = 400 * rs;
-    var i, p, gp, radDev;
 
-    function projTile(tx, ty) {
-      var pt = Art.project(tx, ty, 0);
-      return { x: pt.x * rs, y: pt.y * rs };
-    }
+    var cam = Art.camera || {};
+    var S = cam.S || 1;
+    var zoom = cam.zoom || 1;
+    var camX = (typeof cam.cx === "number") ? cam.cx : 0;
+    var camY = (typeof cam.cy === "number") ? cam.cy : 0;
+    var pxPerTileFull = 32 * S * rs0;
 
-    // streetlights (size and brightness depend on the street)
-    for (i = 0; i < lightList.length; i++) {
-      var L = lightList[i];
-      p = projTile(L.x, L.y);
-      radDev = L.r * tileDev;
-      if (p.x < -margin || p.y < -margin || p.x > cw + margin || p.y > ch + margin) continue;
-      drawLightPool(octx, p, radDev, L.peak, 1);
-    }
-    // fires
-    if (G.fireBlocked && G.fireBlocked.forEach) {
-      var fl = 1 + 0.1 * Math.sin(G.time * 9.0);
-      G.fireBlocked.forEach(function (key) {
-        var parts = key.split(",");
-        var fx = parseFloat(parts[0]) + 0.5, fy = parseFloat(parts[1]) + 0.5;
-        var pp = projTile(fx, fy);
-        var rd = 4 * tileDev;
-        if (pp.x < -margin || pp.y < -margin || pp.x > cw + margin || pp.y > ch + margin) return;
-        drawLightPool(octx, pp, rd, 1, fl);
-      });
-    }
-    // shops
-    if (G.shops) {
-      for (i = 0; i < G.shops.length; i++) {
-        var s = G.shops[i];
-        if (s.broken) continue;
-        var sp = projTile(s.x + 0.5, s.y + 1.5);
-        var sd = 2.5 * tileDev;
-        if (sp.x < -margin || sp.y < -margin || sp.x > cw + margin || sp.y > ch + margin) continue;
-        drawLightPool(octx, sp, sd, 0.6, 1);
-      }
-    }
-    // vehicles
-    if (G.vehicles) {
-      for (i = 0; i < G.vehicles.length; i++) {
-        var v = G.vehicles[i];
-        var vx = v.x + Math.cos(v.ang) * 1.5;
-        var vy = v.y + Math.sin(v.ang) * 1.5;
-        var vp = projTile(vx, vy);
-        var vd = 3 * tileDev;
-        if (vp.x >= -margin && vp.y >= -margin && vp.x <= cw + margin && vp.y <= ch + margin) {
-          drawLightPool(octx, vp, vd, 0.9, 1);
-        }
-        var vp2 = projTile(v.x, v.y);
-        if (vp2.x >= -margin && vp2.y >= -margin && vp2.x <= cw + margin && vp2.y <= ch + margin) {
-          drawLightPool(octx, vp2, 1 * tileDev, 0.9, 1);
-        }
-      }
+    nightFrame = (nightFrame || 0) + 1;
+
+    var force = !layerValid ||
+      layerW !== cw || layerH !== ch ||
+      Math.abs(layerCamZ - zoom) > 0.001 ||
+      Math.abs(layerD - d) > 0.03;
+
+    var dxT = camX - layerCamX;
+    var dyT = camY - layerCamY;
+    var movedPx = layerValid ? Math.max(Math.abs(dxT), Math.abs(dyT)) * pxPerTileFull : Infinity;
+    var need = force || movedPx > 2;
+
+    if (need && layerValid && !force && (nightFrame - layerBuildFrame) < 2) {
+      need = false;
     }
 
-    // composite offscreen onto ctx
-    octx.globalCompositeOperation = "source-over";
+    if (need) {
+      buildNightLayer(G, d, fullW, fullH, rs0, S, zoom);
+    }
+
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(oc, 0, 0, fullW, fullH);
+    if (layerValid) {
+      var shiftX = 0, shiftY = 0;
+      if (!need) {
+        shiftX = -(camX - layerCamX) * pxPerTileFull;
+        shiftY = -(camY - layerCamY) * pxPerTileFull;
+      }
+      ctx.drawImage(layerCanvas, shiftX, shiftY, fullW, fullH);
+    }
     ctx.restore();
 
-    // additive glows
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    var glowA = 0.55 * d;
-    rs = rs0; cw = fullW; ch = fullH; margin = 400 * rs;
-    var lampP, hv;
-    // coloured light on the ground: white LED on wide streets, warm sodium elsewhere
-    for (i = 0; i < lightList.length; i++) {
-      var L3 = lightList[i];
-      var gp3 = Art.project(L3.x, L3.y, 0);
-      var gr3 = L3.r * 0.85 * 32 * S;
-      if (gp3.x * rs < -margin || gp3.y * rs < -margin || gp3.x * rs > cw + margin || gp3.y * rs > ch + margin) continue;
-      ctx.globalAlpha = Math.min(1, 0.16 * d * L3.peak / 0.6);
-      ctx.drawImage(sprite(L3.col), gp3.x - gr3, gp3.y - gr3, gr3 * 2, gr3 * 2);
-    }
-    // streetlight lamp heads
-    ctx.globalAlpha = glowA;
-    for (i = 0; i < lightList.length; i++) {
-      var L2 = lightList[i];
-      var pt = Art.project(L2.x, L2.y, 3);
-      var lx = pt.x, ly = pt.y;
-      // screen test
-      if (lx * rs < -margin || ly * rs < -margin || lx * rs > cw + margin || ly * rs > ch + margin) continue;
-      var rg = (L2.r > 4.5 ? 0.42 : 0.32) * 32 * S;
-      ctx.globalAlpha = Math.min(1, 0.7 * d);
-      ctx.drawImage(sprite(L2.col || "255,211,138"), lx - rg, ly - rg, rg * 2, rg * 2);
-    }
-    // fires (atmosphere.js draws its own fire glow when loaded)
+    ctx.globalAlpha = 1;
+    var i;
+    var fl = 1 + 0.1 * Math.sin(G.time * 9.0);
     if (G.fireBlocked && G.fireBlocked.forEach && typeof ATMO === "undefined") {
       G.fireBlocked.forEach(function (key) {
         var parts = key.split(",");
         var fx = parseFloat(parts[0]) + 0.5, fy = parseFloat(parts[1]) + 0.5;
         var fp = Art.project(fx, fy, 0.8);
         var rg = 3.5 * 32 * S;
-        var grd = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, rg);
-        grd.addColorStop(0, "rgba(255,150,50," + (0.5 * d) + ")");
-        grd.addColorStop(1, "rgba(255,150,50,0)");
-        ctx.fillStyle = grd;
-        ctx.beginPath();
-        ctx.arc(fp.x, fp.y, rg, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.globalAlpha = Math.min(1, 0.5 * d * fl);
+        ctx.drawImage(sprite("255,150,50"), fp.x - rg, fp.y - rg, rg * 2, rg * 2);
       });
     }
-    // police vehicle flashing lights (atmosphere.js has headlights + flashing lights)
     if (G.vehicles && typeof ATMO === "undefined") {
       var phase = Math.floor(G.time / 0.25) % 2;
       for (i = 0; i < G.vehicles.length; i++) {
@@ -543,13 +660,8 @@ var NIGHT = (function () {
         var vpt = Art.project(vv.x, vv.y, 1.5);
         var col = phase === 0 ? "58,123,255" : "255,58,58";
         var rg2 = 2.0 * 32 * S;
-        var g2 = ctx.createRadialGradient(vpt.x, vpt.y, 0, vpt.x, vpt.y, rg2);
-        g2.addColorStop(0, "rgba(" + col + "," + (0.8 * d) + ")");
-        g2.addColorStop(1, "rgba(" + col + ",0)");
-        ctx.fillStyle = g2;
-        ctx.beginPath();
-        ctx.arc(vpt.x, vpt.y, rg2, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.globalAlpha = Math.min(1, 0.8 * d);
+        ctx.drawImage(sprite(col), vpt.x - rg2, vpt.y - rg2, rg2 * 2, rg2 * 2);
       }
     }
     ctx.restore();

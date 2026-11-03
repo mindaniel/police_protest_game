@@ -1,7 +1,7 @@
 // reinforce.js - Police station + reinforcements for "Police vs Protestors"
 var REINFORCE = (function () {
   var OPTIONS = [
-    { name: "Foot squad", loadout: "none", cost: 2, label: "4 officers", kind: "foot" },
+    { name: "Foot squad", loadout: "none", cost: 1, label: "4 officers", kind: "foot" },
     { name: "Riot van", loadout: "van", cost: 3, label: "6 officers + van", kind: "van" },
     { name: "Arrest truck", loadout: "truck", cost: 4, label: "8 officers + truck", kind: "truck" },
     { name: "Mounted unit", loadout: "mounted", cost: 3, label: "4 horses", kind: "mounted" }

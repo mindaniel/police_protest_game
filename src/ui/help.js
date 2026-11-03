@@ -51,7 +51,7 @@ var HELP = (function () {
       ln("V", "show / hide force panel", 1);
       ln("+ / - (panel)", "how many of each unit", 1);
       ln("O", "standing order", 1);
-      ln("Y + clicks", "patrol route", 2);
+      ln("Y + drag", "patrol area (Shift+Y route)", 2);
       ln("Z + click", "trigger zone", 2);
       ln("Shift+Y / Shift+Z", "clear route / zone", 3);
       ln("order: " + info.order, orderMeaning(info.order), 2);
