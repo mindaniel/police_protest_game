@@ -169,38 +169,39 @@ var OWNERS = (function () {
     return 1;
   }
 
+  /* Zoom levels (Art.detail): far = marker icons only, mid = small person + small icon,
+   * near = real-size person only (icons would cover the street). */
   function draw(ctx, G) {
-    if (!Art || !Art.camera || Art.camera.zoom <= 1.5) return;
-    var z = Art.camera.zoom;
+    if (!Art || !Art.camera || !Art.detail) return;
+    var lvl = Art.detail();
     for (var i = 0; i < owners.length; i++) {
       var o = owners[i];
-      var p = Art.project(o.x, o.y, 0);
+      var p = Art.project(o.x, o.y, 0), q = Art.project(o.x + 1, o.y, 0);
+      var pt = Math.abs(q.x - p.x) || 8;   /* screen units per tile */
       if (p.x < -20 || p.y < -20 || p.x > ctx.canvas.width + 20 || p.y > ctx.canvas.height + 20) continue;
-      var r = 3.2 * z;
-      if (o.hurt) {
-        ctx.fillStyle = "#c8c8c8";
-        ctx.beginPath();
-        ctx.ellipse ? ctx.ellipse(p.x, p.y, r * 1.6, r * 0.8, 0.4, 0, 6.283) :
-          ctx.arc(p.x, p.y, r * 1.2, 0, 6.283);
-        ctx.fill();
-        ctx.strokeStyle = "#d33"; ctx.lineWidth = Math.max(1, 1.4 * z);
-        var rr = r * 0.7;
-        ctx.beginPath(); ctx.moveTo(p.x - rr, p.y - rr); ctx.lineTo(p.x + rr, p.y + rr);
-        ctx.moveTo(p.x + rr, p.y - rr); ctx.lineTo(p.x - rr, p.y + rr); ctx.stroke();
-      } else {
-        ctx.fillStyle = "#eee";
-        ctx.beginPath(); ctx.arc(p.x, p.y - r * 0.6, r * 0.7, 0, 6.283); ctx.fill();
-        ctx.fillStyle = o.arguing ? "#5577cc" : "#99bbee";
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.283); ctx.fill();
-        if (o.arguing) {
-          ctx.fillStyle = "#ffcc00";
-          ctx.font = "bold " + Math.round(10 * z) + "px sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText("!", p.x, p.y - r * 1.6);
+      if (lvl !== "far") {   /* the person, real size (~0.4 tiles) */
+        var r = pt * 0.14;
+        if (o.hurt) {
+          ctx.fillStyle = "#5577cc";
+          ctx.beginPath(); ctx.ellipse(p.x, p.y, r * 1.8, r * 0.8, 0.4, 0, 6.283); ctx.fill();
+          ctx.fillStyle = "#eee";
+          ctx.beginPath(); ctx.arc(p.x + r * 1.5, p.y + r * 0.6, r * 0.6, 0, 6.283); ctx.fill();
+        } else {
+          ctx.fillStyle = o.arguing ? "#5577cc" : "#99bbee";
+          ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.283); ctx.fill();
+          ctx.fillStyle = "#eee";
+          ctx.beginPath(); ctx.arc(p.x, p.y - r * 0.2, r * 0.55, 0, 6.283); ctx.fill();
         }
       }
+      if (lvl === "near") continue;
+      /* marker: fixed small size so it never covers the street */
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = o.hurt ? "#e33" : "#ffcc00";
+      ctx.fillText(o.hurt ? "+" : "!", p.x, p.y - Math.max(6, pt * 0.3));
     }
   }
+
 
   function reset() {
     owners = [];
