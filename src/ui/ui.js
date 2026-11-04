@@ -58,6 +58,8 @@ function uiSquadsOfType(g, loadout) {
     seen[sq] = true;
     list.push(sq);
   }
+  /* every squad in the force list, spawned or not (planning adds squads before they exist) */
+  for (s = 0; s < (CONFIG.squadCount || 0); s++) if (Police.getLoadout(g, s) === loadout) add(s);
   for (i = 0; i < g.officers.length; i++) {
     if (Police.getLoadout(g, g.officers[i].squad) === loadout) add(g.officers[i].squad);
   }
