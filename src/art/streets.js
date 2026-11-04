@@ -24,16 +24,6 @@ var STREETS = (function () {
     g.beginPath();
     for (i = 0; i < a.length; i++) if (!a[i][2]) g.rect(a[i][0], a[i][1], 1, 1);
     g.fill();
-    if (roadW >= 6) {
-      g.fillStyle = "rgba(240,240,235,0.55)";
-      g.fillRect(ox + T * 0.46, oy, Math.max(1, T * 0.035), T);
-      g.fillRect(ox + T * 0.505, oy, Math.max(1, T * 0.035), T);
-    } else if (roadW >= 3) {
-      if ((y % 2) === 0) {
-        g.fillStyle = "rgba(240,240,235,0.5)";
-        g.fillRect(ox + T * 0.47, oy + T * 0.05, Math.max(1, T * 0.06), T * 0.5);
-      }
-    }
   }
   function laneMarks(g, ox, oy, T, x, y) {
     g.fillStyle = "rgba(230,230,225,0.22)";
