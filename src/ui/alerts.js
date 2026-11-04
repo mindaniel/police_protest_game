@@ -631,6 +631,7 @@ var ALERTS = (function () {
     key: key,
     list: list,
     toggle: toggle,
-    clear: clear
+    clear: clear,
+    push: pushAlert   /* push(kind, label, x, y, colour, G): other modules raise alerts */
   };
 })();

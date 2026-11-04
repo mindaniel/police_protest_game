@@ -1695,6 +1695,8 @@ function uiDrawScreen(ctx, g) {
   if (typeof NAVDEBUG !== "undefined" && UI.screen === "playing") NAVDEBUG.draw(ctx, g);
   if (typeof FIRECREW !== "undefined" && UI.screen === "playing") FIRECREW.draw(ctx, g);
   if (typeof HOLDLINE !== "undefined" && UI.screen === "playing") HOLDLINE.draw(ctx, g);
+  if (typeof OWNERS !== "undefined" && UI.screen === "playing") OWNERS.draw(ctx, g);
+  if (typeof MISSIONS !== "undefined" && UI.screen === "playing") MISSIONS.draw(ctx, g);
   if (typeof ORDERFX !== "undefined" && (UI.screen === "playing" || UI.screen === "planning")) ORDERFX.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
 

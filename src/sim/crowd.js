@@ -845,6 +845,7 @@ var Crowd = (function () {
 
     /* vehicles are solid obstacles in random city mode */
     if (C.vehiclesBlock) pushOutOfVehicles(G, a);
+    if (typeof PARKED !== "undefined") PARKED.pushOut(G, a, C.agentRadius || 0.25);   /* parked cars are solid */
 
     a.vx = vx; a.vy = vy;
   }
@@ -998,6 +999,7 @@ var Crowd = (function () {
             }
           }
         }
+        if (typeof OWNERS !== "undefined") rate *= OWNERS.breakFactor(G, shop);   /* owners out front slow the looting */
         shop.hp -= rate * dt;
         if (shop.hp <= 0) {
           shop.hp = 0;

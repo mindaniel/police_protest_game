@@ -1143,6 +1143,7 @@ var Art = (function () {
 
   function buildProps() {
     trees = []; lamps = []; streetProps = [];
+    var placeCars = typeof PARKED !== "undefined" && PARKED.begin();   /* new map: place parked cars once (they keep their damage) */
     tprops = paris() ? THEME_PARIS.props() : [];
     var x, y, ch, i, runW, n;
 
@@ -1259,7 +1260,7 @@ var Art = (function () {
                   var spacing = 4 + (hash2(side > 0 ? 17 : 31, y + 5) % 4);
                   var phase = hash2(side > 0 ? 23 : 37, y + 9) % spacing;
                   if ((x - phase) % spacing === 0) {
-                    streetProps.push({ x: x + 0.5, y: y + 0.5 + side * 0.28, type: "carH", seed: hash2(x, y + side) });
+                    if (placeCars) PARKED.add(x + 0.5, y + 0.5 + side * 0.28, 0, hash2(x, y + side));
                   }
                 }
               } else if (rh > rw && rw >= 3) {
@@ -1270,7 +1271,7 @@ var Art = (function () {
                   var spacingV = 4 + (hash2(x + 7, sideV > 0 ? 19 : 23) % 4);
                   var phaseV = hash2(x + 11, sideV > 0 ? 29 : 41) % spacingV;
                   if ((y - phaseV) % spacingV === 0) {
-                    streetProps.push({ x: x + 0.5 + sideV * 0.28, y: y + 0.5, type: "carV", seed: hash2(x + sideV, y) });
+                    if (placeCars) PARKED.add(x + 0.5 + sideV * 0.28, y + 0.5, Math.PI / 2, hash2(x + sideV, y));
                   }
                 }
               }
@@ -1313,6 +1314,10 @@ var Art = (function () {
           if (solidCh(tile(x, y + 1)) && tile(x, y - 1) === "." && tile(x, y - 2) === ".") lamps.push({ x: x + 0.5, y: y + 0.78 });
         }
       }
+    }
+    if (typeof PARKED !== "undefined") {
+      var pc = PARKED.list();
+      for (i = 0; i < pc.length; i++) streetProps.push({ x: pc[i].x, y: pc[i].y, type: "parked", car: pc[i] });
     }
   }
 
@@ -1833,6 +1838,13 @@ var Art = (function () {
   }
   function drawClutter(ctx, tr) {
     if (_rs * cam.S * TS < 8) return;
+    if (tr.type === "parked") {   /* real parked car (parked.js), drawn at real size with its damage */
+      P(tr.x, tr.y, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      PARKED.drawCar(ctx, tr.car, _rs * _px, _rs * _py, _rs * cam.S * TS, G);
+      setScreen(ctx);
+      return;
+    }
     var k = _rs * cam.S * TS * (tr.s || 1);
     var sp = clutterSprite(tr.type, k, tr.seed || 0);
     P(tr.x, tr.y, 0);
