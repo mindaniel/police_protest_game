@@ -172,6 +172,7 @@ function uiSelectKey(k) {
 
 UI.init = function (g, game) {
   UI.Game = game;
+  if (typeof ORDERFX !== "undefined") ORDERFX.init();   /* click markers for move orders */
   UI.titleMapIdx = 0;
   if (typeof CityGen !== "undefined" && CityGen.maps && CityGen.currentMap) {
     var ml = CityGen.maps(), cm = CityGen.currentMap(), mi;
@@ -485,8 +486,10 @@ function uiSquadGo(s, x, y, run) {
       }
       if (n) {
         cx /= n; cy /= n;
-        var far = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) > (CONFIG.autoRideDistance || 12);
-        var near = Math.sqrt((v.x - cx) * (v.x - cx) + (v.y - cy) * (v.y - cy)) < 6;
+        var trip = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+        var far = trip > (CONFIG.autoRideDistance || 12);
+        /* ride when walking back to the car costs less than half the trip */
+        var near = Math.sqrt((v.x - cx) * (v.x - cx) + (v.y - cy) * (v.y - cy)) < Math.max(6, trip * 0.5);
         if (far && near && TRANSPORT.toggle(G, s) === "boarding") {
           TRANSPORT.drive(G, s, x, y);
           UI.say("Squad " + (s + 1) + " gets in and drives there");
@@ -1656,6 +1659,8 @@ function uiDrawScreen(ctx, g) {
   if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) MINIMAP.draw(ctx, g);
   if (typeof NAVDEBUG !== "undefined" && UI.screen === "playing") NAVDEBUG.draw(ctx, g);
   if (typeof FIRECREW !== "undefined" && UI.screen === "playing") FIRECREW.draw(ctx, g);
+  if (typeof HOLDLINE !== "undefined" && UI.screen === "playing") HOLDLINE.draw(ctx, g);
+  if (typeof ORDERFX !== "undefined" && (UI.screen === "playing" || UI.screen === "planning")) ORDERFX.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
 
   var forceOpen = UI.screen === "planning" && typeof FORCE !== "undefined" && FORCE.isOpen();   /* the planner covers the middle */

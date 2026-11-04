@@ -329,6 +329,8 @@ function frame(now) {
       if (typeof RESIST !== "undefined") RESIST.update(G, step);
       if (typeof NAVDEBUG !== "undefined") NAVDEBUG.update(G, step);
       if (typeof FIRECREW !== "undefined") FIRECREW.update(G, step);
+      if (typeof HOLDLINE !== "undefined") HOLDLINE.update(G, step);
+      if (typeof ORDERFX !== "undefined") ORDERFX.update(G, step);
       if (typeof ALERTS !== "undefined") ALERTS.update(G, step);   /* clickable event pop-ups */   /* rioters run or stand their ground */
       if (typeof FX !== "undefined") FX.update(G, step);
       if (typeof GAS !== "undefined") GAS.update(G, step);

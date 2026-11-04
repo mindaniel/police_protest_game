@@ -613,6 +613,7 @@ var ORDERS = (function () {
   }
 
   function thinkPush(G, s, r, cx, cy) {
+    if (r.holdLine) return;   /* holdline.js: outnumbered, holding until the pressure drops */
     if (r.targetX === null || typeof r.targetX !== "number") return;
     if (dist(cx, cy, r.targetX, r.targetY) <= 1.5) {
       r.order = "hold";
