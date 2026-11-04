@@ -108,41 +108,57 @@ var STREETS = (function () {
       return Math.sqrt(dx * dx + dy * dy);
     }
 
-    function nearestRoad(tx, ty) {
-      var roads = MAP.roads || [];
-      var best = null, bestD = Infinity, ri, road, pts, j;
-      var ax, ay, bx, by, dx, dy, len2, t0, qx, qy, dist;
+    /* road segments bucketed in 8x8-tile cells: nearestRoad looks at nearby cells first
+     * (checking every road for every tile took about 4.5 s on a big map) */
+    var segGrid = null, SEG_C = 8, segCols = 0, segRows = 0;
+    function buildSegGrid() {
+      var roads = MAP.roads || [], ri, j, pts, ax, ay, bx, by, cx0, cx1, cy0, cy1, cx, cy, cell;
+      segCols = Math.ceil(W / SEG_C) + 1; segRows = Math.ceil(H / SEG_C) + 1;
+      segGrid = new Array(segCols * segRows);
       for (ri = 0; ri < roads.length; ri++) {
-        road = roads[ri];
-        pts = road.p || [];
+        pts = roads[ri].p || [];
         for (j = 0; j + 3 < pts.length; j += 2) {
-          ax = pts[j];
-          ay = pts[j + 1];
-          bx = pts[j + 2];
-          by = pts[j + 3];
-          dx = bx - ax;
-          dy = by - ay;
-          len2 = dx * dx + dy * dy;
-          if (len2 <= 0.000001) continue;
-          t0 = ((tx - ax) * dx + (ty - ay) * dy) / len2;
-          t0 = Math.max(0, Math.min(1, t0));
-          qx = ax + t0 * dx;
-          qy = ay + t0 * dy;
-          dist = (tx - qx) * (tx - qx) + (ty - qy) * (ty - qy);
-          if (dist < bestD) {
-            bestD = dist;
-            best = {
-              road: road,
-              ax: ax,
-              ay: ay,
-              bx: bx,
-              by: by,
-              x: qx,
-              y: qy,
-              dx: dx,
-              dy: dy,
-              dist: Math.sqrt(dist)
-            };
+          ax = pts[j]; ay = pts[j + 1]; bx = pts[j + 2]; by = pts[j + 3];
+          cx0 = Math.max(0, Math.floor(Math.min(ax, bx) / SEG_C)); cx1 = Math.min(segCols - 1, Math.floor(Math.max(ax, bx) / SEG_C));
+          cy0 = Math.max(0, Math.floor(Math.min(ay, by) / SEG_C)); cy1 = Math.min(segRows - 1, Math.floor(Math.max(ay, by) / SEG_C));
+          for (cy = cy0; cy <= cy1; cy++) for (cx = cx0; cx <= cx1; cx++) {
+            cell = segGrid[cy * segCols + cx] || (segGrid[cy * segCols + cx] = []);
+            cell.push(ri, j);
+          }
+        }
+      }
+    }
+
+    function nearestRoad(tx, ty) {
+      if (!segGrid) buildSegGrid();
+      var roads = MAP.roads || [];
+      var best = null, bestD = Infinity, road, pts, j, k, cell, r, cx, cy;
+      var ax, ay, bx, by, dx, dy, len2, t0, qx, qy, dist;
+      var tcx = Math.floor(tx / SEG_C), tcy = Math.floor(ty / SEG_C), maxR = Math.max(segCols, segRows);
+      for (r = 0; r <= maxR; r++) {
+        /* everything in ring r is at least (r - 1) cells away: stop once that beats the best */
+        if (best && (r - 1) * SEG_C > 0 && ((r - 1) * SEG_C) * ((r - 1) * SEG_C) > bestD) break;
+        for (cy = tcy - r; cy <= tcy + r; cy++) {
+          if (cy < 0 || cy >= segRows) continue;
+          for (cx = tcx - r; cx <= tcx + r; cx++) {
+            if (cx < 0 || cx >= segCols || (Math.abs(cx - tcx) !== r && Math.abs(cy - tcy) !== r)) continue;
+            cell = segGrid[cy * segCols + cx];
+            if (!cell) continue;
+            for (k = 0; k < cell.length; k += 2) {
+              road = roads[cell[k]]; pts = road.p; j = cell[k + 1];
+              ax = pts[j]; ay = pts[j + 1]; bx = pts[j + 2]; by = pts[j + 3];
+              dx = bx - ax; dy = by - ay;
+              len2 = dx * dx + dy * dy;
+              if (len2 <= 0.000001) continue;
+              t0 = ((tx - ax) * dx + (ty - ay) * dy) / len2;
+              t0 = Math.max(0, Math.min(1, t0));
+              qx = ax + t0 * dx; qy = ay + t0 * dy;
+              dist = (tx - qx) * (tx - qx) + (ty - qy) * (ty - qy);
+              if (dist < bestD) {
+                bestD = dist;
+                best = { road: road, ax: ax, ay: ay, bx: bx, by: by, x: qx, y: qy, dx: dx, dy: dy, dist: Math.sqrt(dist) };
+              }
+            }
           }
         }
       }
