@@ -382,8 +382,7 @@ var ATMO = (function () {
       for (var k = 0; k < G.vehicles.length; k++) {
         var veh = G.vehicles[k];
         var t = veh.type;
-        var isPolice = (t === "car" || t === "van" || t === "truck" ||
-                        t === "watertruck" || t === "barriertruck" || t === "ambulance");
+        var isPolice = !!UNITTYPES.vehicle(t);   /* every squad vehicle has lights */
         if (!isPolice) continue;
         var pv = projXY(veh.x, veh.y, 0);
         if (!onScreen(G, pv.x, pv.y, 400)) continue;

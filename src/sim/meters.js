@@ -11,7 +11,7 @@ var METERS = (function () {
       v = G.vehicles[i];
       if (v && v.squad === s) {
         if (v.type === "watertruck") return v;
-        if (v.type === "car" || v.type === "van" || v.type === "truck") return v;
+        if (UNITTYPES.get(v.type).loudspeaker) return v;
       }
     }
     return null;
@@ -133,7 +133,7 @@ var METERS = (function () {
     for (i = 0; i < G.vehicles.length; i++) {
       v = G.vehicles[i];
       if (!v) continue;
-      tool = (v.type === "watertruck") ? "water" : ((v.type === "car" || v.type === "van" || v.type === "truck") ? "loudspeaker" : null);
+      tool = (v.type === "watertruck") ? "water" : (UNITTYPES.get(v.type).loudspeaker ? "loudspeaker" : null);
       if (!tool) continue;
       init(v);
       var isActive = !!(active && active.id === v.id);

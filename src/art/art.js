@@ -1681,7 +1681,7 @@ var Art = (function () {
   function drawOfficerAt(ctx, o, t, s, ang, c, sn) {
     var firm = o.stance === "firm", bike = o.baseSpeed >= CONFIG.motorbikeSpeed;
     var lo = Police.getLoadout(_G, o.squad);
-    var riot = (lo === "none" || lo === "van" || lo === "truck" || lo === "barriertruck" || lo === "watertruck");
+    var riot = !!UNITTYPES.get(lo).riotGear;   /* riot helmets and shields (src/units/*.js) */
     var horse = lo === "mounted";
     if (bike) drawMotorbike(ctx, o, t, s, c, sn);
     var front = c + sn > 0;

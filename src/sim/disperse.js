@@ -65,7 +65,7 @@ var DISPERSE = (function () {
     for (var i = 0; i < vs.length; i++) {
       var v = vs[i];
       if (v.squad !== s) continue;
-      if (v.type === "car" || v.type === "van" || v.type === "truck") return true;
+      if (UNITTYPES.get(v.type).loudspeaker) return true;
     }
     return false;
   }
@@ -75,7 +75,7 @@ var DISPERSE = (function () {
     for (var i = 0; i < vs.length; i++) {
       var v = vs[i];
       if (v.squad !== s) continue;
-      if (v.type === "car" || v.type === "van" || v.type === "truck") return { x: v.x, y: v.y };
+      if (UNITTYPES.get(v.type).loudspeaker) return { x: v.x, y: v.y };
     }
     return null;
   }

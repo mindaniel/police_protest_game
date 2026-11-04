@@ -867,7 +867,7 @@ function uiRightClick(e) {
   if (UI.screen !== "playing" || UI.Game.paused) return;
   if (UI.mode) { UI.mode = null; return; }
   var t = UI.toTile(e), lo = Police.getLoadout(G, UI.selected);
-  if (typeof METERS !== "undefined" && (lo === "watertruck" || lo === "car" || lo === "van" || lo === "truck")) {
+  if (typeof METERS !== "undefined" && (lo === "watertruck" || UNITTYPES.get(lo).loudspeaker)) {
     uiMeterStart(t);   /* hold right button: spray / broadcast until released or empty */
   }
   else if (lo === "watertruck") uiWater(t);

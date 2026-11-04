@@ -94,6 +94,8 @@ var SQUADCAM = (function () {
   }
 
   function vehicleDims(type) {
+    var uv = UNITTYPES.vehicle(type);   /* real size from src/units/*.js (32 world units per tile) */
+    if (uv) return { w: uv.len / 32, h: uv.wid / 32 };
     if (type === "car") return { w: 1.7, h: 0.8 };
     if (type === "van") return { w: 2.1, h: 0.9 };
     if (type === "truck" || type === "watertruck" || type === "barriertruck") return { w: 2.6, h: 1.0 };

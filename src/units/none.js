@@ -1,1 +1,1 @@
-UNITTYPES.register({ id: "none", name: "Foot squad", short: "foot", label: null, order: 1, key: "1", slot: 11, cost: 1, swapCost: 0, officers: 4, desc: "4 officers on foot", officerSpeed: "officer", canArrest: true, isDefault: 2, vehicle: null });
+UNITTYPES.register({ id: "none", name: "Foot squad", short: "foot", label: null, order: 1, key: "1", slot: 11, cost: 1, swapCost: 0, officers: 4, desc: "4 officers on foot", officerSpeed: "officer", riotGear: true, canArrest: true, isDefault: 2, vehicle: null });

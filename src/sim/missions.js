@@ -284,7 +284,7 @@
       var label = 'MISSION: ' + cur.title + '  ' + mm + ':' + (ss < 10 ? '0' : '') + ss;
       var prog = Math.max(0, Math.min(1, 1 - left / cur.limit));
       var bw = Math.min(420, W - 40);
-      var bx = (W - bw) / 2, by = 8;
+      var bx = (W - bw) / 2, by = 30;   /* below the top status bar */
       ctx.save();
       ctx.fillStyle = 'rgba(15,23,42,0.75)';
       ctx.fillRect(bx, by, bw, 34);
@@ -305,7 +305,7 @@
       ctx.fillStyle = banner.color;
       ctx.font = 'bold 26px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(banner.text, W / 2, 68);
+      ctx.fillText(banner.text, W / 2, 92);
       ctx.restore();
     }
   }
