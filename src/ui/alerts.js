@@ -419,8 +419,27 @@ var ALERTS = (function () {
 
   // ---- drawing ----
 
+  function drawPing(ctx) {
+    if (!ping || typeof Art === "undefined" || !Art.project) return;
+    var age = (Date.now() - ping.t0) / 1000;
+    if (age > 3) { ping = null; return; }
+    var p = Art.project(ping.x, ping.y, 0), i, r;
+    ctx.save();
+    ctx.strokeStyle = ping.col;
+    for (i = 0; i < 3; i++) {
+      r = ((age * 1.2 + i / 3) % 1);
+      ctx.globalAlpha = (1 - r) * (1 - age / 3);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 8 + r * 40, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function draw(ctx, w, h, G) {
     if (!ctx) return;
+    drawPing(ctx);
     var lay = columnLayout(G);
     var k = lay.k;
 
@@ -550,11 +569,31 @@ var ALERTS = (function () {
 
   // ---- input ----
 
+  /* where to look: for violence the nearest person still violent (they move after the
+   * alert fires), otherwise the alert spot */
+  function focusPoint(a) {
+    var x = a.x, y = a.y;
+    if (a.kind === "violence" && typeof G !== "undefined" && G && G.agents) {
+      var best = 64, i, ag, d;
+      for (i = 0; i < G.agents.length; i++) {
+        ag = G.agents[i];
+        if (!ag.active || !(ag.violentUntil > G.time)) continue;
+        d = (ag.x - a.x) * (ag.x - a.x) + (ag.y - a.y) * (ag.y - a.y);
+        if (d < best) { best = d; x = ag.x; y = ag.y; }
+      }
+    }
+    return { x: x, y: y };
+  }
+
+  var ping = null;   /* pulsing ring at the spot the player jumped to */
+
   function centerOnAlert(a) {
     if (!a) return;
+    var f = focusPoint(a);
     if (typeof Art !== "undefined" && Art && typeof Art.centerOn === "function") {
-      Art.centerOn(a.x, a.y, 2.2);
+      Art.centerOn(f.x, f.y, 9);   /* close enough to see who is doing what */
     }
+    ping = { x: f.x, y: f.y, t0: Date.now(), col: a.color || "#ff3b30" };
     if (a.kind === "squad") {
       // label format "Squad N knocked back"
       var m = /Squad\s+(\S+)/.exec(a.label);

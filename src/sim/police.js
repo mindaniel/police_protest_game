@@ -271,6 +271,14 @@ var Police = (function () {
       if (n) { gx = n.x + 0.5; gy = n.y + 0.5; }
       else if (allow(Math.floor(e.tx), Math.floor(e.ty))) { gx = e.tx; gy = e.ty; }
     }
+    if (veh) {   /* park in the middle of the road, not against the kerb */
+      var clr = driveClear(G), pw = MAP.rows[0].length, pen = kerbPenalty(G, clr, pw, MAP.rows.length);
+      var gi = Math.floor(gy) * pw + Math.floor(gx);
+      if (pen[gi] > 0) {
+        var mid = nearestAllowed(G, Math.floor(gx), Math.floor(gy), function (x, y) { var j = y * pw + x; return clr[j] && pen[j] === 0; }, 3);
+        if (mid) { gx = mid.x + 0.5; gy = mid.y + 0.5; }
+      }
+    }
     e._goalKey = gk; e._goalFix = { x: gx, y: gy };
     return { x: gx, y: gy };
   }
@@ -356,6 +364,25 @@ var Police = (function () {
     return clear;
   }
 
+  /* extra route cost per drivable tile: 2 beside a kerb or wall, 1 one tile further in */
+  function kerbPenalty(G, clear, w, h) {
+    if (G._kerbPen && G._kerbPenFor === clear) return G._kerbPen;
+    var pen = new Uint8Array(w * h), i, x, y, k, near;
+    var ring1 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    var ring2 = [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    function blocked(xx, yy) { return xx < 0 || yy < 0 || xx >= w || yy >= h || !clear[yy * w + xx]; }
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      i = y * w + x;
+      if (!clear[i]) continue;
+      near = 0;
+      for (k = 0; k < 4 && !near; k++) if (blocked(x + ring1[k][0], y + ring1[k][1])) near = 2;
+      for (k = 0; k < 8 && !near; k++) if (blocked(x + ring2[k][0], y + ring2[k][1])) near = 1;
+      pen[i] = near;
+    }
+    G._kerbPen = pen; G._kerbPenFor = clear;
+    return pen;
+  }
+
   function vehicleFlowField(G, sx, sy) {
     var clear = driveClear(G);
     var h = MAP.rows.length, w = MAP.rows[0].length;
@@ -380,16 +407,25 @@ var Police = (function () {
       var i;
       for (i = 0; i < dist.length; i++) dist[i] = -1;
       if (cx >= 0 && cx < w && cy >= 0 && cy < h && clear[cy * w + cx]) {
-        var q = [cx + cy * w];
+        /* cheapest route, where tiles beside the kerb cost more: vehicles keep to the middle
+         * of the road instead of scraping along walls (bucket queue, small integer costs) */
+        var pen = kerbPenalty(G, clear, w, h);
+        var buckets = [[cx + cy * w]], bi = 0, nb = [-1, 1, -w, w];
         dist[cy * w + cx] = 0;
-        var head = 0;
-        while (head < q.length) {
-          var idx = q[head++];
-          var x = idx % w, y = (idx - x) / w, d = dist[idx];
-          if (x > 0 && clear[idx - 1] && dist[idx - 1] < 0) { dist[idx - 1] = d + 1; q.push(idx - 1); }
-          if (x + 1 < w && clear[idx + 1] && dist[idx + 1] < 0) { dist[idx + 1] = d + 1; q.push(idx + 1); }
-          if (y > 0 && clear[idx - w] && dist[idx - w] < 0) { dist[idx - w] = d + 1; q.push(idx - w); }
-          if (y + 1 < h && clear[idx + w] && dist[idx + w] < 0) { dist[idx + w] = d + 1; q.push(idx + w); }
+        while (bi < buckets.length) {
+          var bk = buckets[bi];
+          if (!bk || !bk.length) { bi++; continue; }
+          var idx = bk.pop();
+          if (dist[idx] !== bi) continue;   /* stale entry */
+          var x = idx % w;
+          for (var k = 0; k < 4; k++) {
+            var n = idx + nb[k];
+            if ((k === 0 && x === 0) || (k === 1 && x + 1 >= w) || n < 0 || n >= w * h || !clear[n]) continue;
+            var nd = bi + 1 + pen[n];
+            if (dist[n] >= 0 && dist[n] <= nd) continue;
+            dist[n] = nd;
+            (buckets[nd] || (buckets[nd] = [])).push(n);
+          }
         }
       }
       G._vehFlow[key] = dist;
