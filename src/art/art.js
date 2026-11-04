@@ -1,7 +1,7 @@
 /* art.js - isometric low-poly renderer for the protest scenario.
  * Light city: cached ground texture, extruded buildings (Path2D per diagonal),
  * capsule people, 3D vehicles, depth-sorted by diagonal, plus a camera
- * (wheel zoom, right/middle-drag pan, arrow keys, H = low buildings, 0 = reset).
+ * (wheel zoom, right/middle-drag pan, arrow keys, H = low buildings, Home = reset).
  * Reads MAP/CONFIG/G only inside functions. Classic script, ES5, no images.
  * Tests never load this file.
  */
@@ -21,6 +21,7 @@ var Art = (function () {
   var heights = null, tints = null, shopIdx = null;
   var diags = null, shopTiles = null;
   var groundCv = null, _dirty = true, lowMode = false;
+  try { lowMode = localStorage.getItem("ppg_low") === "1"; } catch (e) {}
   var trees = [], lamps = [], tprops = [], streetProps = [];
   var TREE_CACHE = {};          /* key: variety + "|" + quantised scale -> {c, ax, ay} */
   var CLUTTER_CACHE = {};
@@ -112,6 +113,14 @@ var Art = (function () {
   function getView() { return viewMode; }
 
   function toggleView() { setView(viewMode === "tilt" ? "top" : "tilt"); return viewMode; }
+
+  /* low buildings: see the street behind blocks (settings menu or H), remembered */
+  function toggleLow() {
+    lowMode = !lowMode;
+    try { localStorage.setItem("ppg_low", lowMode ? "1" : "0"); } catch (e) {}
+    buildCity();
+    return lowMode;
+  }
 
   function detail() {
     return cam.zoom < 1.8 ? "far" : (cam.zoom > 4 ? "near" : "mid");
@@ -386,8 +395,8 @@ var Art = (function () {
       else if (k === "ArrowDown") panScreen(0, step);
       else if (k === "+" || k === "=") zoomAt(LW / 2, LH / 2, 1.25);
       else if (k === "-" || k === "_") zoomAt(LW / 2, LH / 2, 0.8);
-      else if (k === "0" || k === "Home") { cam.zoom = 1; updateCamera(); }
-      else if (k === "h" || k === "H") { lowMode = !lowMode; buildCity(); }
+      else if (k === "Home") { cam.zoom = 1; updateCamera(); }   /* 0 selects a unit type */
+      else if (k === "h" || k === "H") toggleLow();
       else return;
       if (k.indexOf("Arrow") === 0) e.preventDefault();
     });
@@ -2559,6 +2568,8 @@ var Art = (function () {
     groundEnd: groundEnd,
     panBy: panScreen,
     centerOn: centerOn,
+    isLow: function () { return lowMode; },
+    toggleLow: toggleLow,
     camera: cam,
     setView: setView,
     getView: getView,

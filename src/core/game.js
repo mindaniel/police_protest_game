@@ -11,6 +11,7 @@ var CONFIG = {
   crowdSize: 150,        // number of crowd agents
   rioterCount: 8,        // hidden violent rioters inside the crowd
   matchSeconds: 300,     // live phase length (5 minutes)
+  calmStartSeconds: 90,  // crowd gathers without violence so squads can reach their posts
   tileSize: 16,          // pixels per tile on the canvas
 
   // Reserved for later steps (crowd mood, police, tools)

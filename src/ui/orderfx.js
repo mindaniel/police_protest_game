@@ -1,56 +1,23 @@
 var ORDERFX = (function () {
-  var inited = false, entries = {}, origMove = null, origDrive = null, now = 0;
+  var inited = false, entries = {}, now = 0;
   var PALETTE = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#a855f7", "#06b6d4", "#ec4899", "#84cc16"];
 
+  /* squads are numbers (0-based); boarded officers leave G.officers, so fall back to the vehicle */
   function squadColor(G, s) {
-    try {
-      if (typeof Art !== "undefined" && Art && typeof Art.squadColor === "function") {
-        var c = Art.squadColor(s);
-        if (c) return c;
-      }
-      if (G && typeof G.squadColor === "function") {
-        var c2 = G.squadColor(s);
-        if (c2) return c2;
-      }
-      if (s && s.color) return s.color;
-      if (s && typeof s.idx === "number") return PALETTE[s.idx % PALETTE.length];
-    } catch (e) {}
-    return PALETTE[0];
+    return PALETTE[(+s || 0) % PALETTE.length];
   }
 
-  function squadId(G, s) {
-    if (!s) return "?";
-    if (typeof s.num === "number") return s.num;
-    if (typeof s.number === "number") return s.number;
-    if (typeof s.id === "number") return s.id;
-    if (typeof s.idx === "number") return s.idx + 1;
-    if (Array.isArray(G && G.squads)) {
-      var i = G.squads.indexOf(s);
-      if (i >= 0) return i + 1;
-    }
-    return "?";
-  }
+  function squadId(G, s) { return (+s || 0) + 1; }
 
-  function centreOf(s) {
-    var ox = 0, oy = 0, n = 0, vx = 0, vy = 0, vn = 0;
-    var list = s && (s.officers || s.units || s.members);
-    if (list && list.length) {
-      for (var i = 0; i < list.length; i++) {
-        var o = list[i];
-        if (!o) continue;
-        ox += (typeof o.x === "number" ? o.x : 0);
-        oy += (typeof o.y === "number" ? o.y : 0);
-        n++;
-      }
+  function centreOf(G, s) {
+    var x = 0, y = 0, n = 0, i, o, list = (G && G.officers) || [], vs = (G && G.vehicles) || [];
+    for (i = 0; i < list.length; i++) {
+      o = list[i];
+      if (o && o.squad === s && !o.escorting) { x += o.x; y += o.y; n++; }
     }
-    var v = s && (s.vehicle || s.car);
-    if (v && typeof v.x === "number") { vx = v.x; vy = v.y; vn = 1; }
-    if (!n && !vn) {
-      if (s && typeof s.x === "number") return { x: s.x, y: s.y };
-      return { x: 0, y: 0 };
-    }
-    var tx = ox + vx, ty = oy + vy, tn = n + vn;
-    return { x: tx / tn, y: ty / tn };
+    if (n) return { x: x / n, y: y / n };
+    for (i = 0; i < vs.length; i++) if (vs[i] && vs[i].squad === s) return { x: vs[i].x, y: vs[i].y };
+    return null;
   }
 
   function project(x, y) {
@@ -63,45 +30,13 @@ var ORDERFX = (function () {
     return { x: x, y: y };
   }
 
+  /* called only for player orders (uiSquadGo); one marker per squad */
   function note(G, s, x, y, kind) {
-    if (!s) return;
-    var key = s.__orderfxKey;
-    if (!key) {
-      key = "s" + (++ORDERFX._n || (ORDERFX._n = 1));
-      try { s.__orderfxKey = key; } catch (e) { key = "s" + Math.random(); }
-    }
-    entries[key] = {
-      squad: s,
-      tx: x, ty: y,
-      t0: now,
-      kind: kind || "walk",
-      arrivedAt: -1
-    };
+    if (typeof s !== "number") return;
+    entries["s" + s] = { squad: s, G: G, tx: x, ty: y, t0: now, kind: kind || "walk", arrivedAt: -1 };
   }
 
-  function init() {
-    if (inited) return;
-    inited = true;
-    ORDERFX._n = ORDERFX._n || 0;
-    try {
-      if (typeof Police !== "undefined" && Police && typeof Police.moveSquad === "function") {
-        origMove = Police.moveSquad;
-        Police.moveSquad = function (G, s, x, y, run) {
-          note(G, s, x, y, "walk");
-          return origMove.apply(this, arguments);
-        };
-      }
-    } catch (e) {}
-    try {
-      if (typeof TRANSPORT !== "undefined" && TRANSPORT && typeof TRANSPORT.drive === "function") {
-        origDrive = TRANSPORT.drive;
-        TRANSPORT.drive = function (G, s, x, y) {
-          note(G, s, x, y, "drive");
-          return origDrive.apply(this, arguments);
-        };
-      }
-    } catch (e) {}
-  }
+  function init() { inited = true; }
 
   function update(G, dt) {
     if (typeof dt !== "number" || dt < 0) dt = 0;
@@ -109,9 +44,9 @@ var ORDERFX = (function () {
     for (var k in entries) {
       if (!entries.hasOwnProperty(k)) continue;
       var e = entries[k];
-      if (!e.squad) { delete entries[k]; continue; }
+      var c = centreOf(e.G, e.squad);
+      if (!c) { delete entries[k]; continue; }
       if (e.arrivedAt < 0) {
-        var c = centreOf(e.squad);
         var dx = c.x - e.tx, dy = c.y - e.ty;
         if ((dx * dx + dy * dy) <= 4) e.arrivedAt = now;
         else if (now - e.t0 > 60) e.arrivedAt = now;
@@ -130,12 +65,13 @@ var ORDERFX = (function () {
     for (var k in entries) {
       if (!entries.hasOwnProperty(k)) continue;
       var e = entries[k];
-      if (!e || !e.squad) continue;
+      if (!e) continue;
       var col = squadColor(G, e.squad);
       var tp = project(e.tx, e.ty);
-      var c = centreOf(e.squad);
+      var c = centreOf(G, e.squad);
+      if (!c) continue;
       var sp = project(c.x, c.y);
-      var isSel = (sel === e.squad || (sel && sel.squad === e.squad));
+      var isSel = sel === e.squad;
       var age = t - e.t0;
 
       if (e.arrivedAt < 0) {
@@ -147,13 +83,15 @@ var ORDERFX = (function () {
         ctx.arc(tp.x, tp.y, 10 + 6 * pulse, 0, Math.PI * 2);
         ctx.stroke();
 
-        ctx.globalAlpha = isSel ? 0.8 : 0.5;
-        ctx.setLineDash([6, 5]);
-        ctx.beginPath();
-        ctx.moveTo(sp.x, sp.y);
-        ctx.lineTo(tp.x, tp.y);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        if (isSel) {   /* route line only for the selected squad */
+          ctx.globalAlpha = 0.8;
+          ctx.setLineDash([6, 5]);
+          ctx.beginPath();
+          ctx.moveTo(sp.x, sp.y);
+          ctx.lineTo(tp.x, tp.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
 
         if (age < 0.6) {
           var rp = age / 0.6;

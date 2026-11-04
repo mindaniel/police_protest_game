@@ -939,7 +939,8 @@ var Crowd = (function () {
   function updateRioter(G, r, dt) {
     var C = CONFIG;
     if (r.braced && typeof RESIST !== "undefined") return;   /* braced: RESIST handles steering, shoving, throwing */
-    if (r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;   /* going for a landmark */
+    var calm = G.time < (C.calmStartSeconds || 0);   /* opening minutes: crowd gathers, no violence yet */
+    if (!calm && r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;   /* going for a landmark */
 
     if (r.state === "flee") {
       if (G.time >= r._fleeUntil) {
@@ -1021,6 +1022,7 @@ var Crowd = (function () {
       return;
     }
 
+    if (calm) return;
     if (Math.random() < C.vanguardChance * (typeof NIGHT !== "undefined" ? NIGHT.boldness(G) : 1) * dt) {
       var vt = pickTargetShop(G, r);
       if (vt) {

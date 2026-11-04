@@ -438,25 +438,13 @@ var SQUADPLAN = (function () {
       var p1 = Art.project(s.x1 + 1, s.y1 + 1, 0);
       var x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y);
       var w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
-      var col = tintColor(th[i], maxT);
 
-      // threat tint 18%
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = col;
-      ctx.fillRect(x, y, w, h);
-      ctx.globalAlpha = 1;
-
-      // dark outline underneath for contrast
-      ctx.strokeStyle = "rgba(0,0,0,0.7)";
-      ctx.lineWidth = 4;
-      ctx.setLineDash([]);
-      ctx.strokeRect(x, y, w, h);
-
-      // clear white line 2px, 35% alpha
-      ctx.globalAlpha = 0.35;
+      // thin faint border only (no threat tint: it hid the map)
+      ctx.globalAlpha = 0.3;
       ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       ctx.globalAlpha = 1;
 
       // sector name — readable 14px

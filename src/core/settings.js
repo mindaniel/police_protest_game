@@ -108,6 +108,9 @@ var SETTINGS = (function () {
 if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
       out.push({ id: "view", label: "View", value: function () { return Art.getView() === "top" ? "Top-down" : "Tilted (3D)"; }, change: function () { Art.toggleView(); }, hint: "Tilted looks 3D; top-down hides nothing (\\ or F3)" });
     }
+    if (typeof Art !== "undefined" && Art.toggleLow) {
+      out.push({ id: "low", label: "Buildings", value: function () { return Art.isLow() ? "Low (see behind)" : "Full height"; }, change: function () { Art.toggleLow(); }, hint: "Low buildings show the streets behind blocks (H)" });
+    }
     if (has(MINIMAP) && typeof MINIMAP.isHidden === "function") {
       out.push({
         id: "minimap",
@@ -188,6 +191,7 @@ if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
     { t: "k", k: "click vehicle", d: "select only the vehicle" },
     { t: "k", k: "A + click", d: "arrest" },
     { t: "k", k: "F", d: "shove crowd back" },
+    { t: "k", k: "I", d: "camera follows squad" },
     { t: "k", k: "S", d: "calm / firm stance" },
     { t: "k", k: "E", d: "get in / out of the vehicle" },
     { t: "k", k: "U", d: "vehicle takes arrests to station" },

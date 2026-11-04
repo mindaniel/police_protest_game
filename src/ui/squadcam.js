@@ -451,5 +451,5 @@ var SQUADCAM = (function () {
     return true;
   }
 
-  return { draw: draw, click: click };
+  return { draw: draw, click: click, centre: squadCentre };
 })();

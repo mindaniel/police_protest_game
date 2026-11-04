@@ -194,7 +194,7 @@ var DEBRIEF = (function () {
                    "Build barricades to protect shop fronts"],
       "Restraint": ["Use gas sparingly: it hits peaceful people too",
                     "Keep kettles small and move people through quickly"],
-      "Public trust": ["Send liaison officers into calm areas early",
+      "Public trust": ["Send medics into angry areas early",
                        "Use the drone to spot rioters from above"]
     };
     for (i = 0; i < order.length && tips.length < 3; i++) {

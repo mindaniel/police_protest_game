@@ -232,7 +232,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     if (UI.screen === "over") {
       if (k === "r" || k === "R") restartGame();
       else if (k === "m" || k === "M") { UI.screen = "title"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("Map: " + MAP.realName); }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") uiBusy(function () { restartGame(true); UI.say("Map: " + MAP.realName); });
       return;
     }
     if (UI.screen === "planning") {
@@ -244,7 +244,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
       else if (k === "b" || k === "B") { UI.mode = "barrier"; }
-      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") { restartGame(true); UI.say("Map: " + MAP.realName); }
+      else if ((k === "n" || k === "N") && typeof CityGen !== "undefined") uiBusy(function () { restartGame(true); UI.say("Map: " + MAP.realName); });
       else if (k === "Escape") { UI.mode = null; }
       return;
     }
@@ -297,6 +297,13 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     else if (k === "l" || k === "L") { UI.mode = "loudspeaker"; }
     else if (k === "w" || k === "W") { UI.mode = "water"; }
     else if ((k === "g" || k === "G") && typeof GAS !== "undefined") { UI.mode = "gas"; }
+    else if (k === "i" || k === "I") {   /* camera jumps to the selected squad and follows it */
+      if (UI.follow === UI.selected) { UI.follow = null; UI.say("Camera free"); }
+      else {
+        var fc = SQUADCAM.centre(G, UI.selected);
+        if (fc) { UI.follow = UI.selected; Art.centerOn(fc.x, fc.y, 3); UI.say("Camera follows squad " + (UI.selected + 1) + " (I or drag the map to stop)"); }
+      }
+    }
     else if ((k === "k" || k === "K") && typeof TACT !== "undefined") {
       if (TACT.kettleActive()) { TACT.release(G); UI.mode = null; }
       else { UI.mode = "kettle"; UI.say("Click the centre of the group to kettle (needs 2 squads with 3+ officers nearby)"); }
@@ -368,6 +375,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     if (!p.drag && dx * dx + dy * dy > 36) p.drag = true;
     if (UI.mode === "patrolArea" && UI._areaA) { if (p.drag) UI._areaDrag = true; return; }   /* drawing the patrol rectangle, no pan */
     if (p.drag && typeof Art !== "undefined" && Art.panBy) {
+      UI.follow = null;   /* dragging the map stops camera follow */
       var r = cv.getBoundingClientRect(), ts = CONFIG.tileSize;
       Art.panBy(-dx / r.width * MAP.width * ts, -dy / r.height * MAP.height * ts);
       p.x = e.clientX; p.y = e.clientY;
@@ -473,7 +481,9 @@ function uiArrest(e) {
  * is aboard, get in and drive when the trip is long, otherwise walk (the vehicle follows). */
 function uiSquadGo(s, x, y, run) {
   if (typeof LINES !== "undefined") LINES.onManualMove(G, s);   /* a move order releases a line / checkpoint */
+  if (typeof ORDERFX !== "undefined") ORDERFX.note(G, s, x, y);   /* click marker + route line */
   if (typeof TRANSPORT !== "undefined") {
+    if (!UI.selVehicle) TRANSPORT.boardRest(G, s);   /* officers still on foot get in before the ride */
     if (TRANSPORT.drive(G, s, x, y)) return;
     if (UI.selVehicle && TRANSPORT.driveEmpty(G, s, x, y)) return;
     var v = TRANSPORT.vehicleOf(G, s);
@@ -592,13 +602,32 @@ function uiCommitChosenMap() {
 function uiStartPlay() {
   UI.screen = "playing"; UI.mode = null;
   if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
+  if (CONFIG.calmStartSeconds) UI.say("The crowd is gathering: about " + Math.round(CONFIG.calmStartSeconds) + " s before trouble starts. Get your squads in place.");
+}
+
+/* Spinner over the page while slow synchronous work (map build, restart) runs.
+ * The CSS animation keeps turning even while the main thread is busy. */
+function uiLoading(on) {
+  var d = document.getElementById("loading");
+  if (d) d.style.display = on ? "flex" : "none";
+}
+function uiBusy(fn) {
+  uiLoading(true);
+  requestAnimationFrame(function () {   /* let the spinner paint first */
+    setTimeout(function () { try { fn(); } finally { uiLoading(false); } }, 0);
+  });
 }
 
 /* Leave the title screen; rebuild the crowd when the difficulty changed. */
 function uiStartLevel() {
-  if (UI.screen === "title") uiCommitChosenMap();
-  if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
-  UI.screen = "planning";
+  if (UI._starting) return;
+  UI._starting = true;
+  uiBusy(function () {
+    UI._starting = false;
+    if (UI.screen === "title") uiCommitChosenMap();
+    if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
+    UI.screen = "planning";
+  });
 }
 
 function uiLeftClick(e) {
@@ -932,6 +961,7 @@ var UI_CONTROLS = [
   "Z then click : trigger zone (Shift+Z clears)",
   "Shift+H / G / R / A : every squad holds / guards / retreats / goes auto",
   "Space : pause     T : speed 1x / 2x     N (planning) : next map",
+  "I : camera follows the selected squad (I again or drag to stop)",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
   "H : low buildings (see behind blocks)",
   "? or F1 : show / shrink / hide the controls panel (top right)",
@@ -1169,6 +1199,11 @@ function uiFitText(ctx, s, x, y, maxW) {
 }
 
 UI.draw = function (ctx, g) {
+  if (!UI._drawn) { UI._drawn = true; uiLoading(false); }   /* first frame: hide the page-load spinner */
+  if (UI.follow != null) {   /* I: keep the followed squad centred */
+    var fc = UI.follow === UI.selected ? SQUADCAM.centre(g, UI.follow) : null;
+    if (fc) Art.centerOn(fc.x, fc.y); else UI.follow = null;
+  }
   uiDrawScreen(ctx, g);
   if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) SETTINGS.draw(ctx, MAP.width * CONFIG.tileSize, MAP.height * CONFIG.tileSize);
 };
@@ -1585,7 +1620,7 @@ function uiDrawScreen(ctx, g) {
     ctx.strokeRect(UI.hover.x * ts + 1, UI.hover.y * ts + 1, ts - 2, ts - 2);
   }
   if (UI.mode === "patrolArea" && UI.screen === "playing") uiPatrolAreaOverlay(ctx, g);
-  if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && SQUADPLAN.drawSectors) SQUADPLAN.drawSectors(ctx, g);   /* sector grid + threat tint */
+  if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && SQUADPLAN.drawSectors && !(typeof FORCE !== "undefined" && FORCE.isOpen())) SQUADPLAN.drawSectors(ctx, g);   /* sector grid + threat tint */
   uiGround(ctx, false);
 
   // Top bar

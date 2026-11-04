@@ -116,23 +116,47 @@ var TRANSPORT = (function () {
       if (v.run === "back") { v.run = null; }
       return "dismount";
     }
-    var cap = seats(v.type).crew;
     if (!v.crew) v.crew = [];
-    if (v.crew.length >= cap) return "dismount";
-    st = t.runs[s] = { phase: "board", t: 0, cap: cap, boarded: 0 };
+    if (v.crew.length >= seats(v.type).crew) return "dismount";
+    startBoarding(G, v, s);
+    return "boarding";
+  }
+
+  /* Officers on foot walk to the doors. The vehicle waits long enough for the
+   * farthest one to arrive (walk time + margin, at most 45 s), so nobody is left behind. */
+  function startBoarding(G, v, s) {
+    var cap = seats(v.type).crew;
+    var st = G._transport.runs[s] = { phase: "board", t: 0, cap: cap, boarded: 0, grace: 6 };
     v.parked = false;
     v.ctrl = true;
     v.tx = v.x; v.ty = v.y;
-    var offs = squadOfficers(G, s), i, o, dp, n = 0;
+    var offs = squadOfficers(G, s), i, o, dp, n = 0, far = 0, dx, dy;
     for (i = 0; i < offs.length; i++) {
       o = offs[i];
       if (eligible(o)) {
         dp = doorPoint(G, v, n++);
         o.tx = dp.x; o.ty = dp.y;
         o.homeX = v.x; o.homeY = v.y;
+        dx = o.x - dp.x; dy = o.y - dp.y;
+        far = Math.max(far, Math.sqrt(dx * dx + dy * dy));
       }
     }
-    return "boarding";
+    st.grace = Math.min(45, Math.max(6, far / (CONFIG.officerSpeed || 1.6) * 1.5 + 4));
+  }
+
+  /* Before a ride order: if part of the squad is still on foot and seats are free,
+   * board them first (the drive becomes pending). Returns true when boarding started. */
+  function boardRest(G, s) {
+    ensure(G);
+    var v = vehicleOf(G, s);
+    if (!v || v.run || !hasCrew(v)) return false;
+    var st = G._transport.runs[s];
+    if (st && st.phase === "board") return true;
+    var offs = squadOfficers(G, s), i, foot = 0;
+    for (i = 0; i < offs.length; i++) if (eligible(offs[i])) foot++;
+    if (!foot || v.crew.length >= seats(v.type).crew) return false;
+    startBoarding(G, v, s);
+    return true;
   }
 
   function cancelBoarding(G, v, s) {
@@ -439,7 +463,9 @@ var TRANSPORT = (function () {
           var dp = doorPoint(G, v, n++);
           o.tx = dp.x; o.ty = dp.y;
           var dx = o.x - dp.x, dy = o.y - dp.y;
-          if (v.crew.length < cap && (dx * dx + dy * dy) <= 0.16) {
+          var vx = o.x - v.x, vy = o.y - v.y;
+          /* close to the door, or touching the car (the door spot can be blocked by a wall or the body) */
+          if (v.crew.length < cap && ((dx * dx + dy * dy) <= 0.64 || (vx * vx + vy * vy) <= 1.96)) {
             o.entering = 0.5;
             o.drawScale = 1; o.drawAlpha = 1;
             o.tx = v.x; o.ty = v.y;
@@ -448,7 +474,7 @@ var TRANSPORT = (function () {
           }
         }
         if (waiting > 0 || found) found = true;
-        var grace = 6;
+        var grace = st.grace || 6;
         var full = (v.crew.length >= cap);
         var anyEntering = false;
         for (j = 0; j < offs.length; j++) if (offs[j].entering) anyEntering = true;
@@ -668,6 +694,7 @@ var TRANSPORT = (function () {
     update: update,
     draw: draw,
     toggle: toggle,
+    boardRest: boardRest,
     drive: drive,
     driveEmpty: driveEmpty,
     setAutoDismount: setAutoDismount,
