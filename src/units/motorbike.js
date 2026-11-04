@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "motorbike", name: "Motorbikes", short: "motorbike", label: null, order: 7, key: "7", slot: 7, cost: 2, swapCost: 2, officers: 2, desc: "2 very fast riders", officerSpeed: "motorbike", canArrest: true, isDefault: 1, vehicle: null });

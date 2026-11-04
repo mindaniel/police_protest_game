@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "barriertruck", name: "Barrier truck", short: "barrier truck", label: "BARRIER", order: 6, key: "6", slot: 5, cost: 3, swapCost: 2, officers: 4, desc: "carries 3 street barriers + 4 officers", officerSpeed: "officer", canArrest: true, isDefault: 1, vehicle: { type: "barriertruck", len: 70, wid: 26, crew: 4, arrest: 0, speed: "truck" } });

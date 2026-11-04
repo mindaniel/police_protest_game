@@ -1,14 +1,7 @@
 /* transport.js - officers ride in their squad vehicle */
 var TRANSPORT = (function () {
-  var SEATS = {
-    car: { crew: 4, arrest: 2 },
-    van: { crew: 6, arrest: 5 },
-    truck: { crew: 8, arrest: 8 },
-    watertruck: { crew: 4, arrest: 0 },
-    barriertruck: { crew: 4, arrest: 0 },
-    ambulance: { crew: 2, arrest: 0 },
-    fireengine: { crew: 4, arrest: 0 }
-  };
+  var SEATS = {};   /* from src/units/*.js */
+  UNITTYPES.list().forEach(function (d) { if (d.vehicle) SEATS[d.id] = { crew: d.vehicle.crew, arrest: d.vehicle.arrest }; });
 
   function seats(type) {
     var k = String(type || "").toLowerCase();

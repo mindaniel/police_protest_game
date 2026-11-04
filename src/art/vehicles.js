@@ -1,15 +1,7 @@
 var VEHICLES = (function () {
   var TAU = Math.PI * 2;
-  var SIZES = {
-    /* world units (32 per 3.5 m tile), close to real size so two cars pass on a 3-tile street */
-    car: { len: 44, wid: 20 },
-    van: { len: 52, wid: 22 },
-    truck: { len: 76, wid: 26 },
-    watertruck: { len: 70, wid: 26 },
-    barriertruck: { len: 70, wid: 26 },
-    ambulance: { len: 54, wid: 22 },
-    fireengine: { len: 72, wid: 26 }
-  };
+  var SIZES = {};   /* world units, from src/units/*.js */
+  UNITTYPES.list().forEach(function (d) { if (d.vehicle) SIZES[d.vehicle.type] = { len: d.vehicle.len, wid: d.vehicle.wid }; });
   function drawFireEngine(ctx, L, W, lightsOn) {
     drawBody(ctx, L, W, "#c81e1e", "#8a1414");
     // white stripe

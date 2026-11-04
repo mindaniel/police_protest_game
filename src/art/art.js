@@ -2304,7 +2304,7 @@ var Art = (function () {
     if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
       P(v.x, v.y, 1.55);
-      var nm = v.type === "car" ? "SEDAN" : (v.type === "watertruck" ? "WATER" : (v.type === "van" ? "VAN" : (v.type === "truck" ? "TRUCK" : (v.type === "ambulance" ? "AMBULANCE" : (v.type === "fireengine" ? "FIRE" : "BARRIER")))));
+      var nm = UNITTYPES.get(v.type).label || "BARRIER";
       badge(ctx, _px, _py - 4, (v.squad + 1) + " " + nm, sqCol(v.squad), v.squad === sel);
     }
   }

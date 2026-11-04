@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "liaison", name: "Liaison team", short: "liaison", label: null, order: 9, key: "9", slot: 9, cost: 1, swapCost: 1, officers: 3, desc: "talk people calm, never arrest", officerSpeed: "officer", canArrest: false, isDefault: 0, vehicle: null });

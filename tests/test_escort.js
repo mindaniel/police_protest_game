@@ -8,6 +8,10 @@ function loadWorld() {
   var sandbox = { console: console, performance: { now: function () { return 0; } } };
   sandbox.global = sandbox;
   vm.createContext(sandbox);
+  var udir = path.join(__dirname, "..", "src", "units");   /* unit registry first: game.js reads it */
+  ["registry.js"].concat(fs.readdirSync(udir).filter(function (f) { return f !== "registry.js"; })).forEach(function (f) {
+    vm.runInContext(fs.readFileSync(path.join(udir, f), "utf8"), sandbox, { filename: f });
+  });
   ["map.js", "game.js", "crowd.js", "police.js"].forEach(function (f) {
     var code = fs.readFileSync(path.join(__dirname, "..", "src", f === "map.js" || f === "game.js" ? "core" : "sim", f), "utf8");
     vm.runInContext(code, sandbox, { filename: f });

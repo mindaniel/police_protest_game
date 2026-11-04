@@ -1,20 +1,9 @@
 // force.js - Force builder panel for "Police vs Protestors"
 var FORCE = (function () {
-  var TYPES = [
-    { id: "none", name: "Foot squad", cost: 1, officers: 4, desc: "4 officers on foot" },
-    { id: "car", name: "Sedan", cost: 2, officers: 4, desc: "fast, 4 officers, 2 arrest seats" },
-    { id: "van", name: "Police van", cost: 3, officers: 6, desc: "6 officers, 5 arrest seats" },
-    { id: "truck", name: "Riot truck", cost: 4, officers: 8, desc: "8 officers, 8 arrest seats, slow" },
-    { id: "watertruck", name: "Water cannon", cost: 4, officers: 4, desc: "water cannon truck + 4 officers" },
-    { id: "barriertruck", name: "Barrier truck", cost: 3, officers: 4, desc: "carries 3 street barriers + 4 officers" },
-    { id: "motorbike", name: "Motorbikes", cost: 2, officers: 2, desc: "2 very fast riders" },
-    { id: "mounted", name: "Mounted unit", cost: 3, officers: 4, desc: "4 horses, push crowds, scared by fire/gas" },
-    { id: "liaison", name: "Liaison team", cost: 1, officers: 3, desc: "talk people calm, never arrest" },
-    { id: "ambulance", name: "Ambulance", cost: 1, officers: 2, desc: "2 medics calm angry people nearby" },
-    { id: "fireengine", name: "Fire engine", cost: 2, officers: 4, desc: "4 firefighters put out fires, never arrest" }
-  ];
-  var LOADOUT_ORDER = ["car", "van", "truck", "watertruck", "barriertruck", "ambulance", "motorbike", "mounted", "liaison", "fireengine", "none"];
-  var DEFAULTS = { car: 1, watertruck: 1, barriertruck: 1, motorbike: 1, none: 2 };
+  var TYPES = UNITTYPES.list().map(function (d) { return { id: d.id, name: d.name, cost: d.cost, officers: d.officers, desc: d.desc }; });
+  var LOADOUT_ORDER = UNITTYPES.list().sort(function (a, b) { return a.slot - b.slot; }).map(function (d) { return d.id; });
+  var DEFAULTS = {};
+  UNITTYPES.list().forEach(function (d) { if (d.isDefault) DEFAULTS[d.id] = d.isDefault; });
   var STORE_KEY = "ppg_force";
 
   var counts = {};

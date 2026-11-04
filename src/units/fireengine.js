@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "fireengine", name: "Fire engine", short: "fire engine", label: "FIRE", order: 11, key: "-", slot: 10, cost: 2, swapCost: 2, officers: 4, desc: "4 firefighters put out fires, never arrest", officerSpeed: "officer", canArrest: false, isDefault: 0, vehicle: { type: "fireengine", len: 72, wid: 26, crew: 4, arrest: 0, speed: "truck" } });

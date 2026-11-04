@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "car", name: "Sedan", short: "sedan", label: "SEDAN", order: 2, key: "2", slot: 1, cost: 2, swapCost: 2, officers: 4, desc: "fast, 4 officers, 2 arrest seats", officerSpeed: "officer", canArrest: true, isDefault: 1, vehicle: { type: "car", len: 44, wid: 20, crew: 4, arrest: 2, speed: "car" } });

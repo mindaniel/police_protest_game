@@ -32,29 +32,21 @@ var Police = (function () {
     return def ? (def.cost || 0) : 0;
   }
   function vehicleTypeFor(loadout) {
-    if (loadout === "car") return "car";
-    if (loadout === "watertruck") return "watertruck";
-    if (loadout === "barriertruck") return "barriertruck";
-    if (loadout === "van") return "van";
-    if (loadout === "truck") return "truck";
-    if (loadout === "ambulance") return "ambulance";
-    if (loadout === "fireengine") return "fireengine";
-    return null;   /* motorbike and none have no big vehicle */
+    var v = UNITTYPES.vehicle(loadout);
+    return v ? v.type : null;
   }
   function vehicleSpeedFor(type) {
-    if (type === "van") return CONFIG.carSpeed * 0.85;
-    return type === "car" ? CONFIG.carSpeed : CONFIG.truckSpeed;
+    var v = UNITTYPES.vehicle(type);
+    if (v && v.speed === "van") return CONFIG.carSpeed * 0.85;
+    return v && v.speed === "car" ? CONFIG.carSpeed : CONFIG.truckSpeed;
   }
   function officersPerSquadFor(loadout) {
-    if (loadout === "liaison") return 3;
-    if (loadout === "van") return 6;      /* a van seats 6 officers */
-    if (loadout === "truck") return 8;    /* a truck seats 8 */
-    if (loadout === "ambulance") return 2;   /* 2 medics */
-    return loadout === "motorbike" ? 2 : CONFIG.officersPerSquad;
+    return UNITTYPES.get(loadout).officers || CONFIG.officersPerSquad;
   }
   function officerSpeedFor(loadout) {
-    if (loadout === "mounted") return CONFIG.mountedSpeed || 3.0;
-    return loadout === "motorbike" ? CONFIG.motorbikeSpeed : CONFIG.officerSpeed;
+    var k = UNITTYPES.get(loadout).officerSpeed;
+    if (k === "mounted") return CONFIG.mountedSpeed || 3.0;
+    return k === "motorbike" ? CONFIG.motorbikeSpeed : CONFIG.officerSpeed;
   }
   var nextDetaineeId = 1;
 
@@ -968,7 +960,7 @@ var Police = (function () {
     var leader = leaderForSquad(G, squadIndex);
     if (!leader) return false;
     var nolo = loadoutOf(G, squadIndex);
-    if (nolo === "liaison" || nolo === "ambulance" || nolo === "fireengine") return false;   /* liaison officers and medics never arrest */
+    if (!UNITTYPES.canArrest(nolo)) return false;   /* liaison, medics, firefighters */
     leader.arrestTarget = agent;
     leader.arrestManual = true;
     leader.arrestHold = 0;
@@ -1104,7 +1096,7 @@ var Police = (function () {
       }
       var leader = squad[0];
       if (!leader) continue;
-      if (loadoutOf(G, s) === "liaison" || loadoutOf(G, s) === "ambulance" || loadoutOf(G, s) === "fireengine") continue;
+      if (!UNITTYPES.canArrest(loadoutOf(G, s))) continue;
 
       if (leader.arrestTarget && leader.arrestManual) {
         updateManualArrest(G, s, squad, dt);

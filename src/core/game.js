@@ -21,19 +21,7 @@ var CONFIG = {
   barrierCount: 4,
   barriersPerTruck: 3,       // stock carried by one barrier truck
   loadoutBudget: 10,         // total loadout cost across all squads
-  loadouts: {
-    none:         { cost: 0 },
-    car:          { cost: 2 },
-    watertruck:   { cost: 3 },
-    barriertruck: { cost: 2 },
-    motorbike:    { cost: 2 },
-    mounted:      { cost: 3 },   // 4 officers on horseback: fast, push the crowd, panic in gas/fire
-    liaison:      { cost: 1 },   // 3 liaison officers: talk people down, never arrest
-    van:          { cost: 3 },   // 6 officers ride in a van, 5 arrest seats
-    truck:        { cost: 4 },   // 8 officers ride in a truck, 8 arrest seats
-    ambulance:    { cost: 2 },   // 2 medics calm the hurt and angry nearby, never arrest
-    fireengine:   { cost: 2 }    // 4 firefighters put out fires (firecrew.js), never arrest
-  },
+  loadouts: (function () { var o = {}; UNITTYPES.list().forEach(function (d) { o[d.id] = { cost: d.swapCost }; }); return o; })(),   // costs live in src/units/*.js
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
   suspicionThreshold: 50,    // minimum suspicion to allow an arrest

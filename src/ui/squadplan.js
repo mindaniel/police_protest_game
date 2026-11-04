@@ -24,19 +24,6 @@ var SQUADPLAN = (function () {
     return Math.round(px * scale) + "px Consolas, monospace";
   }
 
-  var UNITS = {
-    none: "Foot squad",
-    car: "Sedan",
-    van: "Police van",
-    truck: "Riot truck",
-    watertruck: "Water cannon",
-    barriertruck: "Barrier truck",
-    motorbike: "Motorbikes",
-    mounted: "Mounted unit",
-    liaison: "Liaison team",
-    ambulance: "Ambulance",
-    fireengine: "Fire engine"
-  };
 
   var ORDERS_LIST = ["hold", "guard", "patrol", "auto"];
   var ORDER_SHORT = { hold: "H", guard: "G", patrol: "P", auto: "A" };
@@ -86,7 +73,7 @@ var SQUADPLAN = (function () {
   }
 
   function unitName(t) {
-    return UNITS[t] || "Foot squad";
+    return UNITTYPES.get(t).name;
   }
 
   function squadCount(G) {

@@ -96,12 +96,11 @@ function uiSquadBusy(g, s) {
 }
 
 function uiSelectType(g, k) {
-  /* keys 1..9, 0 follow the force builder order (FORCE TYPES) */
-  var types = ["none", "car", "van", "truck", "watertruck", "barriertruck", "motorbike", "mounted", "liaison", "ambulance", "fireengine"];
-  var names = ["foot", "sedan", "van", "riot truck", "water cannon", "barrier truck", "motorbike", "mounted", "liaison", "ambulance", "fire engine"];
-  var idx = parseInt(k, 10) - 1;
-  if (k === "0") idx = 9;
-  if (k === "-") idx = 10;   /* fire engine */
+  /* keys come from each unit file (src/units/*.js) */
+  var defs = UNITTYPES.list(), def = UNITTYPES.byKey(k);
+  var types = defs.map(function (d) { return d.id; });
+  var names = defs.map(function (d) { return d.short; });
+  var idx = def.key === k ? types.indexOf(def.id) : -1;
   if (idx < 0 || idx >= types.length) return false;
   var loadout = types[idx];
   var list = uiSquadsOfType(g, loadout);

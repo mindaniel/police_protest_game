@@ -1,0 +1,1 @@
+UNITTYPES.register({ id: "watertruck", name: "Water cannon", short: "water cannon", label: "WATER", order: 5, key: "5", slot: 4, cost: 4, swapCost: 3, officers: 4, desc: "water cannon truck + 4 officers", officerSpeed: "officer", canArrest: true, isDefault: 1, vehicle: { type: "watertruck", len: 70, wid: 26, crew: 4, arrest: 0, speed: "truck" } });
