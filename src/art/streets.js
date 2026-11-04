@@ -9,6 +9,75 @@ var STREETS = (function () {
     return "rgba(" + r + "," + g + "," + b + "," + a + ")";
   }
 
+  /* streets.js helpers: roadTexture, laneMarks, kerbEdge, pavingSeams, grassClumps */
+  function roadTexture(g, ox, oy, T, x, y, roadW) {
+    var i, n = 18 + (h(x, y, 1) * 12 | 0), a = [];
+    for (i = 0; i < n; i++) {
+      a.push([ox + (h(x, y, i * 3) * T | 0), oy + (h(x, y, i * 3 + 1) * T | 0),
+        h(x, y, i * 3 + 2) > 0.55]);
+    }
+    g.fillStyle = "rgba(255,255,255,0.045)";
+    g.beginPath();
+    for (i = 0; i < a.length; i++) if (a[i][2]) g.rect(a[i][0], a[i][1], 1, 1);
+    g.fill();
+    g.fillStyle = "rgba(10,10,14,0.075)";
+    g.beginPath();
+    for (i = 0; i < a.length; i++) if (!a[i][2]) g.rect(a[i][0], a[i][1], 1, 1);
+    g.fill();
+    if (roadW >= 6) {
+      g.fillStyle = "rgba(240,240,235,0.55)";
+      g.fillRect(ox + T * 0.46, oy, Math.max(1, T * 0.035), T);
+      g.fillRect(ox + T * 0.505, oy, Math.max(1, T * 0.035), T);
+    } else if (roadW >= 3) {
+      if ((y % 2) === 0) {
+        g.fillStyle = "rgba(240,240,235,0.5)";
+        g.fillRect(ox + T * 0.47, oy + T * 0.05, Math.max(1, T * 0.06), T * 0.5);
+      }
+    }
+  }
+  function laneMarks(g, ox, oy, T, x, y) {
+    g.fillStyle = "rgba(230,230,225,0.22)";
+    g.fillRect(ox, oy + T * 0.04, T, 1);
+    g.fillRect(ox, oy + T - T * 0.04 - 1, T, 1);
+  }
+  function kerbEdge(g, ox, oy, T, s, paveW) {
+    g.fillStyle = "rgba(150,155,160,0.55)";
+    if (s === 0) g.fillRect(ox, oy + paveW - 2, T, 1.5);
+    else if (s === 1) g.fillRect(ox, oy + T - paveW, T, 1.5);
+    else if (s === 2) g.fillRect(ox + paveW - 2, oy, 1.5, T);
+    else g.fillRect(ox + T - paveW, oy, 1.5, T);
+    g.fillStyle = "rgba(25,28,30,0.16)";
+    if (s === 0) g.fillRect(ox, oy + paveW - 4, T, 2);
+    else if (s === 1) g.fillRect(ox, oy + T - paveW + 2, T, 2);
+    else if (s === 2) g.fillRect(ox + paveW - 4, oy, 2, T);
+    else g.fillRect(ox + T - paveW + 2, oy, 2, T);
+  }
+  function pavingSeams(g, ox, oy, T, x, y) {
+    g.strokeStyle = "rgba(0,0,0,0.07)";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(ox + T * 0.5, oy); g.lineTo(ox + T * 0.5, oy + T);
+    g.moveTo(ox, oy + T * 0.5); g.lineTo(ox + T, oy + T * 0.5);
+    g.stroke();
+  }
+  function grassClumps(g, ox, oy, T, x, y) {
+    var i, n = 10 + (h(x, y, 9) * 8 | 0);
+    g.fillStyle = "rgba(40,70,35,0.55)";
+    g.beginPath();
+    for (i = 0; i < n; i++) {
+      if (h(x, y, i + 40) < 0.55) continue;
+      g.rect(ox + (h(x, y, i * 2) * T | 0), oy + (h(x, y, i * 2 + 1) * T | 0), 1, 1);
+    }
+    g.fill();
+    if (h(x, y, 3) < 0.12) {
+      g.fillStyle = "rgba(105,90,60,0.35)";
+      g.beginPath();
+      g.arc(ox + T * (0.3 + h(x, y, 4) * 0.4), oy + T * (0.3 + h(x, y, 5) * 0.4),
+        T * (0.1 + h(x, y, 6) * 0.12), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
   function paint(g, W, H, GT, tile, style) {
     var T = GT, i, x, y, px, py, n, k;
     var isGrid = style !== "paris";
@@ -308,6 +377,11 @@ var STREETS = (function () {
 
       var ox = x * T, oy = y * T;
       var base = legacyRoadBase;
+      var base = hasRoadData ? legacyRoadBase : legacyRoadBase;
+      if (hasRoadData) {
+        var ri2 = nearestRoad(x + 0.5, y + 0.5);
+        base = ri2 ? roadColour(ri2.road) : "#54585e";
+      } else base = "#54585e";
       var roadInfo = null;
 
       if (hasRoadData) {
@@ -317,6 +391,12 @@ var STREETS = (function () {
 
       g.fillStyle = base;
       g.fillRect(ox, oy, T, T);
+      var _rw = 2;
+      if (hasRoadData) {
+        var _ri = nearestRoad(x + 0.5, y + 0.5);
+        _rw = _ri && _ri.road ? (_ri.road.w || 1) : 2;
+      }
+      roadTexture(g, ox, oy, T, x, y, _rw);
 
       var cnt = 25 + (h(x, y, 1) * 15 | 0);
       for (i = 0; i < cnt; i++) {
@@ -382,6 +462,8 @@ var STREETS = (function () {
         }
 
         g.fillRect(rx, ry, rw2, rh);
+        pavingSeams(g, ox2, oy2, T, x, y);
+        kerbEdge(g, ox2, oy2, T, s, stripW);
         g.strokeStyle = "rgba(0,0,0,0.12)";
         g.lineWidth = 1;
         g.beginPath();
@@ -620,6 +702,7 @@ var STREETS = (function () {
       if (tile(x, y) !== "G") continue;
       var ox7 = x * T, oy7 = y * T;
       g.fillStyle = grassCol; g.fillRect(ox7, oy7, T, T);
+      grassClumps(g, ox7, oy7, T, x, y);
       var gr = [[110, 160, 80], [90, 140, 70], [130, 180, 90]];
       var batch = [[], [], []];
       for (i = 0; i < 60; i++) {

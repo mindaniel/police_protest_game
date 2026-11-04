@@ -166,23 +166,47 @@ class Account:
         box.fill(prompt); time.sleep(1)
         with self.page.expect_response(lambda r: "chat/completion" in r.url, timeout=timeout_s * 1000) as info:
             box.press("Enter")
+        text, part = "", 0
         r = info.value
-        if raw_path:   # keep the raw HTTP response (status, headers, SSE body) for debugging
+        while True:
+            body = self._save_raw(r, raw_path, part)
+            if r.status in (401, 403):
+                raise RuntimeError("LOGGED_OUT: HTTP %d" % r.status)
+            if r.status == 429:
+                raise RuntimeError("RATE_LIMITED")
+            chunk, hints = parse_sse(body)
+            text += chunk
+            if not text.strip():
+                raise RuntimeError("RATE_LIMITED" if any("rate_limit" in h for h in hints) else "empty reply " + " | ".join(hints)[:200])
+            # a reply cut off at the length limit ends with status INCOMPLETE; the web page
+            # then shows a "Continue" button that streams the rest as a new response
+            if '"response/status","o":"SET","v":"INCOMPLETE"' not in body or part >= 4:
+                return text
+            part += 1
+            btn = self.page.get_by_role("button", name=re.compile(r"^\s*continue\s*$", re.I)).last
             try:
-                body = r.text()
-            except Exception as e:
-                body = "<body unreadable: %s>" % e
-            raw_path.parent.mkdir(parents=True, exist_ok=True)
-            raw_path.write_text("%s %d %s\n%s\n\n%s" % (r.request.method, r.status, r.url,
-                                "\n".join("%s: %s" % kv for kv in r.headers.items()), body), encoding="utf-8")
-        if r.status in (401, 403):
-            raise RuntimeError("LOGGED_OUT: HTTP %d" % r.status)
-        if r.status == 429:
-            raise RuntimeError("RATE_LIMITED")
-        text, hints = parse_sse(r.text())
-        if not text.strip():
-            raise RuntimeError("RATE_LIMITED" if any("rate_limit" in h for h in hints) else "empty reply " + " | ".join(hints)[:200])
-        return text
+                btn.wait_for(state="visible", timeout=20000)
+            except Exception:
+                return text + "\nINCOMPLETE (no Continue button found)"
+            print("  reply cut off, pressing Continue (part %d)" % (part + 1), flush=True)
+            with self.page.expect_response(lambda r: "/api/v0/chat/" in r.url and r.request.method == "POST"
+                                           and "text/event-stream" in (r.headers.get("content-type") or ""),
+                                           timeout=timeout_s * 1000) as info:
+                btn.click()
+            r = info.value
+
+    def _save_raw(self, r, raw_path, part):
+        """Keep the raw HTTP response (status, headers, SSE body) for debugging; returns the body."""
+        try:
+            body = r.text()
+        except Exception as e:
+            body = "<body unreadable: %s>" % e
+        if raw_path:
+            p = raw_path if part == 0 else raw_path.with_name(raw_path.stem + "_part%d.txt" % (part + 1))
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("%s %d %s\n%s\n\n%s" % (r.request.method, r.status, r.url,
+                         "\n".join("%s: %s" % kv for kv in r.headers.items()), body), encoding="utf-8")
+        return body
 
 
 def login(n):

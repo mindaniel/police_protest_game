@@ -1,12 +1,13 @@
 var VEHICLES = (function () {
   var TAU = Math.PI * 2;
   var SIZES = {
-    car: { len: 54, wid: 26 },
-    van: { len: 66, wid: 29 },
-    truck: { len: 90, wid: 34 },
-    watertruck: { len: 80, wid: 32 },
-    barriertruck: { len: 80, wid: 32 },
-    ambulance: { len: 64, wid: 29 }
+    /* world units (32 per 3.5 m tile), close to real size so two cars pass on a 3-tile street */
+    car: { len: 44, wid: 20 },
+    van: { len: 52, wid: 22 },
+    truck: { len: 76, wid: 26 },
+    watertruck: { len: 70, wid: 26 },
+    barriertruck: { len: 70, wid: 26 },
+    ambulance: { len: 54, wid: 22 }
   };
   var baseCache = {};
   var baseCacheK = null;

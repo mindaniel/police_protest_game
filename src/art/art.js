@@ -1,4 +1,4 @@
-﻿/* art.js - isometric low-poly renderer for the protest scenario.
+/* art.js - isometric low-poly renderer for the protest scenario.
  * Light city: cached ground texture, extruded buildings (Path2D per diagonal),
  * capsule people, 3D vehicles, depth-sorted by diagonal, plus a camera
  * (wheel zoom, right/middle-drag pan, arrow keys, H = low buildings, 0 = reset).
@@ -21,8 +21,9 @@ var Art = (function () {
   var heights = null, tints = null, shopIdx = null;
   var diags = null, shopTiles = null;
   var groundCv = null, _dirty = true, lowMode = false;
-  var trees = [], lamps = [], tprops = [];
+  var trees = [], lamps = [], tprops = [], streetProps = [];
   var TREE_CACHE = {};          /* key: variety + "|" + quantised scale -> {c, ax, ay} */
+  var CLUTTER_CACHE = {};
   var TREE_VARS = null;         /* lazy-built list of variety descriptors */
   var TREE_VAR_KEYS = ["decid", "conifer", "bush"];
   var buckets = [], ghosts = [];
@@ -1044,6 +1045,65 @@ var Art = (function () {
     return e;
   }
 
+  function clutterSprite(type, k, seed) {
+    var q = k > 40 ? Math.round(k / 8) * 8 : (k > 16 ? Math.round(k / 4) * 4 : Math.max(4, Math.round(k)));
+    var bucket = hash2(seed | 0, 29) % 4;
+    var key = type + "|" + q + "|" + bucket;
+    var e = CLUTTER_CACHE[key];
+    if (e) return e;
+    var vertical = type === "carV";
+    var w = type.indexOf("car") === 0 ? Math.max(8, q * (vertical ? 0.42 : 0.86)) :
+            (type === "bench" ? Math.max(8, q * 0.62) : (type === "hedge" ? Math.max(8, q * 0.88) : Math.max(6, q * 0.30)));
+    var h = type.indexOf("car") === 0 ? Math.max(12, q * (vertical ? 0.86 : 0.42)) :
+            (type === "bench" ? Math.max(5, q * 0.30) : (type === "hedge" ? Math.max(4, q * 0.22) : Math.max(6, q * 0.30)));
+    var c = makeCanvas(w + 4, h + 5), g = c.getContext("2d");
+    var bodyCols = ["#9b5a4f", "#4f6f93", "#d2ccbc", "#6d8a5f"];   /* muted but readable on asphalt */
+    var body = bodyCols[bucket], dark = "#343b3d";
+    function roundRect(rx, ry, rw, rh, r, col) {
+      g.fillStyle = col;
+      g.beginPath();
+      g.moveTo(rx + r, ry); g.lineTo(rx + rw - r, ry);
+      g.quadraticCurveTo(rx + rw, ry, rx + rw, ry + r);
+      g.lineTo(rx + rw, ry + rh - r);
+      g.quadraticCurveTo(rx + rw, ry + rh, rx + rw - r, ry + rh);
+      g.lineTo(rx + r, ry + rh);
+      g.quadraticCurveTo(rx, ry + rh, rx, ry + rh - r);
+      g.lineTo(rx, ry + r); g.quadraticCurveTo(rx, ry, rx + r, ry);
+      g.closePath(); g.fill();
+    }
+    if (type.indexOf("car") === 0) {
+      roundRect(2, 2, w, h, Math.max(2, q * 0.10), dark);
+      roundRect(3, 1, w - 2, h - 3, Math.max(2, q * 0.10), body);
+      if (vertical) {
+        roundRect(4, h * 0.27, w - 4, h * 0.42, 2, "#424b50");
+        roundRect(5, h * 0.31, w - 6, h * 0.13, 1, "#9aaeb2");
+        roundRect(5, h * 0.51, w - 6, h * 0.13, 1, "#9aaeb2");
+      } else {
+        roundRect(w * 0.27, 3, w * 0.42, h - 5, 2, "#424b50");
+        roundRect(w * 0.31, 4, w * 0.13, h - 7, 1, "#9aaeb2");
+        roundRect(w * 0.51, 4, w * 0.13, h - 7, 1, "#9aaeb2");
+      }
+    } else if (type === "bench") {
+      roundRect(2, 2, w, h * 0.48, 2, "#80694f");
+      g.fillStyle = "#b49a72";
+      g.fillRect(3, 3, w - 2, Math.max(1, h * 0.12));
+      g.fillStyle = "#454747";
+      g.fillRect(w * 0.2, h * 0.48, 2, h * 0.45);
+      g.fillRect(w * 0.78, h * 0.48, 2, h * 0.45);
+    } else if (type === "bin") {
+      roundRect(2, 2, w, h, 2, "#596d69");
+      g.fillStyle = "#aab5aa";
+      g.fillRect(3, 2, w - 2, Math.max(1, h * 0.16));
+    } else {
+      roundRect(1, h * 0.25, w + 2, h * 0.75, 2, "#426b45");
+      g.fillStyle = "#65905a";
+      g.fillRect(2, h * 0.28, w, Math.max(1, h * 0.22));
+    }
+    e = { c: c, ax: (w + 4) / 2, ay: h + 4 };
+    CLUTTER_CACHE[key] = e;
+    return e;
+  }
+
   function paintFarTrees(g) {
     var i, tr, s = cam.S, r, col, v;
     for (i = 0; i < trees.length; i++) {
@@ -1073,11 +1133,53 @@ var Art = (function () {
   }
 
   function buildProps() {
-    trees = []; lamps = [];
+    trees = []; lamps = []; streetProps = [];
     tprops = paris() ? THEME_PARIS.props() : [];
     var x, y, ch, i, runW, n;
 
-    /* park tile density hash so trees cluster with gaps */
+    function runLen(x, y, dx, dy) {
+      var n = 1;
+      for (var j = 1; j < 10 && tile(x + dx * j, y + dy * j) === "."; j++) n++;
+      for (var j = 1; j < 10 && tile(x - dx * j, y - dy * j) === "."; j++) n++;
+      return n;
+    }
+
+    function isSidewalk(ch) {
+      return ch && ch !== "." && ch !== "G" && ch !== "P" && ch !== " " && !solidCh(ch);
+    }
+
+    function edgeTile(ch) {
+      return ch && ch !== "." && ch !== "G" && ch !== "P" && ch !== " ";
+    }
+
+    function nearSite(x, y) {
+      var ss = MAP.sites;
+      if (!ss) return false;
+      for (var j = 0; j < ss.length; j++) {
+        var s = ss[j];
+        if (!s) continue;
+        if (s.x !== undefined && s.y !== undefined &&
+            Math.abs(x - s.x) <= 3 && Math.abs(y - s.y) <= 3) return true;
+        if (s.x1 !== undefined && x >= s.x1 - 3 && x <= s.x2 + 3 &&
+            y >= s.y1 - 3 && y <= s.y2 + 3) return true;
+      }
+      return false;
+    }
+
+    function atCrossing(x, y) {
+      var cs = MAP.crossings;
+      if (!cs) return false;
+      for (var j = 0; j < cs.length; j++) {
+        var c = cs[j];
+        if (!c) continue;
+        if (c.x === x && c.y === y) return true;
+        if (c[0] === x && c[1] === y) return true;
+        if (c.x1 !== undefined && x >= c.x1 && x <= c.x2 &&
+            y >= c.y1 && y <= c.y2) return true;
+      }
+      return false;
+    }
+
     function parkDensity(x, y) {
       return (hash2(x * 3 + 1, y * 5 + 7) >>> 0) / 4294967295;
     }
@@ -1086,7 +1188,6 @@ var Art = (function () {
       for (x = 0; x < W; x++) {
         ch = tile(x, y);
 
-        /* --- park 'G' tiles: most get a tree, clustered, with gaps --- */
         if (ch === "G") {
           var d = parkDensity(x, y);
           var cluster = (hash2(x >> 1, y >> 1) % 5) * 0.15;
@@ -1099,16 +1200,25 @@ var Art = (function () {
             var variety = isBush ? "bush" : ((hash2(x, y) % 100) < 26 ? "conifer" : "decid");
             trees.push({ x: vx, y: vy, s: s, v: variety, sd: hash2(x, y) });
           }
+
+          if (!nearSite(x, y) && hash2(x + 9, y + 8) % 3 !== 0) {
+            if (isSidewalk(tile(x - 1, y))) {
+              streetProps.push({ x: x + 0.22, y: y + 0.5, type: "hedge", seed: hash2(x + 3, y + 4) });
+            } else if (isSidewalk(tile(x + 1, y))) {
+              streetProps.push({ x: x + 0.78, y: y + 0.5, type: "hedge", seed: hash2(x + 4, y + 3) });
+            } else if (isSidewalk(tile(x, y - 1))) {
+              streetProps.push({ x: x + 0.5, y: y + 0.22, type: "hedge", seed: hash2(x + 5, y + 2) });
+            } else if (isSidewalk(tile(x, y + 1))) {
+              streetProps.push({ x: x + 0.5, y: y + 0.78, type: "hedge", seed: hash2(x + 6, y + 1) });
+            }
+          }
           continue;
         }
 
-        /* --- street trees along wide boulevards (run width >= 4) --- */
         if (ch === ".") {
-          /* vertical street width: count consecutive '.' in this column band */
           runW = 1;
           for (i = 1; i < 6 && tile(x + i, y) === "."; i++) runW++;
           for (i = 1; i < 6 && tile(x - i, y) === "."; i++) runW++;
-          /* horizontal street width */
           var runH = 1;
           for (i = 1; i < 6 && tile(x, y + i) === "."; i++) runH++;
           for (i = 1; i < 6 && tile(x, y - i) === "."; i++) runH++;
@@ -1116,7 +1226,6 @@ var Art = (function () {
           var isWideV = runW >= 4, isWideH = runH >= 4;
           var place = false, sx = x + 0.5, sy = y + 0.5;
           if (isWideV && !isWideH && (y % 3 === 1 || y % 4 === 2)) {
-            /* tree next to building edge on the left or right side, ON the pavement */
             if (solidCh(tile(x - 1, y))) { sx = x + 0.22; sy = y + 0.5; place = true; }
             else if (solidCh(tile(x + 1, y))) { sx = x + 0.78; sy = y + 0.5; place = true; }
           }
@@ -1124,14 +1233,42 @@ var Art = (function () {
             if (solidCh(tile(x, y - 1))) { sx = x + 0.5; sy = y + 0.22; place = true; }
             else if (solidCh(tile(x, y + 1))) { sx = x + 0.5; sy = y + 0.78; place = true; }
           }
-          /* intersection of both wide streets: skip */
           if (isWideV && isWideH) place = false;
           if (place && hash2(x + 5, y + 3) % 5 !== 0) {
             trees.push({ x: sx, y: sy, s: 0.85 + rnd(hash2(x, y + 1)) * 0.25, v: "decid", sd: hash2(x, y + 1) });
           }
+
+          if (!atCrossing(x, y) && !nearSite(x, y)) {
+            var rw = runLen(x, y, 1, 0);
+            var rh = runLen(x, y, 0, 1);
+            if (Math.min(rw, rh) <= 9) {   /* skip junctions and squares (wide both ways) */
+              if (rw > rh && rh >= 3) {
+                var side = 0;
+                if (edgeTile(tile(x, y - 1))) side = -1;
+                else if (edgeTile(tile(x, y + 1))) side = 1;
+                if (side) {
+                  var spacing = 4 + (hash2(side > 0 ? 17 : 31, y + 5) % 4);
+                  var phase = hash2(side > 0 ? 23 : 37, y + 9) % spacing;
+                  if ((x - phase) % spacing === 0) {
+                    streetProps.push({ x: x + 0.5, y: y + 0.5 + side * 0.28, type: "carH", seed: hash2(x, y + side) });
+                  }
+                }
+              } else if (rh > rw && rw >= 3) {
+                var sideV = 0;
+                if (edgeTile(tile(x - 1, y))) sideV = -1;
+                else if (edgeTile(tile(x + 1, y))) sideV = 1;
+                if (sideV) {
+                  var spacingV = 4 + (hash2(x + 7, sideV > 0 ? 19 : 23) % 4);
+                  var phaseV = hash2(x + 11, sideV > 0 ? 29 : 41) % spacingV;
+                  if ((y - phaseV) % spacingV === 0) {
+                    streetProps.push({ x: x + 0.5 + sideV * 0.28, y: y + 0.5, type: "carV", seed: hash2(x + sideV, y) });
+                  }
+                }
+              }
+            }
+          }
         }
 
-        /* --- plaza 'P': trees around the edges, not the middle --- */
         if (ch === "P") {
           var edge = solidCh(tile(x - 1, y)) || solidCh(tile(x + 1, y)) ||
                      solidCh(tile(x, y - 1)) || solidCh(tile(x, y + 1));
@@ -1143,9 +1280,25 @@ var Art = (function () {
             else if (solidCh(tile(x, y + 1))) py = y + 0.78;
             trees.push({ x: px, y: py, s: 0.85 + rnd(hash2(x + 1, y)) * 0.3, v: hash2(x, y) % 100 < 20 ? "conifer" : "decid", sd: hash2(x + 1, y) });
           }
+
+          if (edge && !nearSite(x, y) && !atCrossing(x, y)) {
+            var spP = 8 + (hash2(x + 19, y + 31) % 7);
+            if (((x + y * 2) % spP) === 0 && hash2(x + 2, y + 3) % 3 !== 0) {
+              var isBenchP = hash2(x + 13, y + 2) % 2 === 0;
+              streetProps.push({ x: x + 0.5, y: y + 0.5, type: isBenchP ? "bench" : "bin", seed: hash2(x + 1, y + 9) });
+            }
+          }
         }
 
-        /* --- street lamps (unchanged placement rules) --- */
+        if (ch !== "." && ch !== "G" && ch !== "P" && !solidCh(ch) &&
+            !nearSite(x, y) && !atCrossing(x, y)) {
+          var sp2 = 8 + (hash2(x + 41, y + 17) % 7);
+          if (((x + y * 3) % sp2) === 0 && hash2(x + 5, y + 7) % 3 !== 0) {
+            var isBench = hash2(x + 13, y + 2) % 2 === 0;
+            streetProps.push({ x: x + 0.5, y: y + 0.5, type: isBench ? "bench" : "bin", seed: hash2(x + 1, y + 9) });
+          }
+        }
+
         if (ch === "." && x % 7 === 3) {
           if (solidCh(tile(x, y - 1)) && tile(x, y + 1) === "." && tile(x, y + 2) === ".") lamps.push({ x: x + 0.5, y: y + 0.22 });
           if (solidCh(tile(x, y + 1)) && tile(x, y - 1) === "." && tile(x, y - 2) === ".") lamps.push({ x: x + 0.5, y: y + 0.78 });
@@ -1666,6 +1819,16 @@ var Art = (function () {
     ctx.drawImage(sp.c, _rs * _px - sp.ax, _rs * _py - sp.ay);
     setScreen(ctx);
   }
+  function drawClutter(ctx, tr) {
+    if (_rs * cam.S * TS < 8) return;
+    var k = _rs * cam.S * TS * (tr.s || 1);
+    var sp = clutterSprite(tr.type, k, tr.seed || 0);
+    P(tr.x, tr.y, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(sp.c, _rs * _px - sp.ax, _rs * _py - sp.ay);
+    setScreen(ctx);
+  }
+
   function drawLamp(ctx, l) {
     var s = cam.S;
     P(l.x, l.y, 0); var ax = _px, ay = _py;
@@ -1681,7 +1844,7 @@ var Art = (function () {
     else if (it.k === 2) drawVehicle(ctx, it.o, t);
     else if (it.k === 3) drawBarrier(ctx, it.o);
     else if (it.k === 4) drawDetainee(ctx, it.o);
-    else if (it.k === 5) drawTree(ctx, it.o);
+    else if (it.k === 5) { if (it.o.type) drawClutter(ctx, it.o); else drawTree(ctx, it.o); }
     else if (it.k === 7) THEME_PARIS.drawProp(ctx, it.o, t);
     else drawLamp(ctx, it.o);
   }
@@ -1702,6 +1865,7 @@ var Art = (function () {
     poolN = 0; ghosts.length = 0;
     for (i = 0; i < buckets.length; i++) if (buckets[i]) buckets[i].length = 0;
     for (i = 0; i < trees.length; i++) if (visibleWorld(trees[i].x, trees[i].y, 0, cm)) push(5, trees[i], trees[i].x, trees[i].y);
+    for (i = 0; i < streetProps.length; i++) if (cam.S > 0.35 && visibleWorld(streetProps[i].x, streetProps[i].y, 0, cm)) push(5, streetProps[i], streetProps[i].x, streetProps[i].y);
     for (i = 0; i < lamps.length; i++) if (visibleWorld(lamps[i].x, lamps[i].y, 0, cm)) push(6, lamps[i], lamps[i].x, lamps[i].y);
     for (i = 0; i < tprops.length; i++) if (visibleWorld(tprops[i].x, tprops[i].y, 0, cm)) push(7, tprops[i], tprops[i].x, tprops[i].y);
     if (!G) return;
