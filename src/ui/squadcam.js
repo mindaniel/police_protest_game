@@ -122,23 +122,118 @@ var SQUADCAM = (function () {
     };
   }
 
-  function drawFigure(ctx, x, y, busy, k) {
+  function drawFigure(ctx, x, y, busy, k, ang, col, helmet) {
     var rad = Math.max(1.5, 2.2 * k);
-    // body
-    ctx.fillStyle = "#2f7fd1";
-    ctx.fillRect(x - rad * 0.6, y, rad * 1.2, rad * 2);
-    // head
+    var body = col || "#2f7fd1";
+    var head = helmet || "#e8eef5";
+    // shadow
     ctx.beginPath();
-    ctx.arc(x, y - rad * 0.6, rad * 0.9, 0, Math.PI * 2);
-    ctx.fillStyle = "#4a9be8";
+    ctx.ellipse(x, y + rad * 0.4, rad * 1.4, rad * 1.9, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
     ctx.fill();
+    // body (shoulders)
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((typeof ang === "number" && isFinite(ang)) ? ang : 0);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    if (ctx.ellipse) ctx.ellipse(0, 0, rad * 1.3, rad * 1.1, 0, 0, Math.PI * 2);
+    else ctx.arc(0, 0, rad * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    // facing wedge
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(rad * 1.5, -rad * 0.55);
+    ctx.lineTo(rad * 1.5, rad * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    // helmet dot
+    ctx.beginPath();
+    ctx.arc(0, 0, rad * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = head;
+    ctx.fill();
+    ctx.restore();
     if (busy) {
       ctx.beginPath();
-      ctx.arc(x, y + rad * 0.6, rad * 2.2, 0, Math.PI * 2);
+      ctx.arc(x, y, rad * 2.4, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,255,0.95)";
       ctx.lineWidth = Math.max(1, 0.9 * k);
       ctx.stroke();
     }
+  }
+
+  function drawCrowdAgent(ctx, x, y, k, rioter) {
+    var rad = Math.max(1.2, 1.6 * k);
+    ctx.beginPath();
+    ctx.ellipse(x, y + rad * 0.3, rad * 1.2, rad * 1.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, rad * 1.15, 0, Math.PI * 2);
+    ctx.fillStyle = rioter ? "#c0392b" : "#7f8fa6";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y - rad * 0.15, rad * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = rioter ? "#f0c4b8" : "#cfd6de";
+    ctx.fill();
+  }
+
+  function drawVehicleSprite(ctx, v, tX, tY, wpt, gm, isSel) {
+    var typ = v.type || "car";
+    var ang = (typeof v.ang === "number") ? v.ang
+      : (typeof v.angle === "number") ? v.angle
+      : (typeof v.dir === "number") ? v.dir
+      : (typeof v.heading === "number") ? v.heading : 0;
+    var vx = tX(v.x), vy = tY(v.y);
+    if (typeof VEHICLES !== "undefined" && VEHICLES.sprite && VEHICLES.size) {
+      var sz = VEHICLES.size(typ);
+      var len = (sz && sz.len) ? sz.len : 2.0;
+      var kk = (len > 0) ? (wpt / len) : wpt;
+      var ai = VEHICLES.angleIndex ? VEHICLES.angleIndex(ang) : 0;
+      var lights = !!(v.lights || v.siren || v.lightsOn);
+      var cv = null;
+      try { cv = VEHICLES.sprite(typ, ai, kk, lights); } catch (e) { cv = null; }
+      if (cv) {
+        ctx.save();
+        if (isSel) {
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.globalAlpha = 0.78;
+        }
+        ctx.drawImage(cv.c, Math.round(vx - cv.ax), Math.round(vy - cv.ay));   /* sprite = { c: canvas, ax, ay: anchor } */
+        ctx.restore();
+        if (isSel) {
+          var rr = Math.max(3, (cv.width > cv.height ? cv.width : cv.height) * 0.5);
+          ctx.beginPath();
+          ctx.arc(vx, vy, rr, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(255,255,255,0.35)";
+          ctx.lineWidth = Math.max(1, 0.7 * gm.k);
+          ctx.stroke();
+        }
+        return;
+      }
+    }
+    // fallback: rounded rect
+    var d = vehicleDims(typ);
+    var wv = d.w * wpt, hv = d.h * wpt;
+    ctx.save();
+    ctx.translate(vx, vy);
+    ctx.rotate(ang);
+    var rad = Math.min(wv, hv) * 0.28;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-wv / 2, -hv / 2, wv, hv, rad);
+    else ctx.rect(-wv / 2, -hv / 2, wv, hv);
+    ctx.fillStyle = vehicleColour(typ, v.squad);
+    ctx.globalAlpha = isSel ? 1 : 0.7;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (isSel) {
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = Math.max(1, 0.8 * gm.k);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function draw(ctx, g) {
@@ -149,19 +244,16 @@ var SQUADCAM = (function () {
     if (hidden) { drawShowTab(ctx); return; }
 
     buildBase();
-    if (!base) return;
-
     var gm = geom(UI.Game ? UI.Game.canvas : null);
     lastGeom = gm;
     var center = squadCentre(g, s);
     if (!center) { closeBtn = null; return; }
 
-    // Smooth follow.
     if (easeSquad !== s || easeX === null) { easeX = center.x; easeY = center.y; easeSquad = s; }
     easeX += (center.x - easeX) * 0.18;
     easeY += (center.y - easeY) * 0.18;
 
-    var viewW = 24, viewH = 16;
+    var viewW = 8, viewH = viewW * (CSS_H / CSS_W);   /* tiles across: close enough to see cars and officers */
     var cx = easeX, cy = easeY;
     var x0 = cx - viewW / 2, y0 = cy - viewH / 2;
 
@@ -180,7 +272,6 @@ var SQUADCAM = (function () {
     var headH = 20 * gm.k;
     var ix = gm.x + pad, iy = gm.y + headH, iw = gm.w - pad * 2, ih = gm.h - headH - pad;
 
-    // Split into map area + side strip.
     var stripW = Math.max(60 * gm.k, PANEL_W * gm.k);
     var mapW = Math.max(1, iw - stripW - pad);
 
@@ -192,10 +283,22 @@ var SQUADCAM = (function () {
     ctx.fillStyle = "#1a1a1a";
     ctx.fillRect(ix, iy, mapW, ih);
 
-    var sx = x0 * px, sy = y0 * px, sw = viewW * px, sh = viewH * px;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(base, sx, sy, sw, sh, ix, iy, mapW, ih);
-    ctx.imageSmoothingEnabled = true;
+    // Real map crop via Art.ground(); fallback to cached base tile image.
+    var gr = null;
+    if (typeof Art !== "undefined" && Art.ground) {
+      try { gr = Art.ground(); } catch (e) { gr = null; }
+    }
+    if (gr && gr.cv && gr.GT) {
+      var GT = gr.GT;
+      var sx = x0 * GT, sy = y0 * GT, sw = viewW * GT, sh = viewH * GT;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(gr.cv, sx, sy, sw, sh, ix, iy, mapW, ih);
+    } else if (base) {
+      var bx = x0 * px, by = y0 * px, bw = viewW * px, bh = viewH * px;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(base, bx, by, bw, bh, ix, iy, mapW, ih);
+      ctx.imageSmoothingEnabled = true;
+    }
 
     var wpt = mapW / viewW;
     function tX(tx) { return ix + (tx - x0) * wpt; }
@@ -204,7 +307,7 @@ var SQUADCAM = (function () {
       return tx >= x0 - 1 && tx <= x0 + viewW + 1 && ty >= y0 - 1 && ty <= y0 + viewH + 1;
     }
 
-    // Orders: area / target.
+    // Orders overlay.
     var ord = null;
     if (typeof ORDERS !== "undefined" && ORDERS.get) ord = ORDERS.get(G, s);
     else if (g.orders && g.orders[s]) ord = g.orders[s];
@@ -231,85 +334,65 @@ var SQUADCAM = (function () {
       }
     }
 
-    // Agents: rioters red, peaceful grey.
-    var dot = Math.max(1.2, 1.5 * gm.k);
-    var i, a, tx, ty, col;
-    for (i = 0; i < g.agents.length; i++) {
-      a = g.agents[i];
-      if (!a.active) continue;
-      if (!inView(a.x, a.y)) continue;
-      tx = tX(a.x); ty = tY(a.y);
-      if (a.role === "rioter") col = "#e03131";
-      else col = "#9aa0a6";
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(tx, ty, dot, 0, Math.PI * 2);
-      ctx.fill();
+    var i, a2;
+
+    // Crowd agents: detailed figures.
+    if (g.agents) {
+      for (i = 0; i < g.agents.length; i++) {
+        a2 = g.agents[i];
+        if (!a2 || !a2.active) continue;
+        if (!inView(a2.x, a2.y)) continue;
+        var riot = (a2.role === "rioter") && (a2.revealedUntil > g.time);
+        drawCrowdAgent(ctx, tX(a2.x), tY(a2.y), gm.k, riot);
+      }
     }
 
-    // Other squads faint blue.
+    // Other squads' officers, faint.
     for (i = 0; i < g.officers.length; i++) {
       var o = g.officers[i];
       if (o.squad === s) continue;
       if (!inView(o.x, o.y)) continue;
-      ctx.fillStyle = "rgba(120,170,230,0.55)";
-      ctx.beginPath();
-      ctx.arc(tX(o.x), tY(o.y), Math.max(1.2, 1.6 * gm.k), 0, Math.PI * 2);
-      ctx.fill();
+      drawFigure(ctx, tX(o.x), tY(o.y), false, gm.k, o.ang, "rgba(90,140,205,0.75)", "#c9d6e6");
     }
 
-    // Vehicles (rotated rounded rects at real size).
-    function drawVehicle(v) {
-      var d = vehicleDims(v.type);
-      var ang = (typeof v.angle === "number") ? v.angle
-        : (typeof v.dir === "number") ? v.dir
-        : (typeof v.heading === "number") ? v.heading : 0;
-      var wv = d.w * wpt, hv = d.h * wpt;
-      var vx = tX(v.x), vy = tY(v.y);
-      ctx.save();
-      ctx.translate(vx, vy);
-      ctx.rotate(ang);
-      var rad = Math.min(wv, hv) * 0.28;
-      ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(-wv / 2, -hv / 2, wv, hv, rad);
-      else ctx.rect(-wv / 2, -hv / 2, wv, hv);
-      ctx.fillStyle = vehicleColour(v.type, v.squad);
-      ctx.globalAlpha = v.squad === s ? 1 : 0.7;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      if (v.squad === s) {
-        ctx.strokeStyle = "rgba(255,255,255,0.9)";
-        ctx.lineWidth = Math.max(1, 0.8 * gm.k);
-        ctx.stroke();
+    // Vehicles: real sprites (police + other squads).
+    if (g.vehicles) {
+      for (i = 0; i < g.vehicles.length; i++) {
+        var v = g.vehicles[i];
+        if (!v) continue;
+        if (!inView(v.x, v.y)) continue;
+        drawVehicleSprite(ctx, v, tX, tY, wpt, gm, v.squad === s);
       }
-      ctx.restore();
-    }
-    for (i = 0; i < g.vehicles.length; i++) {
-      var v = g.vehicles[i];
-      if (!inView(v.x, v.y)) continue;
-      drawVehicle(v);
     }
 
-    // Selected squad officers: figures, rings, arrest lines.
+    // Selected squad officers on top, with squad-colour ring.
+    var ringCol = squadColour(s);
     for (i = 0; i < g.officers.length; i++) {
       var off = g.officers[i];
       if (off.squad !== s) continue;
       if (!inView(off.x, off.y)) continue;
-      tx = tX(off.x); ty = tY(off.y);
+      var ox = tX(off.x), oy = tY(off.y);
       if (off.arrestTarget && off.arrestTarget.active) {
         ctx.beginPath();
-        ctx.moveTo(tx, ty);
+        ctx.moveTo(ox, oy);
         ctx.lineTo(tX(off.arrestTarget.x), tY(off.arrestTarget.y));
         ctx.strokeStyle = "rgba(255,216,102,0.9)";
         ctx.lineWidth = Math.max(1, 0.9 * gm.k);
         ctx.stroke();
       }
-      drawFigure(ctx, tx, ty, !!(off.busy || off.arrestTarget), gm.k);
+      var oang = (typeof off.ang === "number") ? off.ang
+        : (typeof off.moveAngle === "number") ? off.moveAngle : 0;
+      ctx.beginPath();
+      ctx.arc(ox, oy, Math.max(2.5, 3.4 * gm.k), 0, Math.PI * 2);
+      ctx.strokeStyle = ringCol;
+      ctx.lineWidth = Math.max(1, 1.2 * gm.k);
+      ctx.stroke();
+      drawFigure(ctx, ox, oy, !!(off.busy || off.arrestTarget), gm.k, oang, "#1f4f8a", "#eef3f8");
     }
 
     ctx.restore(); // un-clip map
 
-    // ---- Side strip ----
+    // ---- Side strip (unchanged) ----
     var sxStrip = ix + mapW + pad * 0.75;
     var stripX = sxStrip, stripY = iy, stripW2 = iw - (stripX - ix);
 
@@ -352,7 +435,6 @@ var SQUADCAM = (function () {
     ctx.fillText(isBusy ? "BUSY" : "FREE", txl + 2 * gm.k, ty2 + 1.5 * gm.k);
     ty2 += badgeH + 4 * gm.k;
 
-    // Officers / stamina bars.
     ctx.font = fnt + "px Consolas, monospace";
     ctx.fillStyle = "#9fb3c8";
     var offCount = 0;
@@ -373,46 +455,37 @@ var SQUADCAM = (function () {
       ty2 += barH2 + 1.5 * gm.k;
     }
 
-    // Vehicle squad: seats used / arrest load.
-    if (offCount === 0 || true) {
-      var anyV = false;
-      for (i = 0; i < g.vehicles.length; i++) {
-        if (g.vehicles[i].squad !== s) continue;
-        anyV = true;
-        var vv = g.vehicles[i];
-        var seats = null, arrest = null;
-        if (typeof TRANSPORT !== "undefined" && TRANSPORT.seats) {
-          try { seats = TRANSPORT.seats(vv.type); } catch (e) { seats = null; }
-        }
-        var crewN = (vv.crew && typeof vv.crew.length === "number") ? vv.crew.length : 0;
-        var loadN = (typeof vv.load === "number") ? vv.load : 0;
-        ty2 += 2 * gm.k;
-        if (ty2 + fnt * 2 > stripY + ih - 2 * gm.k) break;
-        ctx.fillStyle = "#9fb3c8";
-        ctx.font = fnt + "px Consolas, monospace";
-        var sTxt = "Seat " + crewN;
-        if (seats && typeof seats.crew === "number") sTxt += "/" + seats.crew;
-        ctx.fillText(sTxt, txl, ty2);
-        ty2 += fnt + 1 * gm.k;
-        var aTxt = "Load " + loadN;
-        if (seats && typeof seats.arrest === "number") aTxt += "/" + seats.arrest;
-        ctx.fillText(aTxt, txl, ty2);
-        ty2 += fnt + 1 * gm.k;
-        if (!anyV) break;
+    for (i = 0; i < g.vehicles.length; i++) {
+      if (g.vehicles[i].squad !== s) continue;
+      var vv = g.vehicles[i];
+      var seats = null;
+      if (typeof TRANSPORT !== "undefined" && TRANSPORT.seats) {
+        try { seats = TRANSPORT.seats(vv.type); } catch (e) { seats = null; }
       }
+      var crewN = (vv.crew && typeof vv.crew.length === "number") ? vv.crew.length : 0;
+      var loadN = (typeof vv.load === "number") ? vv.load : 0;
+      ty2 += 2 * gm.k;
+      if (ty2 + fnt * 2 > stripY + ih - 2 * gm.k) break;
+      ctx.fillStyle = "#9fb3c8";
+      ctx.font = fnt + "px Consolas, monospace";
+      var sTxt = "Seat " + crewN;
+      if (seats && typeof seats.crew === "number") sTxt += "/" + seats.crew;
+      ctx.fillText(sTxt, txl, ty2);
+      ty2 += fnt + 1 * gm.k;
+      var aTxt = "Load " + loadN;
+      if (seats && typeof seats.arrest === "number") aTxt += "/" + seats.arrest;
+      ctx.fillText(aTxt, txl, ty2);
+      ty2 += fnt + 1 * gm.k;
     }
 
-    // Header line.
     var headY = gm.y + 3 * gm.k;
     var hf = Math.round(11 * gm.k);
     ctx.font = "bold " + hf + "px Consolas, monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillStyle = "#dfe6ef";
-    var head = "S" + (s + 1) + " " + typeName(lo);
-    ctx.fillText(head, gm.x + 6 * gm.k, headY);
+    ctx.fillText("S" + (s + 1) + " " + typeName(lo), gm.x + 6 * gm.k, headY);
 
-    // Close button.
     var cb = 9 * gm.k;
     closeBtn = { x: gm.x + gm.w - cb - 4 * gm.k, y: gm.y + 4 * gm.k, r: cb };
     ctx.strokeStyle = "#8a9bb0";

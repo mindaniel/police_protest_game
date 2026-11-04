@@ -2570,6 +2570,7 @@ var Art = (function () {
     centerOn: centerOn,
     isLow: function () { return lowMode; },
     toggleLow: toggleLow,
+    ground: function () { return groundCv ? { cv: groundCv, GT: GT } : null; },   /* cached street layer (GT px per tile) for insets */
     camera: cam,
     setView: setView,
     getView: getView,

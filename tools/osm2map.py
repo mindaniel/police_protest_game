@@ -172,6 +172,33 @@ def step3_pedestrian(ctx, elements):
         if is_ped and closed_way(e['geometry']):
             raster_poly(ctx, [ctx.geom_to_tiles(e['geometry'])], 'P')
 
+def join_rings(parts, gap_m=60.0):
+    """A relation's ring is split over many member ways: chain them end to end into
+    closed rings. Each piece alone is open, and filling open pieces leaks over land.
+    A ring that cannot be closed is dropped unless its ends are within gap_m."""
+    key = lambda g: (round(g['lat'], 7), round(g['lon'], 7))
+    pieces = [list(p) for p in parts if len(p) >= 2]
+    rings = []
+    while pieces:
+        ring = pieces.pop(0)
+        grown = True
+        while key(ring[0]) != key(ring[-1]) and grown:
+            grown = False
+            for i, p in enumerate(pieces):
+                if key(p[0]) == key(ring[-1]): ring += p[1:]
+                elif key(p[-1]) == key(ring[-1]): ring += p[-2::-1]
+                elif key(p[-1]) == key(ring[0]): ring = p[:-1] + ring
+                elif key(p[0]) == key(ring[0]): ring = p[:0:-1] + ring
+                else: continue
+                pieces.pop(i); grown = True
+                break
+        if key(ring[0]) != key(ring[-1]):
+            dy = (ring[0]['lat'] - ring[-1]['lat']) * 110574.0
+            dx = (ring[0]['lon'] - ring[-1]['lon']) * 111320.0 * math.cos(math.radians(ring[0]['lat']))
+            if math.hypot(dx, dy) > gap_m: continue
+        if len(ring) >= 3: rings.append(ring)
+    return rings
+
 def step4_water(ctx, elements):
     water_poly_tags = lambda t: (
         t.get('natural') == 'water' or t.get('waterway') == 'riverbank' or
@@ -185,9 +212,9 @@ def step4_water(ctx, elements):
             outers, inners = [], []
             for m in e.get('members', []):
                 if 'geometry' not in m: continue
-                ring = ctx.geom_to_tiles(m['geometry'])
-                if m.get('role') == 'inner': inners.append(ring)
-                else: outers.append(ring)
+                (inners if m.get('role') == 'inner' else outers).append(m['geometry'])
+            outers = [ctx.geom_to_tiles(r) for r in join_rings(outers)]
+            inners = [ctx.geom_to_tiles(r) for r in join_rings(inners)]
             if outers: raster_poly(ctx, outers + inners, 'W')
     for e in elements:
         t = e.get('tags') or {}
@@ -391,6 +418,7 @@ def step8_connectivity(ctx):
     w, h = ctx.w, ctx.h
     seen = [[False] * w for _ in range(h)]
     best = []
+    keep = set()
     for y in range(h):
         for x in range(w):
             if ctx.grid[y][x] in WALKABLE and not seen[y][x]:
@@ -402,7 +430,11 @@ def step8_connectivity(ctx):
                         if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and ctx.grid[ny][nx] in WALKABLE:
                             seen[ny][nx] = True; q.append((nx, ny))
                 if len(comp) > len(best): best = comp
-    keep = set(best)
+                # a big street network that runs off the map edge (e.g. across a river whose
+                # bridges leave the map) is reachable from outside: keep it, people enter there
+                if len(comp) >= 400 and any(cx in (0, w - 1) or cy in (0, h - 1) for cx, cy in comp):
+                    keep.update(comp)
+    keep.update(best)
     for y in range(h):
         for x in range(w):
             if ctx.grid[y][x] in WALKABLE and (x, y) not in keep:

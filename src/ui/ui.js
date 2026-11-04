@@ -602,6 +602,7 @@ function uiCommitChosenMap() {
 function uiStartPlay() {
   UI.screen = "playing"; UI.mode = null;
   if (typeof ORDERS !== "undefined") ORDERS.startPlay(G);
+  if (typeof DEPLOY !== "undefined") DEPLOY.start(G);   /* squads leave the station for their planned posts */
   if (CONFIG.calmStartSeconds) UI.say("The crowd is gathering: about " + Math.round(CONFIG.calmStartSeconds) + " s before trouble starts. Get your squads in place.");
 }
 

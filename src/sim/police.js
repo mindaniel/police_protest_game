@@ -75,7 +75,9 @@ var Police = (function () {
   function vehTurnRate(type) {
     var C = (typeof CONFIG !== "undefined") ? CONFIG : {};
     if (typeof C.vehicleTurnRate === "number") return C.vehicleTurnRate;
-    return (type === "car") ? 2.6 : 1.8;
+    if (type === "truck" || type === "watertruck" || type === "barriertruck" || type === "fireengine") return 1.4;
+    if (type === "van" || type === "ambulance") return 1.8;
+    return 2.2;
   }
 
   var VEH_OFFSET_X = -1.9;   /* vehicle parks this far west of the squad centre */
@@ -130,20 +132,83 @@ var Police = (function () {
     if (typeof v.ang !== "number") v.ang = want;
     v._wantAng = want;
     var diff = angDiff(want, v.ang);
-    if (d > 0.6 && Math.abs(diff) > Math.PI / 3) return;
+    /* bicycle model: car, van 2.0, ambulance 2.0, trucks/fireengine 2.8 tiles */
+    var radius = (v.type === "van" || v.type === "ambulance") ? 2.0 :
+                 (v.type === "truck" || v.type === "watertruck" || v.type === "barriertruck" || v.type === "fireengine") ? 2.8 : 1.6;
+    if (typeof v._revD !== "number") v._revD = 0;
+    if (Math.abs(diff) < Math.PI / 6) v._revD = 0;   /* lined up again: next 3-point turn may reverse */
+    if (d > 0.6 && Math.abs(diff) > 2.0) {
+      /* target behind: reverse a short way with opposite steering (3-point turn), at most 2 tiles */
+      if (typeof v._revT !== "number") v._revT = 0;
+      if (v._revD < 2.0) {
+        var rs = v.speed * 0.5 * dt;
+        var rdx = -Math.cos(v.ang) * rs, rdy = -Math.sin(v.ang) * rs;
+        var rnx = v.x + rdx, rny = v.y + rdy;
+        if (!isSolidPolice(G, Math.floor(rnx), Math.floor(rny))) {
+          v.x = rnx; v.y = rny;
+          var rdist = Math.sqrt(rdx * rdx + rdy * rdy);
+          var rmax = rdist / radius;
+          var rdes = 2.2 * diff * dt;   /* nose swings toward the target */
+          if (rdes > rmax) rdes = rmax;
+          else if (rdes < -rmax) rdes = -rmax;
+          v.ang += rdes;
+          v._revT += dt;
+          v._revD += rdist;
+          return;
+        }
+      }
+    }
     var step = v.speed * dt * Math.max(0.2, Math.cos(diff));
     if (step > d) step = d;
     var ux = d > 0.6 ? Math.cos(v.ang) : dx / d, uy = d > 0.6 ? Math.sin(v.ang) : dy / d;
     var nx = v.x + ux * step, ny = v.y + uy * step;
-    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) { v.x = nx; v.y = ny; turnVehicle(v, dt); return; }
-    if (!isSolidPolice(G, Math.floor(nx), Math.floor(v.y))) { v.x = nx; turnVehicle(v, dt); return; }
-    if (!isSolidPolice(G, Math.floor(v.x), Math.floor(ny))) { v.y = ny; turnVehicle(v, dt); }
+    var moved = false, distMoved = 0;
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) {
+      distMoved = Math.sqrt((nx - v.x) * (nx - v.x) + (ny - v.y) * (ny - v.y));
+      v.x = nx; v.y = ny; moved = true;
+    } else if (!isSolidPolice(G, Math.floor(nx), Math.floor(v.y))) {
+      distMoved = Math.abs(nx - v.x);
+      v.x = nx; moved = true;
+    } else if (!isSolidPolice(G, Math.floor(v.x), Math.floor(ny))) {
+      distMoved = Math.abs(ny - v.y);
+      v.y = ny; moved = true;
+    }
+    if (moved && distMoved > 1e-6) {
+      /* rotate only by distance moved / radius, never in place */
+      var maxA = distMoved / radius;
+      var desA = 2.2 * diff * dt;
+      if (desA > maxA) desA = maxA;
+      else if (desA < -maxA) desA = -maxA;
+      var cap = vehTurnRate(v.type) * dt;
+      if (desA > cap) desA = cap;
+      else if (desA < -cap) desA = -cap;
+      v.ang += desA;
+    }
   }
   function turnVehicle(v, dt) {
+    /* bicycle model: turning must be paid for by forward movement; no pivoting in place.
+     * When called without movement info we only update the desired angle, and clamp
+     * the actual heading change to the per-step turn budget so the fallback cannot spin. */
     if (typeof v.ang !== "number") v.ang = 0;
     if (typeof v._wantAng !== "number") return;
     var diff = angDiff(v._wantAng, v.ang), maxT = vehTurnRate(v.type) * dt;
-    v.ang += Math.abs(diff) <= maxT ? diff : (diff > 0 ? maxT : -maxT);
+    /* require the vehicle to have moved this step before we rotate */
+    var moved = 0;
+    if (typeof v._lastX === "number" && typeof v._lastY === "number") {
+      var ddx = v.x - v._lastX, ddy = v.y - v._lastY;
+      moved = Math.sqrt(ddx * ddx + ddy * ddy);
+    } else {
+      moved = Math.abs(v.speed * dt);
+    }
+    if (moved < 1e-6) { v._lastX = v.x; v._lastY = v.y; return; }
+    var radius = (v.type === "van" || v.type === "ambulance") ? 2.0 :
+                 (v.type === "truck" || v.type === "watertruck" || v.type === "barriertruck" || v.type === "fireengine") ? 2.8 : 1.6;
+    var maxByArc = moved / radius;
+    var lim = maxT < maxByArc ? maxT : maxByArc;
+    if (Math.abs(diff) <= lim) v.ang += diff;
+    else v.ang += (diff > 0 ? lim : -lim);
+    v._lastX = v.x;
+    v._lastY = v.y;
   }
   /* Face along the street at (x, y): east-west if that way is open, else north-south. */
   function streetAngle(G, x, y) {

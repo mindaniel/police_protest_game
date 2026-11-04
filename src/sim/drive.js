@@ -12,10 +12,11 @@ var DRIVE = (function () {
   function gh() { return (typeof MAP !== "undefined" && MAP) ? MAP.height : 0; }
 
   function spec(t) {
-    if (t === "van") return { len: 2.0, wid: 0.9, rmin: 1.6, acc: 3.0 };
-    if (t === "watertruck" || t === "barriertruck") return { len: 2.4, wid: 1.0, rmin: 2.2, acc: 2.2 };
-    if (t === "ambulance") return { len: 2.1, wid: 0.9, rmin: 1.7, acc: 3.5 };
-    return { len: 1.8, wid: 0.84, rmin: 1.3, acc: 3.5 };
+    if (t === "van") return { len: 2.0, wid: 0.9, rmin: 2.0, acc: 3.0 };
+    if (t === "truck" || t === "watertruck" || t === "barriertruck") return { len: 2.4, wid: 1.0, rmin: 2.8, acc: 2.2 };
+    if (t === "ambulance") return { len: 2.1, wid: 0.9, rmin: 2.0, acc: 3.5 };
+    if (t === "fireengine") return { len: 2.4, wid: 1.0, rmin: 2.8, acc: 2.6 };
+    return { len: 1.8, wid: 0.84, rmin: 1.6, acc: 3.5 };
   }
 
   function solidAt(x, y, opts) {
@@ -92,6 +93,7 @@ var DRIVE = (function () {
     return path;
   }
 
+  /* bicycle model: move strictly along heading, reverse-safe, then rotate by distance/radius */
   function move(v, sp, dt, opts) {
     var s = v._drSpeed;
     if (Math.abs(s) < 0.001) { v._drSpeed = 0; return false; }
@@ -103,9 +105,15 @@ var DRIVE = (function () {
       if (solidAt(Math.floor(nx + c * off), Math.floor(ny + sn * off), opts)) return true;
       return false;
     };
-    if (!blocked(v.x + dx, v.y + dy)) { v.x += dx; v.y += dy; return true; }
-    if (!blocked(v.x + dx, v.y)) { v.x += dx; return true; }
-    if (!blocked(v.x, v.y + dy)) { v.y += dy; return true; }
+    if (!blocked(v.x + dx, v.y + dy)) {
+      v.x += dx; v.y += dy;
+      return true;
+    }
+    /* cannot advance: try a scaled-down move so we still creep and rotate validly */
+    for (var k = 0.5; k >= 0.125; k *= 0.5) {
+      var mx = dx * k, my = dy * k;
+      if (!blocked(v.x + mx, v.y + my)) { v.x += mx; v.y += my; return true; }
+    }
     v._drSpeed = 0;
     v._drBrake = true;
     return false;
@@ -118,6 +126,7 @@ var DRIVE = (function () {
     if (v._drReverse === undefined) v._drReverse = false;
     if (v._drBrake === undefined) v._drBrake = false;
     if (v._drRevT === undefined) v._drRevT = 0;
+    if (v._drRevD === undefined) v._drRevD = 0;
     if (v._drCool === undefined) v._drCool = 0;
     if (v._drProgT === undefined) { v._drProgT = 0; v._drProgX = v.x; v._drProgY = v.y; v._drStuck = false; }
     if (v._drArrived === undefined) v._drArrived = false;
@@ -138,15 +147,14 @@ var DRIVE = (function () {
       v._drBrake = true;
       v._drReverse = false;
       v._drRevT = 0;
-      return move(v, sp, dt, opts);
+      move(v, sp, dt, opts);
+      return v.x !== undefined;
     }
 
     v._drProgT += dt;
     if (v._drProgT >= 1.5) {
       var pdx = v.x - v._drProgX, pdy = v.y - v._drProgY;
       v._drStuck = Math.sqrt(pdx * pdx + pdy * pdy) < 0.15;
-      /* no real progress toward the goal twice in a row (rocking back and forth
-       * counts): ask the caller to squeeze out the simple way for a moment */
       var gain = (v._drProgD === undefined) ? 1 : v._drProgD - distGoal;
       v._drProgD = distGoal;
       v._drStuckN = (v._drStuck || gain < 0.3) ? (v._drStuckN || 0) + 1 : 0;
@@ -173,19 +181,23 @@ var DRIVE = (function () {
 
     var e = wrap(Math.atan2(tgt[1] - v.y, tgt[0] - v.x) - v.ang);
 
+    /* 3-point turn state machine: reverse max 2 tiles with opposite steering */
     if (v._drReverse) {
       v._drRevT += dt;
       var rx = v.x - Math.cos(v.ang) * sp.len * 0.5;
       var ry = v.y - Math.sin(v.ang) * sp.len * 0.5;
       var rearBlocked = solidAt(Math.floor(rx), Math.floor(ry), opts);
-      if (v._drRevT > 1.4 || (v._drRevT > 0.8 && Math.abs(e) < 0.7) || rearBlocked) {
+      if (v._drRevD >= 2.0 || v._drRevT > 1.6 || rearBlocked ||
+          (v._drRevT > 0.7 && Math.abs(e) < 0.6)) {
         v._drReverse = false;
         v._drRevT = 0;
-        v._drCool = 2.0;
+        v._drRevD = 0;
+        v._drCool = 1.2;
       }
     } else if (v._drCool <= 0 && (Math.abs(e) > 1.9 || v._drStuck)) {
       v._drReverse = true;
       v._drRevT = 0;
+      v._drRevD = 0;
       v._drStuck = false;
     }
 
@@ -206,15 +218,31 @@ var DRIVE = (function () {
     v._drSpeed = s;
     v._drBrake = (!sameDir) || (Math.abs(tSpeed) < Math.abs(s) - 0.05);
 
-    var wMax = Math.abs(s) / sp.rmin;
-    if (wMax > 3.0) wMax = 3.0;
-    var turn = 2.2 * e;
-    if (turn > wMax) turn = wMax;
-    else if (turn < -wMax) turn = -wMax;
-    /* reversing: the wheels turn the other way, so the nose still swings toward the target */
-    v.ang = wrap(v.ang + turn * dt);
+    /* rotate only by amount proportional to distance actually travelled; do move first */
+    var angBefore = v.ang;
+    var xBefore = v.x, yBefore = v.y;
+    var moved = move(v, sp, dt, opts);
+    var distMoved = Math.sqrt((v.x - xBefore) * (v.x - xBefore) + (v.y - yBefore) * (v.y - yBefore));
+    if (distMoved > 1e-6) {
+      var radius = sp.rmin;
+      var maxAng = distMoved / radius;
+      var desiredAng;
+      /* reversing with opposite lock also swings the nose toward the target */
+      desiredAng = 2.2 * e * dt;
+      if (desiredAng > maxAng) desiredAng = maxAng;
+      else if (desiredAng < -maxAng) desiredAng = -maxAng;
+      /* also cap at vehTurnRate-like physical rate */
+      var cap = 3.0 * dt;
+      if (desiredAng > cap) desiredAng = cap;
+      else if (desiredAng < -cap) desiredAng = -cap;
+      v.ang = wrap(v.ang + desiredAng);
+      if (v._drReverse) v._drRevD += distMoved;
+    } else {
+      /* no movement: cannot rotate */
+      v.ang = angBefore;
+    }
 
-    return move(v, sp, dt, opts);
+    return moved;
   }
 
   function reset(v) {
@@ -222,6 +250,7 @@ var DRIVE = (function () {
     v._drReverse = false;
     v._drBrake = false;
     v._drRevT = 0;
+    v._drRevD = 0;
     v._drCool = 0;
     v._drProgT = 0;
     v._drProgX = v.x;
