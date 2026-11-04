@@ -801,6 +801,7 @@ var Police = (function () {
       for (var i = 0; i < G.officers.length; i++) {
         var candidate = G.officers[i];
         if (candidate.escorting || isSquadLeader(G, candidate)) continue;
+        if (!UNITTYPES.canArrest(loadoutOf(G, candidate.squad))) continue;   /* medics and firefighters never escort */
         var d = distanceBetween(candidate, agent);
         if (d < bestDistance) {
           best = candidate;

@@ -222,6 +222,7 @@ var TACT = (function () {
   function snatch(G, s, agent) {
     ensure(G);
     if (!agent || agent.active === false) return "none";
+    if (typeof UNITTYPES !== "undefined" && typeof Police !== "undefined" && Police.getLoadout && !UNITTYPES.canArrest(Police.getLoadout(G, s))) return "none";   /* medics, firefighters */
     var list = squadOfficers(G, s);
     var free = [], i, o;
     for (i = 0; i < list.length; i++) {

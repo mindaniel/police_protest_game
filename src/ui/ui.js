@@ -1704,7 +1704,9 @@ function uiDrawScreen(ctx, g) {
   if (typeof HOLDLINE !== "undefined" && UI.screen === "playing") HOLDLINE.draw(ctx, g);
   if (typeof OWNERS !== "undefined" && UI.screen === "playing") OWNERS.draw(ctx, g);
   if (typeof MISSIONS !== "undefined" && UI.screen === "playing") MISSIONS.draw(ctx, g);
+  if (typeof CIVLIFE !== "undefined" && UI.screen === "playing") CIVLIFE.draw(ctx, g);
   if (typeof FRONTLINE !== "undefined" && UI.screen === "playing") FRONTLINE.draw(ctx, g);
+  if (typeof DISPATCH !== "undefined" && UI.screen === "playing") DISPATCH.draw(ctx, g);
   if (typeof ARRESTFX !== "undefined" && UI.screen === "playing") ARRESTFX.draw(ctx, g);
   if (typeof ORDERFX !== "undefined" && (UI.screen === "playing" || UI.screen === "planning")) ORDERFX.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
