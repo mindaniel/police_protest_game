@@ -156,7 +156,7 @@ class Account:
             except Exception:
                 pass
 
-    def ask(self, prompt, timeout_s=900):
+    def ask(self, prompt, timeout_s=900, raw_path=None):
         self.page.goto(URL, wait_until="domcontentloaded")
         try:
             self.page.wait_for_selector(COMPOSER, timeout=30000)
@@ -167,6 +167,14 @@ class Account:
         with self.page.expect_response(lambda r: "chat/completion" in r.url, timeout=timeout_s * 1000) as info:
             box.press("Enter")
         r = info.value
+        if raw_path:   # keep the raw HTTP response (status, headers, SSE body) for debugging
+            try:
+                body = r.text()
+            except Exception as e:
+                body = "<body unreadable: %s>" % e
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path.write_text("%s %d %s\n%s\n\n%s" % (r.request.method, r.status, r.url,
+                                "\n".join("%s: %s" % kv for kv in r.headers.items()), body), encoding="utf-8")
         if r.status in (401, 403):
             raise RuntimeError("LOGGED_OUT: HTTP %d" % r.status)
         if r.status == 429:
@@ -238,7 +246,7 @@ def run(jobs, accounts, gap):
             print("%s acct %d -> %s (%d chars)" % (time.strftime("%H:%M"), n, job, len(prompt)), flush=True)
             try:
                 with Account(n) as a:
-                    text = a.ask(prompt)
+                    text = a.ask(prompt, raw_path=WORK / "raw" / ("%s_acct%d_%s.txt" % (job, n, time.strftime("%Y%m%d_%H%M%S"))))
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_text(text, encoding="utf-8")
                 print("%s acct %d <- %s saved %s (%d chars)" % (time.strftime("%H:%M"), n, job, dst, len(text)), flush=True)
@@ -263,7 +271,7 @@ def run(jobs, accounts, gap):
     for t in ts:
         t.join()
     if todo:
-        print("NOT SENT (all accounts logged out):", ", ".join(todo))
+        print("NOT SENT (accounts %s logged out):" % ",".join(map(str, accounts)), ", ".join(todo))
 
 
 def main():
@@ -274,7 +282,7 @@ def main():
         return login(int(a[1]))
     if a[0] == "test":
         return print(test(int(a[1])))
-    accounts, gap, jobs = [1], 600, []
+    accounts, gap, jobs = [1, 2, 3], 600, []
     i = 1
     while i < len(a):
         if a[i] == "--accounts":

@@ -96,10 +96,11 @@ function uiSquadBusy(g, s) {
 }
 
 function uiSelectType(g, k) {
-  var types = ["none", "motorbike", "mounted", "car", "watertruck", "barriertruck"];
-  var names = ["foot", "motorbike", "mounted", "car", "water truck", "barrier truck"];
+  /* keys 1..9, 0 follow the force builder order (FORCE TYPES) */
+  var types = ["none", "car", "van", "truck", "watertruck", "barriertruck", "motorbike", "mounted", "liaison", "ambulance"];
+  var names = ["foot", "sedan", "van", "riot truck", "water cannon", "barrier truck", "motorbike", "mounted", "liaison", "ambulance"];
   var idx = parseInt(k, 10) - 1;
-  if (k === "0") idx = 9;   /* keep 0 harmless for squad 10 direct select */
+  if (k === "0") idx = 9;
   if (idx < 0 || idx >= types.length) return false;
   var loadout = types[idx];
   var list = uiSquadsOfType(g, loadout);
@@ -911,7 +912,7 @@ function uiOverlay(ctx, title, lines, footer) {
 }
 
 var UI_CONTROLS = [
-  "Left click a squad (or 1 - 6) : select it",
+  "Left click a squad (or 1 - 0 by type) : select it",
   "Left click the street : send the selected squad there (Shift = run)",
   "Hold left button and drag : move the map",
   "Right click : squad tool - water truck sprays, car loudspeaker,",
