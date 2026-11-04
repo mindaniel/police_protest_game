@@ -222,7 +222,8 @@ var REINFORCE = (function () {
     var opt = p.opt;
     var s = Police.addSquad(G, opt.loadout, p.entryX, p.entryY);
     if (s < 0) return;
-    G.log(opt.name + " arrives as squad " + (s + 1) + " (key " + ((s + 1) % 10) + ")");
+    var ut = (typeof UNITTYPES !== "undefined") ? UNITTYPES.get(opt.loadout) : null;
+    G.log(opt.name + " arrives as squad " + (s + 1) + (ut ? " (key " + ut.key + " cycles " + ut.short + " squads)" : ""));
     if (opt.kind === "van" || opt.kind === "truck") {
       if (typeof TRANSPORT !== "undefined") {
         TRANSPORT.toggle(G, s);

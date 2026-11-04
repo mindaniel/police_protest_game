@@ -165,7 +165,7 @@ if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
 
     { t: "h", s: "PLANNING KEYS" },
     { t: "s", s: "Squad" },
-    { t: "k", k: "1-0, Tab / click", d: "select a squad" },
+    { t: "k", k: "1-0, Tab / click", d: "select a squad by type: 1 foot 2 sedan 3 van 4 truck 5 water 6 barrier 7 bikes 8 horses 9 medics 0 fire (again = next one)" },
     { t: "k", k: "click a street", d: "place it (not on red)" },
     { t: "k", k: "V", d: "show / hide force panel" },
     { t: "k", k: "+ / - (panel)", d: "how many of each unit" },
@@ -186,7 +186,7 @@ if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
 
     { t: "h", s: "MATCH KEYS" },
     { t: "s", s: "Squad" },
-    { t: "k", k: "1-0, Tab / click", d: "select" },
+    { t: "k", k: "1-0, Tab / click", d: "select by type (see planning keys), again = next one" },
     { t: "k", k: "click street", d: "move (far: squad drives)" },
     { t: "k", k: "click vehicle", d: "select only the vehicle" },
     { t: "k", k: "A + click", d: "arrest" },

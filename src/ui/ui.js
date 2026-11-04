@@ -105,6 +105,13 @@ function uiSelectType(g, k) {
   var loadout = types[idx];
   var list = uiSquadsOfType(g, loadout);
   if (list.length === 0) {
+    /* none of that type: the key falls back to squad N by number */
+    var n = k === "0" ? 10 : parseInt(k, 10);
+    if (n >= 1 && n <= CONFIG.squadCount && uiSquadsOfType(g, Police.getLoadout(g, n - 1)).indexOf(n - 1) >= 0) {
+      UI.selected = n - 1; UI.selVehicle = false;
+      UI.say("Squad " + n + " selected (no " + names[idx] + " squad)");
+      return true;
+    }
     UI.say("No " + names[idx] + " squad");
     return true;
   }
@@ -945,7 +952,7 @@ function uiOverlay(ctx, title, lines, footer) {
 }
 
 var UI_CONTROLS = [
-  "Left click a squad (or 1 - 0 by type) : select it",
+  "Left click a squad, or 1-0 by type (1 foot 2 sedan 3 van 4 truck 5 water 6 barrier 7 bikes 8 horses 9 medics 0 fire; again = next one) : select it",
   "Left click the street : send the selected squad there (Shift = run)",
   "Hold left button and drag : move the map",
   "Right click : squad tool - water truck sprays, car loudspeaker,",
