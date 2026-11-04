@@ -769,6 +769,7 @@ var SQUADPLAN = (function () {
     sectors: sectors,
     sectorAt: sectorAt,
     assignSector: assignSector,
+    autoAssign: autoAssign,
     drawSectors: drawSectors
   };
 })();

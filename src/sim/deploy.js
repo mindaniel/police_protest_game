@@ -64,6 +64,13 @@ DEPLOY.start = function (G) {
     for (i = 0; i < G.officers.length; i++) { o = G.officers[i]; if (o.squad === s) { ax += o.x; ay += o.y; an++; } }
     for (i = 0; i < G.vehicles.length; i++) { v = G.vehicles[i]; if (v.squad === s) { ax += v.x; ay += v.y; an++; } }
     DEPLOY.posts[s] = an ? { x: ax / an, y: ay / an } : null;
+    /* a squad given a sector (auto-assign, P) drives to that sector, not back to its spawn spot */
+    var ord = G.orders && G.orders[s];
+    if (ord && ord.area) {
+      var tx = Math.floor((ord.area.x0 + ord.area.x1) / 2), ty = Math.floor((ord.area.y0 + ord.area.y1) / 2);
+      var near = DEPLOY._around(G, tx, ty, 6);
+      if (near.length) DEPLOY.posts[s] = { x: near[0].x + 0.5, y: near[0].y + 0.5 };
+    }
   }
   var doorX = Math.floor(G.station.x), doorY = Math.floor(G.station.y);
   var tiles = DEPLOY._bfs(G, doorX, doorY), road = [], walk = [];
