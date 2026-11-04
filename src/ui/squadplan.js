@@ -373,59 +373,51 @@ var SQUADPLAN = (function () {
     if (!silent) say("Squad " + (i + 1) + " \u2192 " + sec.name);
   }
 
+  /* Auto-assign by role: foot squads and horses hold the centre and the busiest protest
+   * sectors (squares, landmarks, small streets); vehicles cover the outer sectors and main
+   * roads; medics go where the crowd is, fire engines wait in reserve. */
   function autoAssign(G) {
-    var n = squadCount(G), secs = sectors(G), th = threatFor(G);
-    var fast = [], heavy = [], support = [], foot = [], i;
+    var n = squadCount(G), secs = sectors(G), th = threatFor(G), i, k;
+    var foot = [], horse = [], heavy = [], fast = [], medic = [], fire = [];
     for (i = 0; i < n; i++) {
       var lt = getLoadout(G, i);
-      if (lt === "car" || lt === "motorbike") fast.push(i);
-      else if (lt === "truck" || lt === "van" || lt === "watertruck" || lt === "barriertruck" || lt === "mounted") heavy.push(i);
-      else if (lt === "liaison" || lt === "ambulance") support.push(i);
-      else foot.push(i);
+      if (lt === "none") foot.push(i);
+      else if (lt === "mounted") horse.push(i);
+      else if (lt === "car" || lt === "motorbike") fast.push(i);
+      else if (lt === "ambulance") medic.push(i);
+      else if (lt === "fireengine") fire.push(i);
+      else heavy.push(i);   /* van, riot truck, water cannon, barrier truck */
     }
-    for (i = 0; i < fast.length; i++) assignSector(G, fast[i], null, true);
-
-    var busiest = null, bt = -1;
-    for (i = 0; i < secs.length; i++) if (th[i] > bt) { bt = th[i]; busiest = secs[i]; }
-    for (i = 0; i < support.length; i++) assignSector(G, support[i], busiest, true);
-
+    /* core = centre + the two busiest other sectors; outer = the rest, busiest first */
     var order = [];
     for (i = 0; i < secs.length; i++) order.push(i);
     order.sort(function (a, b) { return th[b] - th[a]; });
-    var withThreat = [];
-    for (i = 0; i < order.length; i++) if (th[order[i]] > 0) withThreat.push(order[i]);
-
-    for (i = 0; i < heavy.length; i++) {
-      var target = withThreat.length ? withThreat[i % withThreat.length] : order[0];
-      assignSector(G, heavy[i], secs[target], true);
+    var core = [4], outer = [];
+    for (i = 0; i < order.length; i++) {
+      if (order[i] === 4) continue;
+      if (core.length < 3 && th[order[i]] > 0) core.push(order[i]); else outer.push(order[i]);
     }
-
     var counts = {};
-    if (G._squadSector) {
-      for (i = 0; i < G._squadSector.length; i++) {
-        var id = G._squadSector[i];
-        if (id && id !== "R") counts[id] = (counts[id] || 0) + 1;
+    function give(list, pool) {
+      for (var q = 0; q < list.length; q++) {
+        var best = pool[0], bs = 1e9;
+        for (k = 0; k < pool.length; k++) {
+          var sc = (counts[pool[k]] || 0) / (th[pool[k]] + 1);   /* fewest squads per unit of trouble */
+          if (sc < bs) { bs = sc; best = pool[k]; }
+        }
+        assignSector(G, list[q], secs[best], true);
+        counts[best] = (counts[best] || 0) + 1;
       }
     }
-    var pool = withThreat.length ? withThreat : order;
-    for (i = 0; i < foot.length; i++) {
-      var best = -1, bscore = 1e9;
-      for (var p = 0; p < pool.length; p++) {
-        var si = pool[p], cnt = counts[secs[si].id] || 0;
-        var score = cnt / (th[si] + 0.5);
-        if (score < bscore) { bscore = score; best = si; }
-      }
-      if (best >= 0) {
-        assignSector(G, foot[i], secs[best], true);
-        counts[secs[best].id] = (counts[secs[best].id] || 0) + 1;
-      }
-    }
-    var assigned = 0;
-    if (G._squadSector) {
-      for (i = 0; i < G._squadSector.length; i++) if (G._squadSector[i] && G._squadSector[i] !== "R") assigned++;
-    }
-    say("Auto-assign: " + assigned + " squads to sectors, " + fast.length + " fast in reserve" + (busiest && bt > 0 ? ", liaison/ambulance to " + busiest.name : ""));
+    give(foot, core);
+    give(horse, core);
+    give(heavy, outer.length ? outer : core);
+    give(fast, outer.length ? outer : core);
+    give(medic, [order[0]]);
+    for (i = 0; i < fire.length; i++) assignSector(G, fire[i], null, true);   /* reserve, map centre */
+    say("Auto-assign: foot and horses hold the centre and busiest areas, vehicles cover the outer areas" + (fire.length ? ", fire engines in reserve" : ""));
   }
+
 
   function drawSectors(ctx, G) {
     if (!ctx || typeof Art === "undefined") return;
