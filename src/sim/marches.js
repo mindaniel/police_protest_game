@@ -250,8 +250,10 @@ var MARCHES = (function () {
         var joined = members.length;
         for (var ai = 0; ai < agents.length && joined < 120; ai++) {
           var a = agents[ai];
-          if (!a.active || a.role !== "peaceful" || a._march != null) continue;
-          if (a.mood < 25) continue;
+          if (!a.active || a._march != null) continue;
+          if (a.role !== "peaceful" && a.role !== "rioter") continue;   /* rioters march hidden among protesters */
+          if (a.role === "peaceful" && a.mood < 25) continue;
+          if (a.role === "rioter" && (a.state !== "march" || a.braced)) continue;
           var dx = a.x - m.start.x, dy = a.y - m.start.y;
           if (dx * dx + dy * dy > 196) continue;
           a._march = m.id;
@@ -372,6 +374,7 @@ var MARCHES = (function () {
         var near = 0;
         for (var fi = 0; fi < mem.length; fi++) {
           var fm = mem[fi];
+          if (fm.state === "attackShop" || fm.state === "flee") continue;   /* off smashing: rejoins after */
           fm._flow = field;
           var fdx = fm.x - wp.x, fdy = fm.y - wp.y;
           if (fdx * fdx + fdy * fdy <= 16) near++;

@@ -512,7 +512,7 @@ var Crowd = (function () {
       var ag = G.agents[ai];
       ag._site = -1;
       ag._zone = -1;
-      if (ag.role !== "peaceful") continue;
+      if (ag.role !== "peaceful" && ag.role !== "rioter") continue;   /* rioters start inside the protest groups */
       if (zoneMode) { if (ag.active) assignZone(G, ag); }
       else assignSite(G, ag);
     }
@@ -657,8 +657,7 @@ var Crowd = (function () {
         if (a._highMoodTime > C.radicalSeconds && Math.random() < C.radicalChance * dt) {
           a.role = "rioter";
           a._flow = null;
-          a._targetShop = null;
-          leaveZone(G, a);
+          a._targetShop = null;   /* stays in its crowd (zone / march) */
           G.rioterTotal = (G.rioterTotal || 0) + 1;
           G.log("A protester has turned violent");
         }
@@ -676,7 +675,7 @@ var Crowd = (function () {
     var onPlaza = tileChar(Math.floor(a.x), Math.floor(a.y)) === "P";
     var rioterBusy = a.role === "rioter" && (a.state === "attackShop" || a.state === "flee");
     /* protest-area agents mill once inside their area; others on the plaza */
-    var zoneMode = a.role === "peaceful" && a._zone >= 0 && a._flow;
+    var zoneMode = (a.role === "peaceful" || (a.role === "rioter" && a.state === "march")) && a._zone >= 0 && a._flow;   /* rioters hide in the crowd */
     var mill = !rioterBusy && !a._leaving && (zoneMode
       ? a._flow[Math.floor(a.y) * MAP.width + Math.floor(a.x)] === 0
       : onPlaza);
@@ -851,12 +850,17 @@ var Crowd = (function () {
   }
 
   /* ---------------- rioters ---------------- */
-  function pickTargetShop(G, r) {
+  function pickTargetShop(G, r, maxD) {
     var tx = Math.floor(r.x), ty = Math.floor(r.y);
     var best = null, bestD = Infinity, C = CONFIG;
+    var maxD2 = maxD ? maxD * maxD : Infinity;
     for (var i = 0; i < G.shops.length; i++) {
       var shop = G.shops[i];
       if (shop.broken) continue;
+      if (maxD) {
+        var sdx = shop.x - r.x, sdy = shop.y - r.y;
+        if (sdx * sdx + sdy * sdy > maxD2) continue;
+      }
       var field = shopField(G, shop);
       if (!field) continue;
       var d = field[ty * MAP.width + tx];
@@ -936,17 +940,26 @@ var Crowd = (function () {
     }
   }
 
+  function rejoinGroup(G, r) {
+    if (r._march != null) { r._flow = null; return; }
+    if (r._zone >= 0) {
+      var f = zoneField(G, r._zone);
+      if (f) { r._flow = f; return; }
+    }
+    assignZone(G, r, false);
+  }
+
   function updateRioter(G, r, dt) {
     var C = CONFIG;
-    if (r.braced && typeof RESIST !== "undefined") return;   /* braced: RESIST handles steering, shoving, throwing */
-    var calm = G.time < (C.calmStartSeconds || 0);   /* opening minutes: crowd gathers, no violence yet */
-    if (!calm && r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;   /* going for a landmark */
+    if (r.braced && typeof RESIST !== "undefined") return;
+    var calm = G.time < (C.calmStartSeconds || 0);
+    if (!calm && r.state !== "flee" && typeof LANDMARKS !== "undefined" && LANDMARKS.rioterTick(G, r, dt)) return;
 
     if (r.state === "flee") {
       if (G.time >= r._fleeUntil) {
         r.state = "march";
-        r._flow = null;
         r._targetShop = null;
+        rejoinGroup(G, r);
       } else if (!r._flow) {
         r._flow = G.flow;
       }
@@ -956,7 +969,8 @@ var Crowd = (function () {
     if (r.state === "attackShop") {
       var shop = r._targetShop;
       if (!shop || shop.broken) {
-        r.state = "march"; r._flow = null; r._targetShop = null;
+        r.state = "march"; r._targetShop = null;
+        rejoinGroup(G, r);
         return;
       }
       var dx = (shop.x + 0.5) - r.x, dy = (shop.y + 0.5) - r.y;
@@ -1010,9 +1024,8 @@ var Crowd = (function () {
             if (Math.random() >= C.lootJoinChance) continue;
             by.role = "rioter";
             by.state = "march";
-            by._flow = null;
             by._targetShop = null;
-            leaveZone(G, by);
+            /* keep _zone/_march/_flow — new rioter stays in the crowd */
             G.rioterTotal = (G.rioterTotal || 0) + 1;
             joined++;
           }
@@ -1023,8 +1036,14 @@ var Crowd = (function () {
     }
 
     if (calm) return;
-    if (Math.random() < C.vanguardChance * (typeof NIGHT !== "undefined" ? NIGHT.boldness(G) : 1) * dt) {
-      var vt = pickTargetShop(G, r);
+
+    /* Bolder in a bigger crowd: blend in when few neighbours, bold when packed. */
+    var crowdN = neighbors(G, r.x, r.y, 5).length;
+    var bold = Math.min(2, Math.max(0, (crowdN - 2) * 0.15));
+    var maxD = (r._zone >= 0 || r._march != null) ? (C.blocShopRadius || 5) : null;
+
+    if (bold > 0 && Math.random() < C.vanguardChance * (typeof NIGHT !== "undefined" ? NIGHT.boldness(G) : 1) * bold * dt) {
+      var vt = pickTargetShop(G, r, maxD);
       if (vt) {
         r.state = "attackShop";
         r._targetShop = vt.shop;
@@ -1039,12 +1058,12 @@ var Crowd = (function () {
       for (var s = 0; s < G.shops.length; s++) {
         var sh = G.shops[s];
         if (sh.broken) continue;
-        var sdx = sh.x - r.x, sdy = sh.y - r.y;
-        if (sdx * sdx + sdy * sdy < C.rioterShopSeekRadius * C.rioterShopSeekRadius) { nearShop = true; break; }
+        var sdx2 = sh.x - r.x, sdy2 = sh.y - r.y;
+        if (sdx2 * sdx2 + sdy2 * sdy2 < C.rioterShopSeekRadius * C.rioterShopSeekRadius) { nearShop = true; break; }
       }
     }
-    if (onPlaza || nearShop) {
-      var target = pickTargetShop(G, r);
+    if ((onPlaza || nearShop) && bold > 0 && Math.random() < bold * dt) {
+      var target = pickTargetShop(G, r, maxD);
       if (target) {
         r.state = "attackShop";
         r._targetShop = target.shop;
@@ -1181,7 +1200,7 @@ var Crowd = (function () {
       if (!pa.pending || G.time < pa.spawnAt) continue;
       pa.pending = false;
       pa.active = true;
-      if (zoneMode && pa.role === "peaceful") assignZone(G, pa);
+      if (zoneMode && (pa.role === "peaceful" || pa.role === "rioter")) assignZone(G, pa);
     }
     rebuildHash(G);
 
