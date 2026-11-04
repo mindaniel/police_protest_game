@@ -105,13 +105,6 @@ function uiSelectType(g, k) {
   var loadout = types[idx];
   var list = uiSquadsOfType(g, loadout);
   if (list.length === 0) {
-    /* none of that type: the key falls back to squad N by number */
-    var n = k === "0" ? 10 : parseInt(k, 10);
-    if (n >= 1 && n <= CONFIG.squadCount && uiSquadsOfType(g, Police.getLoadout(g, n - 1)).indexOf(n - 1) >= 0) {
-      UI.selected = n - 1; UI.selVehicle = false;
-      UI.say("Squad " + n + " selected (no " + names[idx] + " squad)");
-      return true;
-    }
     UI.say("No " + names[idx] + " squad");
     return true;
   }
@@ -163,7 +156,7 @@ function uiSelectType(g, k) {
   UI.selected = target;
   UI.selVehicle = false;
   var busyTxt = uiSquadBusy(g, target) ? "busy" : "free";
-  UI.say("Squad " + (target + 1) + " (" + names[idx] + ", " + busyTxt + ")");
+  UI.say(UNITTYPES.tag(g, target) + " selected (" + busyTxt + ", " + (UI._lastTypeCursor + 1) + " of " + list.length + ")");
 
   /* the camera stays put: the squad cam inset (squadcam.js) shows the squad */
   return true;
@@ -1709,6 +1702,8 @@ function uiDrawScreen(ctx, g) {
   if (typeof HOLDLINE !== "undefined" && UI.screen === "playing") HOLDLINE.draw(ctx, g);
   if (typeof OWNERS !== "undefined" && UI.screen === "playing") OWNERS.draw(ctx, g);
   if (typeof MISSIONS !== "undefined" && UI.screen === "playing") MISSIONS.draw(ctx, g);
+  if (typeof FRONTLINE !== "undefined" && UI.screen === "playing") FRONTLINE.draw(ctx, g);
+  if (typeof ARRESTFX !== "undefined" && UI.screen === "playing") ARRESTFX.draw(ctx, g);
   if (typeof ORDERFX !== "undefined" && (UI.screen === "playing" || UI.screen === "planning")) ORDERFX.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
 

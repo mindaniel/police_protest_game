@@ -240,7 +240,7 @@ var SQUADCAM = (function () {
 
   function draw(ctx, g) {
     if (typeof MAP === "undefined" || !MAP || !MAP.rows) return;
-    if (typeof UI === "undefined" || (UI.screen !== "planning" && UI.screen !== "playing")) return;
+    if (typeof UI === "undefined" || UI.screen !== "playing") return;
     var s = UI.selected;
     if (seenSquad !== s) { hidden = false; seenSquad = s; easeX = null; easeY = null; easeSquad = -1; }
     if (hidden) { drawShowTab(ctx); return; }
@@ -414,7 +414,7 @@ var SQUADCAM = (function () {
 
     ctx.font = "bold " + fntB + "px Consolas, monospace";
     ctx.fillStyle = "#dfe6ef";
-    ctx.fillText("S" + (s + 1), txl, ty2);
+    ctx.fillText(UNITTYPES.tag(g, s), txl, ty2);
     ty2 += fntB + 2 * gm.k;
 
     ctx.font = fnt + "px Consolas, monospace";
@@ -486,7 +486,7 @@ var SQUADCAM = (function () {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillStyle = "#dfe6ef";
-    ctx.fillText("S" + (s + 1) + " " + typeName(lo), gm.x + 6 * gm.k, headY);
+    ctx.fillText(UNITTYPES.tag(g, s), gm.x + 6 * gm.k, headY);
 
     var cb = 9 * gm.k;
     closeBtn = { x: gm.x + gm.w - cb - 4 * gm.k, y: gm.y + 4 * gm.k, r: cb };
@@ -524,7 +524,7 @@ var SQUADCAM = (function () {
   }
 
   function click(x, y) {
-    if (typeof UI === "undefined" || (UI.screen !== "planning" && UI.screen !== "playing")) return false;
+    if (typeof UI === "undefined" || UI.screen !== "playing") return false;
     if (hidden) {
       var t = showTab();
       if (t && x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) { hidden = false; return true; }

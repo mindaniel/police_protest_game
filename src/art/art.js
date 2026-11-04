@@ -2347,13 +2347,12 @@ var Art = (function () {
       if (seen[o.squad]) continue;
       seen[o.squad] = true;
       P(o.x, o.y, 1.55);
-      badge(ctx, _px, _py - 4, String(o.squad + 1), sqCol(o.squad), o.squad === sel);
+      badge(ctx, _px, _py - 4, UNITTYPES.tag(_G, o.squad), sqCol(o.squad), o.squad === sel);
     }
     if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
       P(v.x, v.y, 1.55);
-      var nm = UNITTYPES.get(v.type).label || "BARRIER";
-      badge(ctx, _px, _py - 4, (v.squad + 1) + " " + nm, sqCol(v.squad), v.squad === sel);
+      badge(ctx, _px, _py - 4, UNITTYPES.tag(_G, v.squad), sqCol(v.squad), v.squad === sel);
     }
   }
 

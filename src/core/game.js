@@ -324,6 +324,7 @@ function frame(now) {
       if (typeof DEPLOY !== "undefined") DEPLOY.update(G, step);
       if (typeof OWNERS !== "undefined") OWNERS.update(G, step);
       if (typeof PARKED !== "undefined") PARKED.update(G, step);
+      if (typeof FRONTLINE !== "undefined") FRONTLINE.update(G, step);
       if (typeof MISSIONS !== "undefined") MISSIONS.update(G, step);
       if (typeof ALERTS !== "undefined") ALERTS.update(G, step);   /* clickable event pop-ups */   /* rioters run or stand their ground */
       if (typeof FX !== "undefined") FX.update(G, step);
@@ -377,7 +378,9 @@ function restartGame(newCity) {
   G = makeG();
   if (typeof OWNERS !== "undefined") OWNERS.reset();
   if (typeof MISSIONS !== "undefined") MISSIONS.reset();
-  if (typeof PARKED !== "undefined") PARKED.build(G);   /* parked cars intact again for the new match */
+  if (typeof PARKED !== "undefined") PARKED.build(G);
+  if (typeof FRONTLINE !== "undefined") FRONTLINE.reset();
+  if (typeof ARRESTFX !== "undefined") ARRESTFX.reset();   /* parked cars intact again for the new match */
   Crowd.init(G);
   Crowd.rebuildFlow(G);
   if (typeof FORCE !== "undefined" && typeof Police !== "undefined") Police.setForce(FORCE.loadouts());
