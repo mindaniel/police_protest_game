@@ -67,7 +67,13 @@ DEPLOY.start = function (G) {
   }
   var doorX = Math.floor(G.station.x), doorY = Math.floor(G.station.y);
   var tiles = DEPLOY._bfs(G, doorX, doorY), road = [], walk = [];
-  for (i = 0; i < tiles.length; i++) { walk.push(tiles[i]); if (tiles[i].ch === '.') road.push(tiles[i]); }
+  /* vehicles only on open road: the tile and its 4 neighbours are '.' (not alleys or kerbs) */
+  function open(t) {
+    var r = MAP.rows, d = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (var q = 0; q < d.length; q++) { var row = r[t.y + d[q][1]]; if (!row || row.charAt(t.x + d[q][0]) !== '.') return false; }
+    return true;
+  }
+  for (i = 0; i < tiles.length; i++) { walk.push(tiles[i]); if (open(tiles[i])) road.push(tiles[i]); }
   var base = tiles.length ? tiles[0] : { x: doorX, y: doorY };
   var used = {}, vehChosen = [], footChosen = [], vehSpot = [], vehBySquad = {}, footBySquad = {};
   function apart(a, list, d) {
@@ -76,7 +82,7 @@ DEPLOY.start = function (G) {
   }
   function pickRoad() {
     var d, j, t;
-    for (d = 3; d >= 1; d--) for (j = 0; j < road.length; j++) {
+    for (d = 4; d >= 2; d--) for (j = 0; j < road.length; j++) {
       t = road[j];
       if (used[t.x + ',' + t.y]) continue;
       if (apart(t, vehChosen, d)) { used[t.x + ',' + t.y] = 1; vehChosen.push(t); return t; }

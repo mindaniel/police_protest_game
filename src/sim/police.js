@@ -118,8 +118,12 @@ var Police = (function () {
 
   /* Where a unit really aims: its target plus its formation offset,
    * unless that spot is solid, then the plain target. */
+  /* every vehicle type in src/units/*.js (van, riot truck, ambulance and fire engine
+   * used to be missing here, so they moved like people on foot) */
+  var VEH_TYPES = {};
+  UNITTYPES.list().forEach(function (d) { if (d.vehicle) VEH_TYPES[d.vehicle.type] = true; });
   function isVehicle(e) {
-    return e.type === "car" || e.type === "watertruck" || e.type === "barriertruck";
+    return !!(e && VEH_TYPES[e.type]);
   }
   function angDiff(a, b) { return Math.atan2(Math.sin(a - b), Math.cos(a - b)); }
 
@@ -1140,6 +1144,16 @@ var Police = (function () {
         }
         if (fn) { v.tx = fx / fn; v.ty = fy / fn; }
       }
+      /* a vehicle on a tile it cannot drive on (alley, kerb, pushed into a wall) can never
+       * find a route: after 1 s off-road, put it on the nearest drivable road tile */
+      if (!driveTileOk(G, Math.floor(v.x), Math.floor(v.y))) {
+        v._offRoad = (v._offRoad || 0) + dt;
+        if (v._offRoad > 1) {
+          var rt = nearestAllowed(G, Math.floor(v.x), Math.floor(v.y), function (x, y) { return driveTileOk(G, x, y); }, 12);
+          if (rt) { v.x = rt.x + 0.5; v.y = rt.y + 0.5; if (typeof DRIVE !== "undefined") DRIVE.reset(v); }
+          v._offRoad = 0;
+        }
+      } else v._offRoad = 0;
       if (CONFIG.crowdBlocksPolice) stepVehicleThroughCrowd(G, v, dt);
       else stepToward(G, v, dt);
       turnVehicle(v, dt);
