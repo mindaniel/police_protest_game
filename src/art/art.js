@@ -564,7 +564,7 @@ var Art = (function () {
   /* pavement follows the diagonal on the ground too */
   function groundWedges(g, t) {
     var x, y;
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         if (solidCh(tile(x, y))) continue;
         var c = cornerAt(x, y);
@@ -678,7 +678,7 @@ var Art = (function () {
   function groundChamfers(g, t) {
     var x, y, cc;
     g.lineWidth = 1.5;
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         cc = chamferAt(x, y);
         if (!cc) continue;
@@ -773,15 +773,41 @@ var Art = (function () {
   }
 
   /* ---------- ground texture ---------- */
+  /* The ground layer is painted in bands of rows, one band per tick, so the planning
+   * screen stays usable while a big map loads (a corner spinner shows meanwhile). */
+  var GY0 = 0, GY1 = 0, groundJob = 0;
+  function groundSpinner(on) {
+    var d = document.getElementById("loading");
+    if (d) d.style.display = on ? "flex" : "none";
+  }
   function buildGround() {
     if (typeof document === "undefined") return;
     cityVer++;
     groundCv = document.createElement("canvas");
     groundCv.width = W * GT;
     groundCv.height = H * GT;
-    var g = groundCv.getContext("2d"), x, y, ch, t = GT;
+    var job = ++groundJob, rows = Math.max(16, Math.ceil(H / 6)), y0 = 0, cv = groundCv;
+    function band() {
+      if (job !== groundJob) return;   /* a newer map took over */
+      paintGroundBand(cv, y0, Math.min(H, y0 + rows));
+      y0 += rows;
+      cityVer++; FAR_DIRTY = true;   /* zoomed-out snapshot must pick up the new band */
+      if (y0 < H) { groundSpinner(true); setTimeout(band, 0); return; }
+      if (typeof STREETS !== "undefined") STREETS.paint(cv.getContext("2d"), W, H, GT, tile, paris() ? "paris" : "grid", 0, 0, "marks");
+      cityVer++; FAR_DIRTY = true;
+      groundSpinner(false);
+    }
+    band();
+  }
+
+  function paintGroundBand(cv, B0, B1) {
+    var g = cv.getContext("2d"), x, y, ch, t = GT;
+    /* paint a 2-row margin so tiles that spill over the edge layer correctly, clipped to the band */
+    GY0 = Math.max(0, B0 - 2); GY1 = Math.min(H, B1 + 2);
+    g.save();
+    g.beginPath(); g.rect(0, B0 * t, W * t, (B1 - B0) * t); g.clip();
     var base = { ".": "#eef1f5", "P": "#e4e8ee", "G": "#bfd8a8", "a": "#d4dae2", "#": "#cdd4dd", "S": "#cdd4dd", "W": "#86b7dc" };
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         ch = tile(x, y);
         g.fillStyle = base[ch] || "#e3e8ee";
@@ -821,7 +847,7 @@ var Art = (function () {
       }
     }
     /* sidewalks + curbs along buildings */
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         ch = tile(x, y);
         if (solidCh(ch) || ch === "G") continue;
@@ -839,7 +865,7 @@ var Art = (function () {
       }
     }
     /* soft cast shadows: light from the north-west */
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         if (solidCh(tile(x, y))) continue;
         var gr;
@@ -862,7 +888,7 @@ var Art = (function () {
       return n;
     }
     g.fillStyle = "rgba(255,255,255,0.95)";
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         if (tile(x, y) !== ".") continue;
         var up = run(x, y - 1, 0, -1), dn = run(x, y + 1, 0, 1), vext = up + dn + 1;
@@ -876,7 +902,7 @@ var Art = (function () {
     /* plaza paving + central ring */
     g.strokeStyle = "rgba(255,255,255,0.55)";
     g.lineWidth = 1;
-    for (y = 0; y < H; y++) {
+    for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
         if (tile(x, y) === "P") g.strokeRect(x * t + 0.5, y * t + 0.5, t - 1, t - 1);
       }
@@ -890,11 +916,12 @@ var Art = (function () {
     g.beginPath(); g.arc((pc.x + 0.5) * t, (pc.y + 0.5) * t, t * 1.2, 0, Math.PI * 2); g.stroke();
     if (paris()) THEME_PARIS.ground(g, W, H, t, tile);
     if (typeof STREETS !== "undefined") {
-      STREETS.paint(g, W, H, t, tile, paris() ? "paris" : "grid");
+      STREETS.paint(g, W, H, t, tile, paris() ? "paris" : "grid", GY0, GY1, "band");
       if (paris()) THEME_PARIS.decor(g, t, tile);
     }
     if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);
     if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
+    g.restore();
   }
 
   function treeVariety(seed) {

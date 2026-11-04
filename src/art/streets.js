@@ -68,8 +68,13 @@ var STREETS = (function () {
     }
   }
 
-  function paint(g, W, H, GT, tile, style) {
+  var segGrid = null, segFor = null, SEG_C = 8, segCols = 0, segRows = 0;   /* nearestRoad index, kept per map */
+  /* Y0..Y1: rows to paint (banded loading); mode "band" skips road markings, "marks" paints only them */
+  function paint(g, W, H, GT, tile, style, Y0, Y1, mode) {
     var T = GT, i, x, y, px, py, n, k;
+    if (Y0 == null) Y0 = 0;
+    if (Y1 == null) Y1 = H;
+    if (mode === "marks") { Y0 = 0; Y1 = 0; }
     var isGrid = style !== "paris";
     var legacyRoadBase = isGrid ? "#c4c8ce" : "#cfc8bb";
     var paveCol = isGrid ? "#eceef1" : "#ece6da";
@@ -110,9 +115,9 @@ var STREETS = (function () {
 
     /* road segments bucketed in 8x8-tile cells: nearestRoad looks at nearby cells first
      * (checking every road for every tile took about 4.5 s on a big map) */
-    var segGrid = null, SEG_C = 8, segCols = 0, segRows = 0;
     function buildSegGrid() {
       var roads = MAP.roads || [], ri, j, pts, ax, ay, bx, by, cx0, cx1, cy0, cy1, cx, cy, cell;
+      segFor = MAP.roads;
       segCols = Math.ceil(W / SEG_C) + 1; segRows = Math.ceil(H / SEG_C) + 1;
       segGrid = new Array(segCols * segRows);
       for (ri = 0; ri < roads.length; ri++) {
@@ -130,7 +135,7 @@ var STREETS = (function () {
     }
 
     function nearestRoad(tx, ty) {
-      if (!segGrid) buildSegGrid();
+      if (!segGrid || segFor !== MAP.roads) buildSegGrid();
       var roads = MAP.roads || [];
       var best = null, bestD = Infinity, road, pts, j, k, cell, r, cx, cy;
       var ax, ay, bx, by, dx, dy, len2, t0, qx, qy, dist;
@@ -378,7 +383,7 @@ var STREETS = (function () {
 
     // ---- 1. ROAD SURFACE ----
     var spkA = [], spkB = [];
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== ".") continue;
 
       var ox = x * T, oy = y * T;
@@ -426,7 +431,7 @@ var STREETS = (function () {
 
     // ---- 2. PAVEMENTS ----
     var paveW = T * 0.32;
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== ".") continue;
 
       var sides = [];
@@ -519,14 +524,14 @@ var STREETS = (function () {
     }
 
     // ---- 3. ROAD MARKINGS AND JUNCTION CLEARING ----
-    if (hasRoadData) {
+    if (hasRoadData && mode !== "band") {
       var junctions = buildJunctions();
       drawRoadMarkings(junctions);
       drawZebras();
     } else {
       // Preserve the legacy road-marking appearance for maps without road metadata.
       var runs = {};
-      for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
         if (tile(x, y) !== ".") continue;
         var hl = 1, hr = 1, vu = 1, vd = 1;
         while (tile(x - hl, y) === ".") hl++;
@@ -541,7 +546,7 @@ var STREETS = (function () {
 
       var whiteLegacy = "rgba(255,255,255,1)";
       var edgeLegacy = "rgba(255,255,255,0.9)";
-      for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+      for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
         if (tile(x, y) !== ".") continue;
         var r = runs[x + "," + y];
         var isJuncH = r.hl >= 2 && r.hr >= 2 && r.v >= 3;
@@ -605,7 +610,7 @@ var STREETS = (function () {
     }
 
     // ---- 4. STREET FURNITURE ----
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== ".") continue;
       var ox4 = x * T, oy4 = y * T;
       var nearPave = isB(tile(x - 1, y)) || isB(tile(x + 1, y)) ||
@@ -640,7 +645,7 @@ var STREETS = (function () {
     }
 
     // ---- 5. LANES 'a' ----
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== "a") continue;
       var ox5 = x * T, oy5 = y * T;
       g.fillStyle = cobBase; g.fillRect(ox5, oy5, T, T);
@@ -660,7 +665,7 @@ var STREETS = (function () {
 
     // ---- 6. PLAZA 'P' ----
     var plazaCount = 0, pminx = W, pmaxx = 0, pminy = H, pmaxy = 0;
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) === "P") {
         plazaCount++;
         if (x < pminx) pminx = x;
@@ -674,7 +679,7 @@ var STREETS = (function () {
       (pmaxx - pminx + 1) * (pmaxy - pminy + 1) > 60;
     var plazaBand = bigPlaza && (pmaxx - pminx) > 4 && (pmaxy - pminy) > 4;
 
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== "P") continue;
       var ox6 = x * T, oy6 = y * T;
       var half = T * 0.5;
@@ -704,7 +709,7 @@ var STREETS = (function () {
     }
 
     // ---- 7. GARDENS 'G' ----
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== "G") continue;
       var ox7 = x * T, oy7 = y * T;
       g.fillStyle = grassCol; g.fillRect(ox7, oy7, T, T);
@@ -741,7 +746,7 @@ var STREETS = (function () {
     }
 
     // ---- 8. WATER SHORELINE ----
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       if (tile(x, y) !== "W") continue;
       var ox8 = x * T, oy8 = y * T, sw = T * 0.12;
       if (tile(x, y - 1) !== "W" && tile(x, y - 1) !== "#") {
@@ -759,7 +764,7 @@ var STREETS = (function () {
     }
 
     // ---- 9. AMBIENT OCCLUSION ----
-    for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
       var c = tile(x, y);
       if (c === "#" || c === "S" || c === "W") continue;
       var ox9 = x * T, oy9 = y * T;
