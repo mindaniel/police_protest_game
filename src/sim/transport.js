@@ -10,7 +10,11 @@ var TRANSPORT = (function () {
   };
 
   function seats(type) {
-    return SEATS[type] || { crew: 4, arrest: 0 };
+    var k = String(type || "").toLowerCase();
+    if (k === "riot truck" || k === "riot_truck" || k === "riot-truck") k = "truck";
+    if (SEATS[k]) return SEATS[k];
+    if (k.indexOf("truck") >= 0 && k.indexOf("water") < 0 && k.indexOf("barrier") < 0) return SEATS.truck;
+    return { crew: 4, arrest: 0 };
   }
 
   function init(G) {
@@ -111,7 +115,7 @@ var TRANSPORT = (function () {
     var cap = seats(v.type).crew;
     if (!v.crew) v.crew = [];
     if (v.crew.length >= cap) return "dismount";
-    st = t.runs[s] = { phase: "board", t: 0, cap: cap };
+    st = t.runs[s] = { phase: "board", t: 0, cap: cap, boarded: 0 };
     v.parked = false;
     v.ctrl = true;
     v.tx = v.x; v.ty = v.y;
@@ -383,25 +387,19 @@ var TRANSPORT = (function () {
     ensure(G);
     if (!G.vehicles) return;
     var t = G._transport, i, v, s, st, offs, o, j, cap, found;
-    // build squad lookup lazily only when needed
     for (i = 0; i < G.vehicles.length; i++) {
       v = G.vehicles[i];
       if (!v) continue;
-      // crew positions + stamina
       if (v.crew && v.crew.length) {
         for (j = 0; j < v.crew.length; j++) {
           o = v.crew[j];
           o.x = v.x; o.y = v.y;
           o.tx = v.x; o.ty = v.y;
-          if (typeof o.stamina === "number") {
-            o.stamina = Math.min(100, o.stamina + 8 * dt);
-          }
+          if (typeof o.stamina === "number") o.stamina = Math.min(100, o.stamina + 8 * dt);
         }
       }
       s = findSquad(G, v.squad);
       st = s !== null ? t.runs[s] : null;
-
-      // boarding
       if (st && st.phase === "board" && s !== null) {
         st.t += dt;
         cap = seats(v.type).crew;
@@ -409,27 +407,38 @@ var TRANSPORT = (function () {
         v.tx = v.x; v.ty = v.y;
         offs = squadOfficers(G, s);
         found = false;
+        var waiting = 0;
         for (j = 0; j < offs.length; j++) {
           o = offs[j];
           if (!eligible(o)) continue;
-          found = true;
+          waiting++;
           o.tx = v.x; o.ty = v.y;
           var dx = o.x - v.x, dy = o.y - v.y;
-          if (v.crew.length < cap && (dx * dx + dy * dy) <= 1.21) {
+          if (v.crew.length < cap && (dx * dx + dy * dy) <= 6.25) {
             removeOfficer(G, o);
             v.crew.push(o);
+            waiting--;
           }
         }
-        if (v.crew.length >= cap || st.t >= 10 || !found) {
-          // finish boarding
+        if (waiting > 0) found = true;
+        var grace = 6;
+        var full = v.crew.length >= cap;
+        if (full || waiting === 0 || st.t >= grace) {
           var pend = st.pendingDrive;
           delete t.runs[s];
+          var dest = pend ? { x: pend.x, y: pend.y } : { x: v.x, y: v.y };
+          var left = squadOfficers(G, s);
+          for (j = 0; j < left.length; j++) {
+            o = left[j];
+            if (!eligible(o)) continue;
+            o.tx = dest.x; o.ty = dest.y;
+            o.homeX = dest.x; o.homeY = dest.y;
+          }
           if (pend) {
             v.ctrl = true; v.tx = pend.x; v.ty = pend.y;
             v.dest = { x: pend.x, y: pend.y };
           } else if (v.crew.length > 0) {
             v.ctrl = true;
-            // stay put
             v.tx = v.x; v.ty = v.y;
           } else {
             v.ctrl = false;
@@ -437,8 +446,6 @@ var TRANSPORT = (function () {
         }
         continue;
       }
-
-      // pickup run: drive to the held suspect, take them aboard, go back
       if (v.run === "pickup") {
         var pd = v.pick;
         if (!pd || G.detainees.indexOf(pd) < 0) {
@@ -451,7 +458,7 @@ var TRANSPORT = (function () {
           if (pdx * pdx + pdy * pdy <= 2.6) {
             v.pick = null; v.run = null;
             pd.car = v; pd.pickup = false;
-            if (typeof Police !== "undefined" && Police.finishEscort) Police.finishEscort(G, pd);   /* calls onLoaded */
+            if (typeof Police !== "undefined" && Police.finishEscort) Police.finishEscort(G, pd);
             if (!v.run) {
               v.run = "back";
               var hb2 = homePoint(G, v, v.squad); v.tx = hb2.x; v.ty = hb2.y;
@@ -460,7 +467,6 @@ var TRANSPORT = (function () {
         }
         continue;
       }
-      // station run phases
       if (v.run === "station") {
         var sdx = v.tx - v.x, sdy = v.ty - v.y;
         if (sdx * sdx + sdy * sdy <= 1.96) {
@@ -491,22 +497,17 @@ var TRANSPORT = (function () {
           }
         }
       } else if (hasCrew(v) && s !== null && v.dest) {
-        // normal drive order, auto-dismount
         var ddx = v.dest.x - v.x, ddy = v.dest.y - v.y;
-        /* stopped short (destination off the drivable streets, or blocked):
-         * after 4 s standing still the crew gets out and walks the rest */
         var mv = (v._tpX === undefined) ? 1 : Math.abs(v.x - v._tpX) + Math.abs(v.y - v._tpY) + Math.abs((v.ang || 0) - v._tpA);
         v._tpX = v.x; v._tpY = v.y; v._tpA = v.ang || 0;
         v._tpStill = mv < 0.02 * dt / 0.05 ? (v._tpStill || 0) + dt : 0;
         if (autoDismount(G, s) && (ddx * ddx + ddy * ddy <= 1.44 || v._tpStill >= 4)) {
-          var dest = v.dest;
+          var dest2 = v.dest;
           dismount(G, v, s);
           v.dest = null; v._tpStill = 0;
-          /* the crew finishes on foot at the exact spot that was ordered */
-          if (typeof Police !== "undefined") Police.moveSquad(G, s, dest.x, dest.y);
+          if (typeof Police !== "undefined") Police.moveSquad(G, s, dest2.x, dest2.y);
         }
       } else if (!v.run && !hasCrew(v) && seats(v.type).arrest > 0 && (v.load || 0) >= seats(v.type).arrest) {
-        // full and idle (a drive order interrupted the run): go now
         startStation(G, v, v.squad);
       }
     }

@@ -30,7 +30,7 @@ def main():
     blocks = [b.rstrip("\n") for b in re.findall(r"```(?:js|javascript)?\n(.*?)```", reply, re.S)]
     done = []
     for b in blocks:
-        b2 = b if b.startswith("  ") else "\n".join("  " + l if l else l for l in b.split("\n"))
+        b2 = b if (b.startswith("  ") or re.search(r"^  function \w", b, re.M)) else "\n".join("  " + l if l else l for l in b.split("\n"))
         if b2.lstrip().startswith("return {"):
             i = src.rindex("  return {"); j = src.index("};", i) + 2
             src = src[:i] + b2.strip("\n") + src[j:]; done.append("return"); continue

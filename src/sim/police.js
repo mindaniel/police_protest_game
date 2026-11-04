@@ -1223,11 +1223,16 @@ var Police = (function () {
   function moveSquad(G, squadIndex, x, y, run) {
     if (!G.squadRun) G.squadRun = [];
     G.squadRun[squadIndex] = !!run;
+    if (typeof TRANSPORT !== "undefined" && TRANSPORT && TRANSPORT.vehicleOf) {
+      var tv = TRANSPORT.vehicleOf(G, squadIndex);
+      if (tv && (TRANSPORT.crewCount(G, squadIndex) > 0 || TRANSPORT.isBoarding(G, squadIndex))) {
+        TRANSPORT.drive(G, squadIndex, x, y);
+      }
+    }
     for (var i = 0; i < G.officers.length; i++) {
       if (G.officers[i].squad === squadIndex) {
-        G.officers[i].kettleX = G.officers[i].kettleY = undefined;   /* a move order leaves the kettle */
+        G.officers[i].kettleX = G.officers[i].kettleY = undefined;
         if (G.officers[i].arrestManual) {
-          /* a new move order cancels a player-ordered arrest */
           G.officers[i].arrestTarget = null;
           G.officers[i].arrestManual = false;
           G.officers[i].arrestHold = 0;

@@ -1582,6 +1582,7 @@ function uiDrawScreen(ctx, g) {
     ctx.strokeRect(UI.hover.x * ts + 1, UI.hover.y * ts + 1, ts - 2, ts - 2);
   }
   if (UI.mode === "patrolArea" && UI.screen === "playing") uiPatrolAreaOverlay(ctx, g);
+  if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && SQUADPLAN.drawSectors) SQUADPLAN.drawSectors(ctx, g);   /* sector grid + threat tint */
   uiGround(ctx, false);
 
   // Top bar
