@@ -130,7 +130,8 @@ var ORDERS = (function () {
     }
     if (r.lastMoveX !== null && dist(x, y, r.lastMoveX, r.lastMoveY) <= 1 && G.time - r.lastMoveT < 5) return;
     if (G.time - r.lastMoveT < 1) return;
-    Police.moveSquad(G, s, x, y, !!run);
+    /* long trips ride in the squad vehicle (patrol areas across the map) */
+    if (!(typeof TRANSPORT !== "undefined" && TRANSPORT.travel && TRANSPORT.travel(G, s, x, y))) Police.moveSquad(G, s, x, y, !!run);
     r.lastMoveX = x; r.lastMoveY = y; r.lastMoveT = G.time;
   }
 

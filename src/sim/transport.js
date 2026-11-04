@@ -144,6 +144,24 @@ var TRANSPORT = (function () {
     st.grace = Math.min(45, Math.max(6, far / (CONFIG.officerSpeed || 1.6) * 1.5 + 4));
   }
 
+  /* Send squad s to (x, y) the sensible way: ride if it is aboard (boarding the rest first),
+   * get in and drive when the trip is long and the vehicle is closer than half the trip.
+   * Returns true when a ride was arranged; false means the squad should walk. */
+  function travel(G, s, x, y) {
+    ensure(G);
+    var v = vehicleOf(G, s);
+    if (!v || seats(v.type).crew <= 0) return false;
+    if (hasCrew(v)) { boardRest(G, s); return drive(G, s, x, y); }
+    var offs = squadOfficers(G, s), i, n = 0, cx = 0, cy = 0;
+    for (i = 0; i < offs.length; i++) if (!offs[i].escorting) { cx += offs[i].x; cy += offs[i].y; n++; }
+    if (!n) return false;
+    cx /= n; cy /= n;
+    var trip = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+    var near = Math.sqrt((v.x - cx) * (v.x - cx) + (v.y - cy) * (v.y - cy)) < Math.max(6, trip * 0.5);
+    if (trip > (CONFIG.autoRideDistance || 12) && near && toggle(G, s) === "boarding") return drive(G, s, x, y);
+    return false;
+  }
+
   /* Before a ride order: if part of the squad is still on foot and seats are free,
    * board them first (the drive becomes pending). Returns true when boarding started. */
   function boardRest(G, s) {
@@ -694,6 +712,7 @@ var TRANSPORT = (function () {
     update: update,
     draw: draw,
     toggle: toggle,
+    travel: travel,
     boardRest: boardRest,
     drive: drive,
     driveEmpty: driveEmpty,

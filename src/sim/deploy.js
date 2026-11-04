@@ -130,6 +130,19 @@ DEPLOY.start = function (G) {
       o.x = t.x + 0.5; o.y = t.y + 0.5; o.tx = o.x; o.ty = o.y; o.homeX = o.x; o.homeY = o.y;
     }
   }
+  /* squads with a vehicle start seated in it, so their first trip is a drive, not a walk */
+  if (typeof TRANSPORT !== 'undefined') {
+    for (i = 0; i < G.vehicles.length; i++) {
+      v = G.vehicles[i];
+      var cap = TRANSPORT.seats(v.type).crew;
+      if (!cap) continue;
+      v.crew = v.crew || [];
+      for (k = G.officers.length - 1; k >= 0; k--) {
+        o = G.officers[k];
+        if (o.squad === v.squad && !o.escorting && v.crew.length < cap) { G.officers.splice(k, 1); v.crew.push(o); }
+      }
+    }
+  }
   for (s = 0; s < count; s++) {
     var p = DEPLOY.posts[s], cc = DEPLOY.centers[s];
     if (!p || !cc) continue;

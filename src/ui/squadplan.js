@@ -582,7 +582,7 @@ var SQUADPLAN = (function () {
       ctx.textAlign = "left";
       ctx.font = fontFor(baseFont - 1, scale);
       var labelX = rx + 6 * scale;
-      var label = (i + 1) + ". " + unitName(getLoadout(G, i));
+      var label = "[" + UNITTYPES.get(getLoadout(G, i)).key + "] " + UNITTYPES.tag(G, i);   /* type key + tag, same as on the map */
       var labelMaxW = rw - 12 * scale - gridW - 4 * scale - rW - 6 * scale;
       if (labelMaxW < 30 * scale) labelMaxW = 30 * scale;
       if (ctx.measureText(label).width > labelMaxW) {
