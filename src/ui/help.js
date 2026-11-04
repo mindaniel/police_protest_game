@@ -81,7 +81,8 @@ var HELP = (function () {
       ln("G + click", "tear gas", 2);
       ln("K + click", "kettle (2 squads)", 2);
       ln("X + click", "snatch squad", 2);
-      ln("P + click", "police line across a street", 1);
+      ln("P + click", "patrol that 1/9 of the map", 1);
+      ln("Shift+P + click", "police line across a street", 1);
       ln("C + click", "checkpoint: stop and search", 2);
       ln("M (Shift+M exit)", "order the crowd to disperse", 1);
       ln("D + click", "drone", 2);

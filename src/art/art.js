@@ -12,7 +12,7 @@ var Art = (function () {
   var VIEW_ZU = { top: 6, tilt: 26 };    // view modes: top-down / tilted 3D
   var viewMode = "tilt", _savedView = false;
   /* zoom detail levels (far / mid / near) */
-  var MAX_ZOOM = 14; var FAR_DIRTY = true; var FC = { c: null, key: "", w: 0, h: 0 }; var FARG = {}; var FARORDER = [];
+  var MAX_ZOOM = 28;   /* close enough to see officers and car details */ var FAR_DIRTY = true; var FC = { c: null, key: "", w: 0, h: 0 }; var FARG = {}; var FARORDER = [];
   var SQUAD_COLORS = ["#e63946", "#f4a261", "#2a9d8f", "#e9c46a", "#9b5de5", "#00b4d8"];
   var GT = 32;                           // ground texture pixels per tile
 

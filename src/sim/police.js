@@ -1172,6 +1172,16 @@ var Police = (function () {
       var v = G.vehicles[i];
       /* transport.js steers vehicles that carry officers or arrested people; otherwise the
        * vehicle stays with its officers (their centre), so it never races ahead of them */
+      /* an empty vehicle left behind (not parked on purpose) rejoins its squad once the
+       * officers on foot are more than 8 tiles away: police stay near their vehicle */
+      if (v.ctrl && !v.parked && !v.run && !(v.crew && v.crew.length) &&
+          !(typeof TRANSPORT !== "undefined" && TRANSPORT.isBoarding(G, v.squad))) {
+        var lx = 0, ly = 0, ln = 0;
+        for (j = 0; j < G.officers.length; j++) {
+          if (G.officers[j].squad === v.squad && !G.officers[j].escorting) { lx += G.officers[j].x; ly += G.officers[j].y; ln++; }
+        }
+        if (ln && (lx / ln - v.x) * (lx / ln - v.x) + (ly / ln - v.y) * (ly / ln - v.y) > 64) { v.ctrl = false; v.dest = null; }
+      }
       if (!v.ctrl) {
         var fx = 0, fy = 0, fn = 0;
         for (j = 0; j < G.officers.length; j++) {

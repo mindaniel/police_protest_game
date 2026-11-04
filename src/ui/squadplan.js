@@ -776,6 +776,7 @@ var SQUADPLAN = (function () {
     isHidden: isHidden,
     sectors: sectors,
     sectorAt: sectorAt,
+    assignSector: assignSector,
     drawSectors: drawSectors
   };
 })();
