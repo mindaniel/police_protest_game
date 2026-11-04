@@ -288,8 +288,12 @@ def run(jobs, accounts, gap):
                     return                      # drop this account
                 else:
                     free[n] = time.time() + gap
+                    tries[job] = tries.get(job, 0) + 1
+                    if "net::" in msg and tries[job] < 3:   # page load failed: try again later
+                        with lock: todo.append(job)
 
-    ts = [threading.Thread(target=worker, args=(n,)) for n in accounts]
+    tries = {}
+    ts =[threading.Thread(target=worker, args=(n,)) for n in accounts]
     for i, t in enumerate(ts):
         t.start(); time.sleep(20 if i < len(ts) - 1 else 0)   # stagger browser starts
     for t in ts:

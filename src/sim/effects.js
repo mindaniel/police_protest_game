@@ -425,6 +425,33 @@ var FX = (function () {
   }
 
   function list() { return fires; }   /* burning bins/fires {x, y, born} for atmosphere.js */
-  return { init: init, update: update, draw: draw, throwAt: throwAt, shopBroken: shopBroken, water: water, smokeAt: smokeAt, list: list };
+  function listFires() {
+    var out = [], i;
+    for (i = 0; i < fires.length; i++) out.push(fires[i]);
+    return out;
+  }
+
+  function extinguish(G, fire, amount) {
+    ensure(G);
+    if (!fire || amount <= 0) return;
+    var i;
+    for (i = 0; i < fires.length; i++) if (fires[i] === fire) break;
+    if (i >= fires.length) return;
+    var remain = 1 - amount;
+    fire.hp = (fire.hp === undefined ? 100 : fire.hp) * (remain > 0 ? remain : 0);
+    if (fire.hp < 1) {   /* nearly out: put it out */
+      G.fireBlocked.delete(key(fire.tx, fire.ty));
+      // steam puff
+      if (puffs.length < 400) {
+        puffs.push({ x: fire.x, y: fire.y, vx: G.wind ? G.wind.x * 0.2 : 0, vy: G.wind ? G.wind.y * 0.2 : 0, age: 0, r: 0.5, alpha: 0.7 });
+      }
+      if (rings.length < 64) rings.push({ x: fire.x, y: fire.y, t: 0 });
+      fires.splice(i, 1);
+      flowDirty = true;
+      if (G.log) G.log("Fire is out");
+    }
+  }
+
+  return { init: init, update: update, draw: draw, throwAt: throwAt, shopBroken: shopBroken, water: water, smokeAt: smokeAt, list: list, listFires: listFires, extinguish: extinguish, addFire: addFire };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = FX;

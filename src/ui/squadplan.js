@@ -34,7 +34,8 @@ var SQUADPLAN = (function () {
     motorbike: "Motorbikes",
     mounted: "Mounted unit",
     liaison: "Liaison team",
-    ambulance: "Ambulance"
+    ambulance: "Ambulance",
+    fireengine: "Fire engine"
   };
 
   var ORDERS_LIST = ["hold", "guard", "patrol", "auto"];

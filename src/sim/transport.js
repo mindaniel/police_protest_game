@@ -6,7 +6,8 @@ var TRANSPORT = (function () {
     truck: { crew: 8, arrest: 8 },
     watertruck: { crew: 4, arrest: 0 },
     barriertruck: { crew: 4, arrest: 0 },
-    ambulance: { crew: 2, arrest: 0 }
+    ambulance: { crew: 2, arrest: 0 },
+    fireengine: { crew: 4, arrest: 0 }
   };
 
   function seats(type) {
@@ -83,7 +84,7 @@ var TRANSPORT = (function () {
   }
 
   function eligible(o) {
-    return o && !o.escorting && !o.snatch && typeof o.kettleX !== "number";
+    return o && !o.escorting && !o.snatch && typeof o.kettleX !== "number" && !o.entering;
   }
 
   function removeOfficer(G, o) {
@@ -94,13 +95,24 @@ var TRANSPORT = (function () {
     return false;
   }
 
+  function doorPoint(G, v, idx) {
+    var ang = v.ang || 0;
+    var px = Math.cos(ang), py = Math.sin(ang);
+    var side = (idx % 2 === 0) ? 1 : -1;
+    var along = 0;
+    if (v.type === "van" || v.type === "truck") along = -0.55;
+    var d = 0.6;
+    var cx = v.x + px * along;
+    var cy = v.y + py * along;
+    return { x: cx - py * d * side, y: cy + px * d * side };
+  }
+
   function toggle(G, s) {
     ensure(G);
     var v = vehicleOf(G, s);
     if (!v) return "novehicle";
     var t = G._transport, st = t.runs[s];
     if (st && st.phase === "board") {
-      // cancel: cancel boarding, dismount anyone already inside
       cancelBoarding(G, v, s);
       if (hasCrew(v)) dismount(G, v, s);
       delete t.runs[s];
@@ -111,7 +123,6 @@ var TRANSPORT = (function () {
       if (v.run === "back") { v.run = null; }
       return "dismount";
     }
-    // start boarding
     var cap = seats(v.type).crew;
     if (!v.crew) v.crew = [];
     if (v.crew.length >= cap) return "dismount";
@@ -119,10 +130,14 @@ var TRANSPORT = (function () {
     v.parked = false;
     v.ctrl = true;
     v.tx = v.x; v.ty = v.y;
-    var offs = squadOfficers(G, s), i, o;
+    var offs = squadOfficers(G, s), i, o, dp, n = 0;
     for (i = 0; i < offs.length; i++) {
       o = offs[i];
-      if (eligible(o)) { o.tx = v.x; o.ty = v.y; o.homeX = v.x; o.homeY = v.y; }
+      if (eligible(o)) {
+        dp = doorPoint(G, v, n++);
+        o.tx = dp.x; o.ty = dp.y;
+        o.homeX = v.x; o.homeY = v.y;
+      }
     }
     return "boarding";
   }
@@ -184,39 +199,44 @@ var TRANSPORT = (function () {
   // dismount crew onto walkable tiles around vehicle
   function dismount(G, v, s) {
     var crew = v.crew || [], i, o;
-    var tiles = neighbourTiles(G, v);
-    var counts = {}, placed, tx, ty, tkey, ang, bx, by;
-    var pi = 0;
+    var counts = {}, placed, tkey, pi = 0;
+    var dest = v.dest || { x: v.x, y: v.y };
     for (i = 0; i < crew.length; i++) {
       o = crew[i];
-      placed = false;
-      var attempts = 0;
-      while (attempts < tiles.length) {
-        var tt = tiles[(pi + attempts) % tiles.length];
-        tkey = tt.x + "," + tt.y;
-        if ((counts[tkey] || 0) < 2) {
-          counts[tkey] = (counts[tkey] || 0) + 1;
-          var off = (counts[tkey] - 1) * 0.25;
-          o.x = tt.wx + off; o.y = tt.wy + off;
-          o.tx = tt.wx + off; o.ty = tt.wy + off;
-          o.homeX = o.tx; o.homeY = o.ty;
-          o.busy = false;
-          placed = true;
-          pi = (pi + attempts + 1) % tiles.length;
-          break;
-        }
-        attempts++;
-      }
-      if (!placed) {
+      var dp = doorPoint(G, v, i);
+      var ang = v.ang || 0;
+      var px = Math.cos(ang), py = Math.sin(ang);
+      var out = 0.8;
+      var side = (i % 2 === 0) ? 1 : -1;
+      o.x = dp.x - py * out * side;
+      o.y = dp.y + px * out * side;
+      var fx = Math.floor(o.x), fy = Math.floor(o.y);
+      if (!Police.isWalkable(G, fx, fy)) {
         o.x = v.x; o.y = v.y;
-        o.tx = v.x; o.ty = v.y;
-        o.homeX = v.x; o.homeY = v.y;
-        o.busy = false;
+        fx = Math.floor(o.x); fy = Math.floor(o.y);
+        if (!Police.isWalkable(G, fx, fy)) {
+          var found = false;
+          for (var r = 1; r <= 4 && !found; r++) {
+            for (var oy = -r; oy <= r && !found; oy++) {
+              for (var ox = -r; ox <= r && !found; ox++) {
+                var nx = Math.floor(v.x) + ox, ny = Math.floor(v.y) + oy;
+                if (!!Police.isWalkable(G, nx, ny)) { o.x = nx + 0.5; o.y = ny + 0.5; found = true; }
+              }
+            }
+          }
+        }
       }
-      if (G.officers) G.officers.push(o);
+      o.tx = dest.x; o.ty = dest.y;
+      o.homeX = dest.x; o.homeY = dest.y;
+      o.drawAlpha = 0;
+      o.drawScale = 0.4;
+      o.busy = false;
+      if (!G.officers) G.officers = [];
+      G.officers.push(o);
     }
     v.crew = [];
     if (v.run !== "station") v.ctrl = false;
+    if (G._policeFlow && s !== null) G._policeFlow[s] = null;
     if (G.log && s !== null) G.log("Squad " + (s + 1) + " gets out");
   }
 
@@ -393,37 +413,53 @@ var TRANSPORT = (function () {
       if (v.crew && v.crew.length) {
         for (j = 0; j < v.crew.length; j++) {
           o = v.crew[j];
-          o.x = v.x; o.y = v.y;
-          o.tx = v.x; o.ty = v.y;
+          o.x = v.x; o.y = v.y; o.tx = v.x; o.ty = v.y;
           if (typeof o.stamina === "number") o.stamina = Math.min(100, o.stamina + 8 * dt);
         }
       }
+      if (v.run || v.dest || (v.crew && v.crew.length)) v.parked = false;
       s = findSquad(G, v.squad);
       st = s !== null ? t.runs[s] : null;
       if (st && st.phase === "board" && s !== null) {
         st.t += dt;
         cap = seats(v.type).crew;
         v.ctrl = true;
-        v.tx = v.x; v.ty = v.y;
+        v.tx = v.x; v.ty = v.y; v.parked = false;
         offs = squadOfficers(G, s);
         found = false;
-        var waiting = 0;
+        var waiting = 0, n = 0;
         for (j = 0; j < offs.length; j++) {
           o = offs[j];
+          if (o.entering) {
+            o.entering -= dt;
+            o.drawScale = 1 - 0.6 * (1 - Math.max(0, o.entering) / 0.5);
+            o.drawAlpha = Math.max(0, o.entering) / 0.5;
+            if (o.entering <= 0) {
+              removeOfficer(G, o);
+              v.crew.push(o);
+              o.drawScale = 1; o.drawAlpha = 1; o.entering = 0;
+            } else found = true;
+            continue;
+          }
           if (!eligible(o)) continue;
           waiting++;
-          o.tx = v.x; o.ty = v.y;
-          var dx = o.x - v.x, dy = o.y - v.y;
-          if (v.crew.length < cap && (dx * dx + dy * dy) <= 6.25) {
-            removeOfficer(G, o);
-            v.crew.push(o);
+          var dp = doorPoint(G, v, n++);
+          o.tx = dp.x; o.ty = dp.y;
+          var dx = o.x - dp.x, dy = o.y - dp.y;
+          if (v.crew.length < cap && (dx * dx + dy * dy) <= 0.16) {
+            o.entering = 0.5;
+            o.drawScale = 1; o.drawAlpha = 1;
+            o.tx = v.x; o.ty = v.y;
             waiting--;
+            found = true;
           }
         }
-        if (waiting > 0) found = true;
+        if (waiting > 0 || found) found = true;
         var grace = 6;
-        var full = v.crew.length >= cap;
-        if (full || waiting === 0 || st.t >= grace) {
+        var full = (v.crew.length >= cap);
+        var anyEntering = false;
+        for (j = 0; j < offs.length; j++) if (offs[j].entering) anyEntering = true;
+        if (!anyEntering && (full || waiting === 0 || st.t >= grace)) {
           var pend = st.pendingDrive;
           delete t.runs[s];
           var dest = pend ? { x: pend.x, y: pend.y } : { x: v.x, y: v.y };
@@ -436,13 +472,10 @@ var TRANSPORT = (function () {
           }
           if (pend) {
             v.ctrl = true; v.tx = pend.x; v.ty = pend.y;
-            v.dest = { x: pend.x, y: pend.y };
+            v.dest = { x: pend.x, y: pend.y }; v.parked = false;
           } else if (v.crew.length > 0) {
-            v.ctrl = true;
-            v.tx = v.x; v.ty = v.y;
-          } else {
-            v.ctrl = false;
-          }
+            v.ctrl = true; v.tx = v.x; v.ty = v.y; v.parked = false;
+          } else v.ctrl = false;
         }
         continue;
       }
@@ -459,10 +492,7 @@ var TRANSPORT = (function () {
             v.pick = null; v.run = null;
             pd.car = v; pd.pickup = false;
             if (typeof Police !== "undefined" && Police.finishEscort) Police.finishEscort(G, pd);
-            if (!v.run) {
-              v.run = "back";
-              var hb2 = homePoint(G, v, v.squad); v.tx = hb2.x; v.ty = hb2.y;
-            }
+            if (!v.run) { v.run = "back"; var hb2 = homePoint(G, v, v.squad); v.tx = hb2.x; v.ty = hb2.y; }
           }
         }
         continue;
@@ -470,45 +500,47 @@ var TRANSPORT = (function () {
       if (v.run === "station") {
         var sdx = v.tx - v.x, sdy = v.ty - v.y;
         if (sdx * sdx + sdy * sdy <= 1.96) {
-          v.run = "unload";
-          v.unloadT = 3;
-          v.ctrl = true;
-          v.tx = v.x; v.ty = v.y;
+          v.run = "unload"; v.unloadT = 3; v.ctrl = true; v.tx = v.x; v.ty = v.y;
         }
       } else if (v.run === "unload") {
         v.unloadT -= dt;
         if (v.unloadT <= 0) {
           onDelivered(G, v.load || 0);
-          v.load = 0; v.reserved = 0;
-          v.run = "back";
+          v.load = 0; v.reserved = 0; v.run = "back";
           var hp = s !== null ? homePoint(G, v, s) : { x: v.backX, y: v.backY };
-          v.tx = hp.x; v.ty = hp.y;
-          v.ctrl = true;
+          v.tx = hp.x; v.ty = hp.y; v.ctrl = true;
           if (G.log) G.log("Squad " + (v.squad + 1) + "'s vehicle is back");
         }
       } else if (v.run === "back") {
         var bdx = v.tx - v.x, bdy = v.ty - v.y;
         if (bdx * bdx + bdy * bdy <= 2.25) {
           v.run = null;
-          if (hasCrew(v) && s !== null && autoDismount(G, s)) {
-            dismount(G, v, s);
-          } else if (!hasCrew(v)) {
-            v.ctrl = false;
-          }
+          if (hasCrew(v) && s !== null && autoDismount(G, s)) dismount(G, v, s);
+          else if (!hasCrew(v)) v.ctrl = false;
         }
       } else if (hasCrew(v) && s !== null && v.dest) {
+        v.ctrl = true; v.parked = false;
         var ddx = v.dest.x - v.x, ddy = v.dest.y - v.y;
         var mv = (v._tpX === undefined) ? 1 : Math.abs(v.x - v._tpX) + Math.abs(v.y - v._tpY) + Math.abs((v.ang || 0) - v._tpA);
         v._tpX = v.x; v._tpY = v.y; v._tpA = v.ang || 0;
         v._tpStill = mv < 0.02 * dt / 0.05 ? (v._tpStill || 0) + dt : 0;
         if (autoDismount(G, s) && (ddx * ddx + ddy * ddy <= 1.44 || v._tpStill >= 4)) {
           var dest2 = v.dest;
+          if (v._tpStill >= 4) v._noBoardUntil = G.time + 15;
           dismount(G, v, s);
           v.dest = null; v._tpStill = 0;
           if (typeof Police !== "undefined") Police.moveSquad(G, s, dest2.x, dest2.y);
         }
       } else if (!v.run && !hasCrew(v) && seats(v.type).arrest > 0 && (v.load || 0) >= seats(v.type).arrest) {
         startStation(G, v, v.squad);
+      }
+    }
+    if (G.officers) {
+      for (i = 0; i < G.officers.length; i++) {
+        o = G.officers[i];
+        if (!o || o.entering) continue;
+        if (o.drawAlpha !== undefined && o.drawAlpha < 1) o.drawAlpha = Math.min(1, o.drawAlpha + dt / 0.5);
+        if (o.drawScale !== undefined && o.drawScale < 1) o.drawScale = Math.min(1, o.drawScale + 0.6 * dt / 0.5);
       }
     }
   }

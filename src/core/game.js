@@ -31,7 +31,8 @@ var CONFIG = {
     liaison:      { cost: 1 },   // 3 liaison officers: talk people down, never arrest
     van:          { cost: 3 },   // 6 officers ride in a van, 5 arrest seats
     truck:        { cost: 4 },   // 8 officers ride in a truck, 8 arrest seats
-    ambulance:    { cost: 2 }    // 2 medics calm the hurt and angry nearby, never arrest
+    ambulance:    { cost: 2 },   // 2 medics calm the hurt and angry nearby, never arrest
+    fireengine:   { cost: 2 }    // 4 firefighters put out fires (firecrew.js), never arrest
   },
   loudspeakerCooldown: 20,   // seconds
   arrestSeconds: 2,          // seconds to complete an arrest
@@ -326,6 +327,8 @@ function frame(now) {
       Crowd.update(G, step);
       if (typeof Police !== "undefined") Police.update(G, step);
       if (typeof RESIST !== "undefined") RESIST.update(G, step);
+      if (typeof NAVDEBUG !== "undefined") NAVDEBUG.update(G, step);
+      if (typeof FIRECREW !== "undefined") FIRECREW.update(G, step);
       if (typeof ALERTS !== "undefined") ALERTS.update(G, step);   /* clickable event pop-ups */   /* rioters run or stand their ground */
       if (typeof FX !== "undefined") FX.update(G, step);
       if (typeof GAS !== "undefined") GAS.update(G, step);

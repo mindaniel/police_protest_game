@@ -10,9 +10,10 @@ var FORCE = (function () {
     { id: "motorbike", name: "Motorbikes", cost: 2, officers: 2, desc: "2 very fast riders" },
     { id: "mounted", name: "Mounted unit", cost: 3, officers: 4, desc: "4 horses, push crowds, scared by fire/gas" },
     { id: "liaison", name: "Liaison team", cost: 1, officers: 3, desc: "talk people calm, never arrest" },
-    { id: "ambulance", name: "Ambulance", cost: 1, officers: 2, desc: "2 medics calm angry people nearby" }
+    { id: "ambulance", name: "Ambulance", cost: 1, officers: 2, desc: "2 medics calm angry people nearby" },
+    { id: "fireengine", name: "Fire engine", cost: 2, officers: 4, desc: "4 firefighters put out fires, never arrest" }
   ];
-  var LOADOUT_ORDER = ["car", "van", "truck", "watertruck", "barriertruck", "ambulance", "motorbike", "mounted", "liaison", "none"];
+  var LOADOUT_ORDER = ["car", "van", "truck", "watertruck", "barriertruck", "ambulance", "motorbike", "mounted", "liaison", "fireengine", "none"];
   var DEFAULTS = { car: 1, watertruck: 1, barriertruck: 1, motorbike: 1, none: 2 };
   var STORE_KEY = "ppg_force";
 

@@ -38,6 +38,7 @@ var Police = (function () {
     if (loadout === "van") return "van";
     if (loadout === "truck") return "truck";
     if (loadout === "ambulance") return "ambulance";
+    if (loadout === "fireengine") return "fireengine";
     return null;   /* motorbike and none have no big vehicle */
   }
   function vehicleSpeedFor(type) {
@@ -142,9 +143,9 @@ var Police = (function () {
     if (step > d) step = d;
     var ux = d > 0.6 ? Math.cos(v.ang) : dx / d, uy = d > 0.6 ? Math.sin(v.ang) : dy / d;
     var nx = v.x + ux * step, ny = v.y + uy * step;
-    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) { v.x = nx; v.y = ny; return; }
-    if (!isSolidPolice(G, Math.floor(nx), Math.floor(v.y))) { v.x = nx; return; }
-    if (!isSolidPolice(G, Math.floor(v.x), Math.floor(ny))) v.y = ny;
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) { v.x = nx; v.y = ny; turnVehicle(v, dt); return; }
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(v.y))) { v.x = nx; turnVehicle(v, dt); return; }
+    if (!isSolidPolice(G, Math.floor(v.x), Math.floor(ny))) { v.y = ny; turnVehicle(v, dt); }
   }
   function turnVehicle(v, dt) {
     if (typeof v.ang !== "number") v.ang = 0;
@@ -158,13 +159,58 @@ var Police = (function () {
     return (!isSolidPolice(G, tx - 1, ty) || !isSolidPolice(G, tx + 1, ty)) ? 0 : Math.PI / 2;
   }
 
-  function goalOf(G, e) {
-    if (typeof e.kettleX === "number") return { x: e.kettleX, y: e.kettleY };   /* kettle ring slot */
-    var gx = e.tx, gy = e.ty;
-    if ((e.ox || e.oy) && !e.ctrl) {   /* transport-steered vehicles drive to the exact spot */
-      var cx = e.tx + e.ox, cy = e.ty + e.oy;
-      if (!isSolidPolice(G, Math.floor(cx), Math.floor(cy))) { gx = cx; gy = cy; }
+  function driveTileOk(G, x, y) {
+    if (!inBounds(x, y)) return false;
+    var ch = MAP.rows[y].charAt(x);
+    if (ch !== "." && ch !== "P") return false;
+    return !isSolidPolice(G, x, y);
+  }
+
+  function walkTileOk(G, x, y) {
+    if (!inBounds(x, y)) return false;
+    var ch = MAP.rows[y].charAt(x);
+    if (ch !== "." && ch !== "a" && ch !== "P" && ch !== "G") return false;
+    return !isSolidPolice(G, x, y);
+  }
+
+  function nearestAllowed(G, sx, sy, allow, maxR) {
+    var w = MAP.rows[0].length, h = MAP.rows.length;
+    var best = null, bestD = Infinity;
+    for (var r = 0; r <= maxR; r++) {
+      for (var dy = -r; dy <= r; dy++) {
+        for (var dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          var nx = sx + dx, ny = sy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          if (!allow(nx, ny)) continue;
+          var d = dx * dx + dy * dy;
+          if (d < bestD) { bestD = d; best = { x: nx, y: ny }; }
+        }
+      }
+      if (best) return best;   /* nearest ring found: stop searching */
     }
+    return best;
+  }
+
+  function goalOf(G, e) {
+    if (typeof e.kettleX === "number") return { x: e.kettleX, y: e.kettleY };
+    var veh = isVehicle(e);
+    var allow = veh
+      ? function (x, y) { return driveTileOk(G, x, y); }
+      : function (x, y) { return walkTileOk(G, x, y); };
+    var gx = e.tx, gy = e.ty;
+    if ((e.ox || e.oy) && !e.ctrl) {
+      var cx = e.tx + e.ox, cy = e.ty + e.oy;
+      if (allow(Math.floor(cx), Math.floor(cy))) { gx = cx; gy = cy; }
+    }
+    var gk = Math.floor(gx) + "," + Math.floor(gy);
+    if (e._goalKey === gk && e._goalFix) return e._goalFix;   /* snapped goal is cached until the goal changes */
+    if (!allow(Math.floor(gx), Math.floor(gy))) {
+      var n = nearestAllowed(G, Math.floor(gx), Math.floor(gy), allow, 32);
+      if (n) { gx = n.x + 0.5; gy = n.y + 0.5; }
+      else if (allow(Math.floor(e.tx), Math.floor(e.ty))) { gx = e.tx; gy = e.ty; }
+    }
+    e._goalKey = gk; e._goalFix = { x: gx, y: gy };
     return { x: gx, y: gy };
   }
 
@@ -185,11 +231,36 @@ var Police = (function () {
   function policeFlowField(G, squadIndex) {
     var home = homeTileFor(G, squadIndex);
     if (!home) return null;
-    var key = home.x + "," + home.y;
+    var hx = Math.floor(home.x), hy = Math.floor(home.y);
+    if (!walkTileOk(G, hx, hy)) {
+      var n = nearestAllowed(G, hx, hy, function (x, y) { return walkTileOk(G, x, y); }, 32);
+      if (!n) return null;
+      hx = n.x; hy = n.y;
+    }
+    var key = hx + "," + hy + ":" + (G.blocked ? G.blocked.size : 0) + ":" + (G.barricadeTiles ? G.barricadeTiles.size : 0);
     if (!G._policeFlow) G._policeFlow = [];
     var cached = G._policeFlow[squadIndex];
     if (cached && cached.key === key) return cached.dist;
-    var dist = bfsFrom(G, home.x, home.y);
+    var W = MAP.width || MAP.rows[0].length, H = MAP.height || MAP.rows.length;
+    var dist = new Int16Array(W * H);
+    var i;
+    for (i = 0; i < dist.length; i++) dist[i] = -1;
+    var q = [hx + hy * W];
+    dist[hy * W + hx] = 0;
+    var head = 0;
+    while (head < q.length) {
+      var idx = q[head++];
+      var x = idx % W, y = (idx - x) / W, d = dist[idx];
+      var nx, ny, ni;
+      nx = x + 1;
+      if (nx < W && walkTileOk(G, nx, y)) { ni = y * W + nx; if (dist[ni] < 0) { dist[ni] = d + 1; q.push(ni); } }
+      nx = x - 1;
+      if (nx >= 0 && walkTileOk(G, nx, y)) { ni = y * W + nx; if (dist[ni] < 0) { dist[ni] = d + 1; q.push(ni); } }
+      ny = y + 1;
+      if (ny < H && walkTileOk(G, x, ny)) { ni = ny * W + x; if (dist[ni] < 0) { dist[ni] = d + 1; q.push(ni); } }
+      ny = y - 1;
+      if (ny >= 0 && walkTileOk(G, x, ny)) { ni = ny * W + x; if (dist[ni] < 0) { dist[ni] = d + 1; q.push(ni); } }
+    }
     G._policeFlow[squadIndex] = { key: key, dist: dist };
     return dist;
   }
@@ -197,23 +268,21 @@ var Police = (function () {
   /* ---- vehicles drive only on streets at least 2 tiles wide and part crowds (DeepSeek) ---- */
   function driveClear(G) {
     var h = MAP.rows.length, w = MAP.rows[0].length;
-    var key = h + ":" + (G.blocked ? G.blocked.size : 0);
+    var key = h + ":" + (G.blocked ? G.blocked.size : 0) + ":" + (G.barricadeTiles ? G.barricadeTiles.size : 0);
     if (G._driveClear && G._driveClearKey === key) return G._driveClear;
     var solid = new Uint8Array(w * h);
     var x, y;
-    for (y = 0; y < h; y++) for (x = 0; x < w; x++) solid[y * w + x] = isSolidPolice(G, x, y) ? 1 : 0;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) solid[y * w + x] = driveTileOk(G, x, y) ? 0 : 1;
     var clear = new Uint8Array(w * h);
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
         if (solid[y * w + x]) continue;
-        // 2x2 block fully non-solid with this tile in any corner
         if (x + 1 < w && y + 1 < h && !solid[y * w + x] && !solid[y * w + x + 1] && !solid[(y + 1) * w + x] && !solid[(y + 1) * w + x + 1]) { clear[y * w + x] = 1; continue; }
         if (x - 1 >= 0 && y + 1 < h && !solid[y * w + x - 1] && !solid[y * w + x] && !solid[(y + 1) * w + x - 1] && !solid[(y + 1) * w + x]) { clear[y * w + x] = 1; continue; }
         if (x + 1 < w && y - 1 >= 0 && !solid[(y - 1) * w + x] && !solid[(y - 1) * w + x + 1] && !solid[y * w + x] && !solid[y * w + x + 1]) { clear[y * w + x] = 1; continue; }
         if (x - 1 >= 0 && y - 1 >= 0 && !solid[(y - 1) * w + x - 1] && !solid[(y - 1) * w + x] && !solid[y * w + x - 1] && !solid[y * w + x]) { clear[y * w + x] = 1; continue; }
       }
     }
-    // fill straight-line gaps at junction corners
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
         if (solid[y * w + x]) continue;
@@ -355,32 +424,53 @@ var Police = (function () {
   /* Take one step toward the neighbouring tile with the smallest field
    * distance. Returns true if the unit moved. */
   function stepByField(G, off, dt, dist) {
+    if (!dist) return false;
     var W = MAP.width, H = MAP.height;
     var cx = Math.floor(off.x), cy = Math.floor(off.y);
     if (cx < 0 || cy < 0 || cx >= W || cy >= H) return false;
     var curIdx = cy * W + cx;
     var curDist = dist[curIdx];
-    if (curDist === -1) return false;
+    var bx = -1, by = -1, bestDist = curDist;
     var ddx = [1, -1, 0, 0];
     var ddy = [0, 0, 1, -1];
-    var bestDist = curDist;
-    var bestIdx = -1;
-    for (var i = 0; i < 4; i++) {
-      var nx = cx + ddx[i], ny = cy + ddy[i];
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      var ni = ny * W + nx;
-      var nd = dist[ni];
-      if (nd === -1) continue;
-      if (nd < bestDist) { bestDist = nd; bestIdx = ni; }
+    var i, nx, ny, ni, nd;
+    if (curDist === -1) {
+      var best = Infinity;
+      for (var r = 1; r <= 24 && bx < 0; r++) {
+        for (var oy = -r; oy <= r; oy++) {
+          for (var ox = -r; ox <= r; ox++) {
+            if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+            nx = cx + ox; ny = cy + oy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            nd = dist[ny * W + nx];
+            if (nd >= 0) {
+              var d2 = ox * ox + oy * oy;
+              if (d2 < best) { best = d2; bx = nx; by = ny; }
+            }
+          }
+        }
+        if (bx >= 0 && r * r > best) break;
+      }
+      if (bx < 0) return false;
+    } else {
+      for (i = 0; i < 4; i++) {
+        nx = cx + ddx[i]; ny = cy + ddy[i];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        ni = ny * W + nx;
+        nd = dist[ni];
+        if (nd >= 0 && nd < bestDist) { bestDist = nd; bx = nx; by = ny; }
+      }
+      if (bx < 0) return false;
     }
-    if (bestIdx === -1) return false;
-    var bx = bestIdx % W;
-    var by = (bestIdx - bx) / W;
     var tx = bx + 0.5, ty = by + 0.5;
     var dx = tx - off.x, dy = ty - off.y;
     var d = Math.sqrt(dx * dx + dy * dy);
     if (d < 0.001) return false;
-    if (isVehicle(off)) { vehStep(G, off, dx, dy, d, dt); return true; }
+    if (isVehicle(off)) {
+      var ox0 = off.x, oy0 = off.y;
+      vehStep(G, off, dx, dy, d, dt);
+      return (off.x - ox0) * (off.x - ox0) + (off.y - oy0) * (off.y - oy0) > 0.0001;
+    }
     var step = off.speed * dt;
     if (step > d) step = d;
     var nx2 = off.x + (dx / d) * step;
@@ -398,28 +488,24 @@ var Police = (function () {
     var dx = goal.x - off.x;
     var dy = goal.y - off.y;
     var d = Math.sqrt(dx * dx + dy * dy);
-    /* drive.js: vehicles steer like cars (turning circle, reversing) instead of pivoting */
     if (off._drNudge > 0) {
       off._drNudge -= dt;
       if (off._drNudge <= 0) DRIVE.reset(off);
     } else if (isVehicle(off) && typeof DRIVE !== "undefined" && CONFIG.realisticDriving !== false) {
+      var ox0 = off.x, oy0 = off.y;
       DRIVE.step(G, off, goal.x, goal.y, dt, {
         field: vehicleField(G, off, Math.floor(goal.x), Math.floor(goal.y)),
         clear: driveClear(G),
         solid: function (x, y) { return isSolidPolice(G, x, y); }
       });
       off._wantAng = off.ang;
-      return;
+      if ((off.x - ox0) * (off.x - ox0) + (off.y - oy0) * (off.y - oy0) > 0.0001) return;
     }
     if (d < 0.05) { off.x = goal.x; off.y = goal.y; return; }
-
-    /* Farther than 2 tiles from a goal that is the squad's home: follow the
-     * per-squad flow field so units get around building columns. */
     if (d > 2 && typeof off.kettleX === "number" && !isVehicle(off)) {
       var kf = tileFlowField(G, Math.floor(goal.x), Math.floor(goal.y));
       if (stepByField(G, off, dt, kf)) return;
     }
-    /* a vehicle steered by transport.js drives to its own target, not the squad's */
     if (d > 2 && isVehicle(off)) {
       var vf = vehicleField(G, off, Math.floor(goal.x), Math.floor(goal.y));
       if (stepByField(G, off, dt, vf)) return;
@@ -427,28 +513,39 @@ var Police = (function () {
     if (d > 2) {
       var hx = (typeof off.homeX === "number") ? off.homeX : off.tx;
       var hy = (typeof off.homeY === "number") ? off.homeY : off.ty;
-      /* vehicles park offset from the home point, so they always use the field;
-       * officers too while heading home (their formation slot may sit 0.8 off it) */
       if (isVehicle(off) || (Math.abs(off.tx - hx) < 0.6 && Math.abs(off.ty - hy) < 0.6)) {
         var field = policeFlowField(G, off.squad);
         if (field && stepByField(G, off, dt, field)) return;
       }
     }
-
-    if (isVehicle(off)) { vehStep(G, off, dx, dy, d, dt); return; }
+    if (isVehicle(off)) {
+      var want = Math.atan2(dy, dx);
+      if (typeof off.ang !== "number") off.ang = want;
+      if (Math.abs(angDiff(want, off.ang)) > Math.PI / 3) {
+        off._wantAng = want;
+        turnVehicle(off, dt);
+        return;
+      }
+      vehStep(G, off, dx, dy, d, dt);
+      return;
+    }
     var ux = dx / d, uy = dy / d;
     var step = off.speed * dt;
     if (step > d) step = d;
-    var nx = off.x + ux * step;
-    var ny = off.y + uy * step;
-    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) {
-      off.x = nx; off.y = ny;
-      return;
+    var nx = off.x + ux * step, ny = off.y + uy * step;
+    if (!isSolidPolice(G, Math.floor(nx), Math.floor(ny))) { off.x = nx; off.y = ny; return; }
+    var ang = Math.atan2(uy, ux);
+    var tries = [0.6, -0.6, 1.1, -1.1, 1.57, -1.57];
+    for (var i = 0; i < tries.length; i++) {
+      var a2 = ang + tries[i];
+      var sx = off.x + Math.cos(a2) * step;
+      var sy = off.y + Math.sin(a2) * step;
+      if (!isSolidPolice(G, Math.floor(sx), Math.floor(sy))) { off.x = sx; off.y = sy; return; }
+      if (!isSolidPolice(G, Math.floor(sx), Math.floor(off.y))) { off.x = sx; return; }
+      if (!isSolidPolice(G, Math.floor(off.x), Math.floor(sy))) { off.y = sy; return; }
     }
-    var nx2 = off.x + ux * step, ny2 = off.y;
-    if (!isSolidPolice(G, Math.floor(nx2), Math.floor(ny2))) { off.x = nx2; return; }
-    var nx3 = off.x, ny3 = off.y + uy * step;
-    if (!isSolidPolice(G, Math.floor(nx3), Math.floor(ny3))) { off.y = ny3; return; }
+    sx = off.x + ux * step * 0.25; sy = off.y + uy * step * 0.25;
+    if (!isSolidPolice(G, Math.floor(sx), Math.floor(sy))) { off.x = sx; off.y = sy; }
   }
 
   function init(G) {
@@ -871,7 +968,7 @@ var Police = (function () {
     var leader = leaderForSquad(G, squadIndex);
     if (!leader) return false;
     var nolo = loadoutOf(G, squadIndex);
-    if (nolo === "liaison" || nolo === "ambulance") return false;   /* liaison officers and medics never arrest */
+    if (nolo === "liaison" || nolo === "ambulance" || nolo === "fireengine") return false;   /* liaison officers and medics never arrest */
     leader.arrestTarget = agent;
     leader.arrestManual = true;
     leader.arrestHold = 0;
@@ -1007,7 +1104,7 @@ var Police = (function () {
       }
       var leader = squad[0];
       if (!leader) continue;
-      if (loadoutOf(G, s) === "liaison" || loadoutOf(G, s) === "ambulance") continue;
+      if (loadoutOf(G, s) === "liaison" || loadoutOf(G, s) === "ambulance" || loadoutOf(G, s) === "fireengine") continue;
 
       if (leader.arrestTarget && leader.arrestManual) {
         updateManualArrest(G, s, squad, dt);
@@ -1087,43 +1184,50 @@ var Police = (function () {
   }
 
   function drawVehicle(ctx, v, ts) {
-    var px = v.x * ts, py = v.y * ts, w, h;
+    var ang = (typeof v.ang === "number") ? v.ang : 0;
+    var c = Math.cos(ang), sn = Math.sin(ang);
+    var px = v.x * ts, py = v.y * ts;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    var w, h;
     if (v.type === "car") {
       w = 1.6 * ts; h = 0.8 * ts;
       ctx.fillStyle = "#e8edf5";
-      ctx.fillRect(px - w / 2, py - h / 2, w, h);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.fillStyle = "#2a5db0";
-      ctx.fillRect(px - w / 2, py - 2, w, 4);
+      ctx.fillRect(-w / 2, -2, w, 4);
       ctx.fillStyle = "#e53935";
-      ctx.fillRect(px - 4, py - h / 2 - 2, 3, 3);
+      ctx.fillRect(-4, -h / 2 - 2, 3, 3);
       ctx.fillStyle = "#1e88e5";
-      ctx.fillRect(px + 1, py - h / 2 - 2, 3, 3);
+      ctx.fillRect(1, -h / 2 - 2, 3, 3);
       ctx.strokeStyle = "#0b0f1a";
       ctx.lineWidth = 1;
-      ctx.strokeRect(px - w / 2 + 0.5, py - h / 2 + 0.5, w - 1, h - 1);
+      ctx.strokeRect(-w / 2 + 0.5, -h / 2 + 0.5, w - 1, h - 1);
     } else if (v.type === "barriertruck") {
       w = 2.4 * ts; h = 1.0 * ts;
       ctx.fillStyle = "#7a5a2a";
-      ctx.fillRect(px - w / 2, py - h / 2, w, h);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.fillStyle = "#3d2c12";
-      ctx.fillRect(px + w / 2 - 12, py - h / 2, 12, h);
+      ctx.fillRect(w / 2 - 12, -h / 2, 12, h);
       ctx.fillStyle = "#ffcc33";
-      ctx.fillRect(px - w / 2 + 4, py - 3, w - 20, 6);
+      ctx.fillRect(-w / 2 + 4, -3, w - 20, 6);
       ctx.strokeStyle = "#0b0f1a";
       ctx.lineWidth = 1;
-      ctx.strokeRect(px - w / 2 + 0.5, py - h / 2 + 0.5, w - 1, h - 1);
+      ctx.strokeRect(-w / 2 + 0.5, -h / 2 + 0.5, w - 1, h - 1);
     } else {
       w = 2.4 * ts; h = 1.0 * ts;
       ctx.fillStyle = "#4a86c5";
-      ctx.fillRect(px - w / 2, py - h / 2, w, h);
+      ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.fillStyle = "#2b4f7a";
-      ctx.fillRect(px + w / 2 - 10, py - h / 2, 10, h);
+      ctx.fillRect(w / 2 - 10, -h / 2, 10, h);
       ctx.fillStyle = "#bcd7f2";
-      ctx.fillRect(px - w / 2 + 4, py - 2, w - 18, 4);
+      ctx.fillRect(-w / 2 + 4, -2, w - 18, 4);
       ctx.strokeStyle = "#0b0f1a";
       ctx.lineWidth = 1;
-      ctx.strokeRect(px - w / 2 + 0.5, py - h / 2 + 0.5, w - 1, h - 1);
+      ctx.strokeRect(-w / 2 + 0.5, -h / 2 + 0.5, w - 1, h - 1);
     }
+    ctx.restore();
   }
 
   function draw(ctx, G) {
@@ -1223,10 +1327,27 @@ var Police = (function () {
   function moveSquad(G, squadIndex, x, y, run) {
     if (!G.squadRun) G.squadRun = [];
     G.squadRun[squadIndex] = !!run;
+    var tv = null;
     if (typeof TRANSPORT !== "undefined" && TRANSPORT && TRANSPORT.vehicleOf) {
-      var tv = TRANSPORT.vehicleOf(G, squadIndex);
-      if (tv && (TRANSPORT.crewCount(G, squadIndex) > 0 || TRANSPORT.isBoarding(G, squadIndex))) {
-        TRANSPORT.drive(G, squadIndex, x, y);
+      tv = TRANSPORT.vehicleOf(G, squadIndex);
+      if (tv) {
+        var crew = TRANSPORT.crewCount ? TRANSPORT.crewCount(G, squadIndex) : (tv.crew ? tv.crew.length : 0);
+        var boarding = TRANSPORT.isBoarding ? TRANSPORT.isBoarding(G, squadIndex) : false;
+        var vdx = x - tv.x, vdy = y - tv.y;
+        var vdist = Math.sqrt(vdx * vdx + vdy * vdy);
+        var canBoard = !(tv._noBoardUntil && tv._noBoardUntil > G.time);
+        if (crew > 0 || boarding) {
+          if (TRANSPORT.drive) TRANSPORT.drive(G, squadIndex, x, y);
+          tv.parked = false;
+        } else if (vdist > 25 && canBoard && TRANSPORT.toggle) {
+          var tr = TRANSPORT.toggle(G, squadIndex);
+          if (tr === "boarding") {
+            var t = G._transport, st = t && t.runs && t.runs[squadIndex];
+            if (st) st.pendingDrive = { x: x, y: y };
+            if (TRANSPORT.drive) TRANSPORT.drive(G, squadIndex, x, y);
+            tv.parked = false;
+          }
+        }
       }
     }
     for (var i = 0; i < G.officers.length; i++) {
@@ -1246,6 +1367,7 @@ var Police = (function () {
         G.officers[i].homeY = y;
       }
     }
+    if (G._policeFlow) G._policeFlow[squadIndex] = null;
   }
 
   function setStance(G, squadIndex, stance) {

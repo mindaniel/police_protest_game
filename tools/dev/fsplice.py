@@ -28,6 +28,14 @@ def main():
     before = sys.argv[sys.argv.index("--before") + 1] if "--before" in sys.argv else None
     src = open(f, encoding="utf-8").read()
     blocks = [b.rstrip("\n") for b in re.findall(r"```(?:js|javascript)?\n(.*?)```", reply, re.S)]
+    # replies covering several files mark each part with a comment line naming the file
+    parts = []
+    for b in blocks:
+        parts += [p for p in re.split(r"^(?=/\*\s*[\w.-]+\.js\b[^\n]*\*/\s*$|//\s*[\w.-]+\.js\b)", b, flags=re.M) if p.strip()]
+    if "--only" in sys.argv:
+        only = sys.argv[sys.argv.index("--only") + 1]
+        parts = [p for p in parts if re.match(r"\s*(/\*|//)\s*" + re.escape(only) + r"\b", p)]
+    blocks = parts
     done = []
     for b in blocks:
         b2 = b if (b.startswith("  ") or re.search(r"^  function \w", b, re.M)) else "\n".join("  " + l if l else l for l in b.split("\n"))

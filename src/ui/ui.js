@@ -97,10 +97,11 @@ function uiSquadBusy(g, s) {
 
 function uiSelectType(g, k) {
   /* keys 1..9, 0 follow the force builder order (FORCE TYPES) */
-  var types = ["none", "car", "van", "truck", "watertruck", "barriertruck", "motorbike", "mounted", "liaison", "ambulance"];
-  var names = ["foot", "sedan", "van", "riot truck", "water cannon", "barrier truck", "motorbike", "mounted", "liaison", "ambulance"];
+  var types = ["none", "car", "van", "truck", "watertruck", "barriertruck", "motorbike", "mounted", "liaison", "ambulance", "fireengine"];
+  var names = ["foot", "sedan", "van", "riot truck", "water cannon", "barrier truck", "motorbike", "mounted", "liaison", "ambulance", "fire engine"];
   var idx = parseInt(k, 10) - 1;
   if (k === "0") idx = 9;
+  if (k === "-") idx = 10;   /* fire engine */
   if (idx < 0 || idx >= types.length) return false;
   var loadout = types[idx];
   var list = uiSquadsOfType(g, loadout);
@@ -238,7 +239,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       if (e.code === "Enter") { uiStartPlay(); e.preventDefault(); }
       else if (typeof FORCE !== "undefined" && FORCE.isOpen() && k !== "Tab" && FORCE.key(k)) { e.preventDefault(); }   /* planner cards */
       else if (uiOrderKey(e, k)) { /* standing orders */ }
-      else if ((k >= "1" && k <= "6" && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* type select */ }
+      else if ((((k >= "0" && k <= "9") || k === "-") && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* type select */ }
       else if (uiSelectKey((e.code && /^Digit[0-9]$/.test(e.code) ? e.code.charAt(5) : k))) { /* squad selected (Shift+digit = squad N) */ }
       else if ((k === "v" || k === "V") && typeof FORCE !== "undefined") { FORCE.toggle(); }
       else if (k === "v" || k === "V") { uiCycleLoadout(); }
@@ -266,7 +267,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     if (typeof ALERTS !== "undefined" && ALERTS.key(k)) { e.preventDefault(); return; }   /* Backspace: newest alert */
     if (UI.Game.paused) return;
     if (uiOrderKey(e, k)) { /* standing orders */ }
-    else if ((k >= "1" && k <= "6" && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* squad by type */ }
+    else if ((((k >= "0" && k <= "9") || k === "-") && k.length === 1) && !e.shiftKey && uiSelectType(g, k)) { /* squad by type */ }
     else if (uiSelectKey((e.code && /^Digit[0-9]$/.test(e.code) ? e.code.charAt(5) : k))) { /* squad selected (Shift+digit = squad N) */ }
     else if (k === "s" || k === "S") { Police.toggleStance(G, UI.selected); }
     else if ((k === "m" || k === "M") && typeof DISPERSE !== "undefined") {
@@ -1653,6 +1654,8 @@ function uiDrawScreen(ctx, g) {
   }
 
   if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) MINIMAP.draw(ctx, g);
+  if (typeof NAVDEBUG !== "undefined" && UI.screen === "playing") NAVDEBUG.draw(ctx, g);
+  if (typeof FIRECREW !== "undefined" && UI.screen === "playing") FIRECREW.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
 
   var forceOpen = UI.screen === "planning" && typeof FORCE !== "undefined" && FORCE.isOpen();   /* the planner covers the middle */

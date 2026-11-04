@@ -532,3 +532,26 @@ var RESIST = (function () {
     draw: draw
   };
 })();
+
+/* a shove may delay, never reverse, a squad moving to an order */
+(function () {
+  var oldUpdate = RESIST.update;
+  RESIST.update = function (G, dt) {
+    if (!G || !G.officers) { oldUpdate(G, dt); return; }
+    var before = [], i, o;
+    for (i = 0; i < G.officers.length; i++) {
+      o = G.officers[i];
+      if (o && typeof o.tx === "number" && typeof o.ty === "number") {
+        before.push({ o: o, x: o.x, y: o.y });
+      }
+    }
+    oldUpdate(G, dt);
+    for (i = 0; i < before.length; i++) {
+      o = before[i].o;
+      if (!o) continue;
+      var oldD = (before[i].x - o.tx) * (before[i].x - o.tx) + (before[i].y - o.ty) * (before[i].y - o.ty);
+      var newD = (o.x - o.tx) * (o.x - o.tx) + (o.y - o.ty) * (o.y - o.ty);
+      if (newD > oldD + 0.0001) { o.x = before[i].x; o.y = before[i].y; }
+    }
+  };
+})();

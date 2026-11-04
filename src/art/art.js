@@ -1655,11 +1655,14 @@ var Art = (function () {
 
   var OFF_SPECS = {};
   function drawOfficer(ctx, o, t) {
-    var s = cam.S, ang = officerAng(o), c = Math.cos(ang), sn = Math.sin(ang);
+    if (o.drawAlpha === 0) return;
+    var s = cam.S * (typeof o.drawScale === "number" ? o.drawScale : 1), ang = officerAng(o), c = Math.cos(ang), sn = Math.sin(ang);
+    var a0 = ctx.globalAlpha;
+    if (typeof o.drawAlpha === "number") ctx.globalAlpha = a0 * Math.max(0, Math.min(1, o.drawAlpha));   /* getting in / out of a vehicle */
     smoothPos(o);
     var ox0 = o.x, oy0 = o.y;
     o.x = o._rx; o.y = o._ry;   /* draw at the smoothed spot (restored below) */
-    try { drawOfficerAt(ctx, o, t, s, ang, c, sn); } finally { o.x = ox0; o.y = oy0; }
+    try { drawOfficerAt(ctx, o, t, s, ang, c, sn); } finally { o.x = ox0; o.y = oy0; ctx.globalAlpha = a0; }
   }
   function drawOfficerAt(ctx, o, t, s, ang, c, sn) {
     var firm = o.stance === "firm", bike = o.baseSpeed >= CONFIG.motorbikeSpeed;
@@ -2301,7 +2304,7 @@ var Art = (function () {
     if (G.vehicles) for (i = 0; i < G.vehicles.length; i++) {
       var v = G.vehicles[i];
       P(v.x, v.y, 1.55);
-      var nm = v.type === "car" ? "SEDAN" : (v.type === "watertruck" ? "WATER" : (v.type === "van" ? "VAN" : (v.type === "truck" ? "TRUCK" : (v.type === "ambulance" ? "AMBULANCE" : "BARRIER"))));
+      var nm = v.type === "car" ? "SEDAN" : (v.type === "watertruck" ? "WATER" : (v.type === "van" ? "VAN" : (v.type === "truck" ? "TRUCK" : (v.type === "ambulance" ? "AMBULANCE" : (v.type === "fireengine" ? "FIRE" : "BARRIER")))));
       badge(ctx, _px, _py - 4, (v.squad + 1) + " " + nm, sqCol(v.squad), v.squad === sel);
     }
   }

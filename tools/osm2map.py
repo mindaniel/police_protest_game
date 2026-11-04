@@ -100,9 +100,11 @@ def closed_way(geom):
     return abs(p0['lat'] - pn['lat']) < 1e-9 and abs(p0['lon'] - pn['lon']) < 1e-9
 
 ROAD_WIDTHS = {
-    'motorway': 18, 'trunk': 18, 'primary': 18, 'secondary': 15,
-    'tertiary': 12, 'residential': 9, 'unclassified': 9,
-    'living_street': 9, 'service': 6, 'pedestrian': 8,
+    # metres incl. sidewalks, at 3.5 m per tile: primary 7-8 tiles (2 lanes each way),
+    # secondary 6, tertiary 5, residential 4 (one lane each way); alleys stay 6 m
+    'motorway': 28, 'trunk': 28, 'primary': 26, 'secondary': 21,
+    'tertiary': 17.5, 'residential': 14, 'unclassified': 14,
+    'living_street': 12, 'service': 8, 'pedestrian': 8,
     'footway': 3, 'path': 3, 'steps': 3, 'cycleway': 3,
 }
 
@@ -119,7 +121,7 @@ def classify_highway(tags):
     if tags.get('tunnel') == 'yes': return None
     w = ROAD_WIDTHS.get(hw, 6)
     if 'width' in tags:
-        try: w = float(str(tags['width']).replace('m', '').strip())
+        try: w = max(w, float(str(tags['width']).replace('m', '').strip()))   # never narrower than the class
         except: pass
     if tags.get('service') == 'alley':
         return ('.', 6, True)   # alleys: one car fits (min 2 tiles, see step5)

@@ -7,8 +7,40 @@ var VEHICLES = (function () {
     truck: { len: 76, wid: 26 },
     watertruck: { len: 70, wid: 26 },
     barriertruck: { len: 70, wid: 26 },
-    ambulance: { len: 54, wid: 22 }
+    ambulance: { len: 54, wid: 22 },
+    fireengine: { len: 72, wid: 26 }
   };
+  function drawFireEngine(ctx, L, W, lightsOn) {
+    drawBody(ctx, L, W, "#c81e1e", "#8a1414");
+    // white stripe
+    ctx.fillStyle = "#f2f2f2";
+    ctx.fillRect(-L * 0.45, -W / 2 + 1, L * 0.9, 3);
+    ctx.fillRect(-L * 0.45, W / 2 - 4, L * 0.9, 3);
+    // rear equipment bay
+    ctx.fillStyle = "#a01818";
+    ctx.fillRect(-L * 0.42, -W / 2 + 5, L * 0.35, W - 10);
+    ctx.strokeStyle = "#5a0808";
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(-L * 0.42, -W / 2 + 5, L * 0.35, W - 10);
+    // ladder on roof
+    ctx.fillStyle = "#cfd4da";
+    var i;
+    for (i = 0; i < 9; i++) {
+      ctx.fillRect(-L * 0.34 + i * L * 0.075, -2.2, L * 0.05, 1.1);
+      ctx.fillRect(-L * 0.34 + i * L * 0.075, 1.1, L * 0.05, 1.1);
+    }
+    ctx.fillRect(-L * 0.36, -2.2, L * 0.66, 1);
+    ctx.fillRect(-L * 0.36, 2.2, L * 0.66, 1);
+    // cab glass
+    drawGlass(ctx, L * 0.25, -W / 2 + 4, L * 0.12, W - 8);
+    drawGlass(ctx, -L * 0.02, -W / 2 + 4, L * 0.1, 4);
+    drawGlass(ctx, -L * 0.02, W / 2 - 8, L * 0.1, 4);
+    drawMirrors(ctx, L, W);
+    drawLightBar(ctx, L * 0.05, -W / 2 + 2, 9, W - 4, lightsOn);
+    drawWheels(ctx, L, W);
+    drawLights(ctx, L, W, lightsOn);
+  }
+
   var baseCache = {};
   var baseCacheK = null;
   var spriteCache = {};
@@ -278,6 +310,7 @@ var VEHICLES = (function () {
     else if (type === "truck") drawTruck(ctx, s.len, s.wid, lightsOn);
     else if (type === "watertruck") drawWater(ctx, s.len, s.wid, lightsOn);
     else if (type === "barriertruck") drawBarrier(ctx, s.len, s.wid, lightsOn);
+    else if (type === "fireengine") drawFireEngine(ctx, s.len, s.wid, lightsOn);
     else drawAmbulance(ctx, s.len, s.wid, lightsOn);
     return c;
   }
