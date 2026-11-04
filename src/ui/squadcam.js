@@ -144,11 +144,9 @@ var SQUADCAM = (function () {
   function draw(ctx, g) {
     if (typeof MAP === "undefined" || !MAP || !MAP.rows) return;
     if (typeof UI === "undefined" || (UI.screen !== "planning" && UI.screen !== "playing")) return;
-    if (hidden) return;
-
     var s = UI.selected;
     if (seenSquad !== s) { hidden = false; seenSquad = s; easeX = null; easeY = null; easeSquad = -1; }
-    if (hidden) return;
+    if (hidden) { drawShowTab(ctx); return; }
 
     buildBase();
     if (!base) return;
@@ -429,9 +427,34 @@ var SQUADCAM = (function () {
     ctx.restore();
   }
 
+  /* closed: a small tab where the panel was; clicking it opens the panel again */
+  function showTab() {
+    if (!lastGeom) return null;
+    return { x: lastGeom.x + lastGeom.w - 96, y: lastGeom.y + lastGeom.h - 22, w: 96, h: 22 };
+  }
+  function drawShowTab(ctx) {
+    var t = showTab();
+    if (!t) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(16,21,29,0.9)";
+    ctx.fillRect(t.x, t.y, t.w, t.h);
+    ctx.strokeStyle = "rgba(215,221,232,0.5)";
+    ctx.strokeRect(t.x + 0.5, t.y + 0.5, t.w - 1, t.h - 1);
+    ctx.fillStyle = "#d7dde8";
+    ctx.font = "12px Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Squad cam +", t.x + t.w / 2, t.y + t.h / 2 + 1);
+    ctx.restore();
+  }
+
   function click(x, y) {
-    if (hidden) return false;
     if (typeof UI === "undefined" || (UI.screen !== "planning" && UI.screen !== "playing")) return false;
+    if (hidden) {
+      var t = showTab();
+      if (t && x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) { hidden = false; return true; }
+      return false;
+    }
     if (!lastGeom) return false;
     var gm = lastGeom;
     if (x < gm.x || x > gm.x + gm.w || y < gm.y || y > gm.y + gm.h) return false;
