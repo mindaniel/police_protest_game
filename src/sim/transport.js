@@ -458,8 +458,9 @@ var TRANSPORT = (function () {
       if (st && st.phase === "board" && s !== null) {
         st.t += dt;
         cap = seats(v.type).crew;
-        v.ctrl = true;
-        v.tx = v.x; v.ty = v.y; v.parked = false;
+        v.ctrl = true; v.parked = false;
+        if (st.fetchTo) { v.tx = st.fetchTo.x; v.ty = st.fetchTo.y; }   /* driving over to stragglers */
+        else { v.tx = v.x; v.ty = v.y; }
         offs = squadOfficers(G, s);
         found = false;
         var waiting = 0, n = 0;
@@ -496,6 +497,28 @@ var TRANSPORT = (function () {
         var full = (v.crew.length >= cap);
         var anyEntering = false;
         for (j = 0; j < offs.length; j++) if (offs[j].entering) anyEntering = true;
+        if (!anyEntering && !full && waiting > 0 && st.t >= grace) {
+          /* time is up but officers are still out (often stuck behind a wall):
+           * twice the vehicle drives over to them; after that they are seated anyway,
+           * so nobody is ever left behind on the map */
+          var outs = [], ox = 0, oy = 0;
+          for (j = 0; j < offs.length; j++) if (eligible(offs[j])) { outs.push(offs[j]); ox += offs[j].x; oy += offs[j].y; }
+          st.fetch = (st.fetch || 0) + 1;
+          var rd = st.fetch <= 2 && Police.roadNear ? Police.roadNear(G, ox / outs.length, oy / outs.length, 8) : null;
+          if (rd && ((rd.x + 0.5 - v.x) * (rd.x + 0.5 - v.x) + (rd.y + 0.5 - v.y) * (rd.y + 0.5 - v.y)) > 4) {
+            st.fetchTo = { x: rd.x + 0.5, y: rd.y + 0.5 };
+            st.t = 0; st.grace = 25;
+            continue;
+          }
+          if (st.fetch > 2 || !rd) {
+            for (j = 0; j < outs.length && v.crew.length < cap; j++) {
+              removeOfficer(G, outs[j]);
+              outs[j].x = v.x; outs[j].y = v.y;
+              v.crew.push(outs[j]);
+            }
+            waiting = 0;
+          } else { st.t = 0; st.grace = 10; continue; }
+        }
         if (!anyEntering && (full || waiting === 0 || st.t >= grace)) {
           var pend = st.pendingDrive;
           delete t.runs[s];

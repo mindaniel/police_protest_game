@@ -1703,6 +1703,7 @@ var Police = (function () {
     setStance: setStance,
     toggleStance: toggleStance,
     isWalkable: isWalkable,
+    roadNear: function (G, x, y, r) { return nearestAllowed(G, Math.floor(x), Math.floor(y), function (a, b) { return driveTileOk(G, a, b); }, r || 8); },
     canDeploy: canDeploy,
     deploySquad: deploySquad,
     loudspeaker: loudspeaker,
