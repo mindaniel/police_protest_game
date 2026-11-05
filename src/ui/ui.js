@@ -252,6 +252,9 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
     // playing
     if (e.code === "Space") { UI.Game.paused = !UI.Game.paused; e.preventDefault(); return; }
+    /* radio calls: Enter sends the suggested squad, Backspace skips */
+    if (typeof DISPATCH !== "undefined" && e.code === "Enter") { DISPATCH.approve(g); e.preventDefault(); return; }
+    if (typeof DISPATCH !== "undefined" && e.code === "Backspace") { DISPATCH.skip(g); e.preventDefault(); return; }
     /* reinforcements menu: R opens, 1-4 picks, then click a destination */
     if (typeof REINFORCE !== "undefined" && !UI.Game.paused) {
       if (k === "r" || k === "R") { REINFORCE.toggleMenu(); return; }
@@ -402,6 +405,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       if (uiMenuClick(mp.x, mp.y)) return;
       if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G, e.shiftKey)) return;
       if (UI.screen === "playing" && typeof ALERTS !== "undefined" && ALERTS.click(mp.x, mp.y, G)) return;
+      if (UI.screen === "playing" && typeof DISPATCH !== "undefined" && DISPATCH.click(G, mp.x, mp.y, UI.selected)) return;
     }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
@@ -937,8 +941,8 @@ function uiOverlay(ctx, title, lines, footer) {
 
   if (lines.length) ctx.font = lp + "px Consolas, monospace";
   for (var i = 0; i < lines.length; i++) {
-    ctx.fillStyle = lines[i].charAt(0) === "#" ? "#9fe0a0" : "#d7dde8";
-    ctx.fillText(lines[i].replace(/^#/, ""), w / 2, lay.pos[i]);
+    ctx.fillStyle = String(lines[i] || "").charAt(0) === "#" ? "#9fe0a0" : "#d7dde8";
+    ctx.fillText(String(lines[i] || "").replace(/^#/, ""), w / 2, lay.pos[i]);
   }
 
   if (footer) {
@@ -1705,6 +1709,7 @@ function uiDrawScreen(ctx, g) {
   if (typeof OWNERS !== "undefined" && UI.screen === "playing") OWNERS.draw(ctx, g);
   if (typeof MISSIONS !== "undefined" && UI.screen === "playing") MISSIONS.draw(ctx, g);
   if (typeof CIVLIFE !== "undefined" && UI.screen === "playing") CIVLIFE.draw(ctx, g);
+  if (typeof CRIME !== "undefined" && UI.screen === "playing") CRIME.draw(ctx, g);
   if (typeof FRONTLINE !== "undefined" && UI.screen === "playing") FRONTLINE.draw(ctx, g);
   if (typeof DISPATCH !== "undefined" && UI.screen === "playing") DISPATCH.draw(ctx, g);
   if (typeof ARRESTFX !== "undefined" && UI.screen === "playing") ARRESTFX.draw(ctx, g);
