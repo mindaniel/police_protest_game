@@ -700,6 +700,8 @@ var FORCE = (function () {
     if (kname === "ArrowUp") { sel = (sel + n - 5) % n; return true; }
     if (kname === "ArrowDown") { sel = (sel + 5) % n; return true; }
     if (kname === "+" || kname === "=") { inc(TYPES[sel].id); return true; }
+    if (kname === "Shift") { inc(TYPES[sel].id); return true; }     /* arrows pick a card, Shift adds, Ctrl removes */
+    if (kname === "Control") { dec(TYPES[sel].id); return true; }
     if (kname === "-") { dec(TYPES[sel].id); return true; }
     if (kname === "Enter") { if (startCb) startCb(); return true; }
     if (kname === "Escape" || kname === "v" || kname === "V") { isPanelOpen = false; invalidate(); return true; }

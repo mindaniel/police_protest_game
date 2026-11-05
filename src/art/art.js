@@ -396,7 +396,6 @@ var Art = (function () {
       else if (k === "+" || k === "=") zoomAt(LW / 2, LH / 2, 1.25);
       else if (k === "-" || k === "_") zoomAt(LW / 2, LH / 2, 0.8);
       else if (k === "Home") { cam.zoom = 1; updateCamera(); }   /* 0 selects a unit type */
-      else if (k === "h" || k === "H") toggleLow();
       else return;
       if (k.indexOf("Arrow") === 0) e.preventDefault();
     });

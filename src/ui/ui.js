@@ -112,7 +112,7 @@ function uiSelectType(g, k) {
   }
   var now = Date.now();
   var key = loadout;
-  if (UI._lastTypeKey === key && now - UI._lastTypeKeyTime < 1500 && UI._lastTypeList && UI._lastTypeList.length === list.length) {
+  if (false) {   /* repeat presses no longer cycle: Q does that */
     UI._lastTypeCursor = (UI._lastTypeCursor + 1) % list.length;
   } else {
     UI._lastTypeCursor = 0;
@@ -158,7 +158,7 @@ function uiSelectType(g, k) {
   UI.selected = target;
   UI.selVehicle = false;
   var busyTxt = uiSquadBusy(g, target) ? "busy" : "free";
-  UI.say(UNITTYPES.tag(g, target) + " selected (" + busyTxt + ", " + (UI._lastTypeCursor + 1) + " of " + list.length + ")");
+  UI.say(UNITTYPES.tag(g, target) + " selected (" + busyTxt + (list.length > 1 ? ", " + list.length + " of this type, Q = next" : "") + ")");
 
   /* the camera stays put: the squad cam inset (squadcam.js) shows the squad */
   return true;
@@ -211,8 +211,15 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
     if (k === "Escape" && !UI.mode && (UI.screen === "planning" || UI.screen === "playing") &&
         !(typeof REINFORCE !== "undefined" && REINFORCE.menuOpen())) { uiMenuAction("open"); return; }
-    if ((k === "q" || k === "Q") && typeof QUALITY !== "undefined") {
-      QUALITY.cycle(); UI.say(QUALITY.label()); return;
+    if ((k === "q" || k === "Q") && (UI.screen === "planning" || UI.screen === "playing") && CONFIG.squadCount > 0) {
+      /* Q: next squad of the same type as the selected one (number keys pick the type) */
+      var qlo = Police.getLoadout(g, UI.selected), ql = uiSquadsOfType(g, qlo);
+      if (ql.length) {
+        var qi = (ql.indexOf(UI.selected) + 1) % ql.length;
+        UI.selected = ql[qi]; UI.selVehicle = false;
+        UI.say(UNITTYPES.tag(g, UI.selected) + " selected (" + (qi + 1) + " of " + ql.length + ", Q = next)");
+      }
+      return;
     }
     if (k === "Tab" && (UI.screen === "planning" || UI.screen === "playing") && CONFIG.squadCount > 0) {
       /* Tab / Shift+Tab: next / previous squad (big maps have more squads than number keys) */
@@ -252,9 +259,9 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
     // playing
     if (e.code === "Space") { UI.Game.paused = !UI.Game.paused; e.preventDefault(); return; }
-    /* radio calls: Enter sends the suggested squad, Backspace skips */
-    if (typeof DISPATCH !== "undefined" && e.code === "Enter") { DISPATCH.approve(g); e.preventDefault(); return; }
-    if (typeof DISPATCH !== "undefined" && e.code === "Backspace") { DISPATCH.skip(g); e.preventDefault(); return; }
+    /* alert cards are radio calls: Enter sends the suggested unit to the top one, Delete removes it */
+    if (typeof ALERTS !== "undefined" && e.code === "Enter") { ALERTS.sendTop(g); e.preventDefault(); return; }
+    if (typeof ALERTS !== "undefined" && e.code === "Delete") { ALERTS.dismissTop(g); e.preventDefault(); return; }
     /* reinforcements menu: R opens, 1-4 picks, then click a destination */
     if (typeof REINFORCE !== "undefined" && !UI.Game.paused) {
       if (k === "r" || k === "R") { REINFORCE.toggleMenu(); return; }
@@ -405,7 +412,6 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
       if (uiMenuClick(mp.x, mp.y)) return;
       if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen()) && SQUADPLAN.click(mp.x, mp.y, G, e.shiftKey)) return;
       if (UI.screen === "playing" && typeof ALERTS !== "undefined" && ALERTS.click(mp.x, mp.y, G)) return;
-      if (UI.screen === "playing" && typeof DISPATCH !== "undefined" && DISPATCH.click(G, mp.x, mp.y, UI.selected)) return;
     }
     if (!wasDrag && e.target === cv) {
       var hp = UI.toLogical(e);
@@ -489,6 +495,7 @@ function uiArrest(e) {
 function uiSquadGo(s, x, y, run) {
   if (typeof LINES !== "undefined") LINES.onManualMove(G, s);   /* a move order releases a line / checkpoint */
   if (typeof ORDERFX !== "undefined") ORDERFX.note(G, s, x, y);   /* click marker + route line */
+  UI.say(UNITTYPES.tag(G, s) + " moving to the marked spot");   /* confirmation; ride messages below may replace it */
   if (typeof TRANSPORT !== "undefined") {
     if (!UI.selVehicle) TRANSPORT.boardRest(G, s);   /* officers still on foot get in before the ride */
     if (TRANSPORT.drive(G, s, x, y)) return;
@@ -1653,7 +1660,7 @@ function uiDrawScreen(ctx, g) {
       "  Wrong " + g.stats.wrongArrests +
       "  In custody " + (g.stats.delivered || 0) +
       "  Shops hit " + g.stats.shopsDamaged + "/" + g.shops.length +
-      (typeof QUALITY !== "undefined" ? "   " + QUALITY.label() + " (Q)" : "");
+      (typeof QUALITY !== "undefined" ? "   " + QUALITY.label() : "");
   }
   ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.fillRect(0, 0, w, 24);

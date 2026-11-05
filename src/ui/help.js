@@ -60,7 +60,6 @@ var HELP = (function () {
       ln("N", "next map", 2);
       ln("wheel / + -", "zoom", 3);
       ln("drag / arrows", "pan", 3);
-      ln("H", "low buildings", 3);
       ln("J", "show / hide minimap", 3);
       sec("Go");
       ln("Enter", "START the match", 1);
@@ -103,7 +102,7 @@ var HELP = (function () {
       sec("Game");
       ln("Space", "pause", 1);
       ln("T", "speed 1x / 2x", 2);
-      ln("Q", "graphics quality (Low = faster)", 2);
+      ln("Q", "next squad of the same type", 2);
       ln("wheel / drag", "zoom / pan", 3);
       ln("Esc", "cancel click mode", 2);
       ln("J", "show / hide minimap", 3);

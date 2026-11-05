@@ -24,7 +24,9 @@
     var g = G();
     var o = g.orders && g.orders[s];
     if (!o) return false;
-    return o.order !== "auto" && o.order !== "patrol";
+    /* the player approves every send, so squads holding a spot are suggested too;
+       only a squad on a police line or kettle is left alone */
+    return o.order === "line" || o.order === "kettle" || !!o.holdLine;
   }
   function squadPos(s) {
     var g = G(), n = 0, x = 0, y = 0, i;
@@ -264,7 +266,7 @@
       ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.restore();
     }
-    drawPanel(ctx, g, t);
+    /* the call list itself is drawn by ALERTS (one list for alerts and calls) */
   }
   function drawPanel(ctx, g, t) {
     var W = ctx.canvas.width;
@@ -326,6 +328,19 @@
     ctx.restore();
   }
   function list() { return calls.slice(); }
+  /* alert-list helpers: one card per call */
+  function callFor(alertId) { return byId[alertId] || null; }
+  function sendTo(g, alertId, s) {
+    var c = byId[alertId];
+    if (!c) return "none";
+    if (s == null || s < 0) s = c.suggest;
+    if (s == null || s < 0) return "nounit";
+    if (!fits(c.kind, loadout(s), c)) return "wrong";
+    if (onCall(s)) return "busy";
+    sendSquad(s, c);
+    return "ok";
+  }
+  function dismiss(alertId) { var c = byId[alertId]; if (c) dropCall(c); }
   function approve(G) {
     var pending = calls.slice(0, MAXQ);
     if (!pending.length) return false;
@@ -352,27 +367,8 @@
     sendSquad(s, c);
     return true;
   }
-  function click(G, px, py, selectedSquad) {
-    var ctx = G && G().ctx;
-    var cv = (window.UI && UI.canvas) ? UI.canvas : (window.canvas || null);
-    var W = cv ? cv.width : (window.innerWidth || 800);
-    var x = W - 300, y = 40, w = 290, rowH = 20;
-    if (px < x || px > x + w) return false;
-    if (py < y + 22) return false;
-    var pending = calls.slice(0, MAXQ);
-    var idx = Math.floor((py - (y + 22)) / rowH);
-    if (idx < 0 || idx >= pending.length) return false;
-    if (idx !== 0) return false;
-    var c = pending[0];
-    if (selectedSquad != null && selectedSquad >= 0) {
-      if (!fits(c.kind, loadout(selectedSquad), c)) { if (UI && UI.say) UI.say("Radio: wrong unit type"); return true; }
-      if (onCall(selectedSquad)) return true;
-      sendSquad(selectedSquad, c);
-    } else {
-      approve(G);
-    }
-    return true;
-  }
+  function click() { return false; }
+
   function score() {
     var s = DISPATCH.stats || { handled: 0, missed: 0, responseSum: 0, responseN: 0, pulled: 0 };
     return {
@@ -399,6 +395,9 @@
     skip: skip,
     assign: assign,
     click: click,
+    callFor: callFor,
+    sendTo: sendTo,
+    dismiss: dismiss,
     score: score
   };
 })();

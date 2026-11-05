@@ -62,6 +62,11 @@ var ALERTS = (function () {
 
   function pushAlert(kind, label, x, y, color, G) {
     var t = now(G);
+    for (var di = dismissed.length - 1; di >= 0; di--) {
+      var dd = dismissed[di];
+      if (t > dd.until) { dismissed.splice(di, 1); continue; }
+      if (dd.kind === kind && (dd.x - x) * (dd.x - x) + (dd.y - y) * (dd.y - y) <= 64) return null;
+    }
     // merge with existing same-kind alert within 6 tiles
     for (var i = 0; i < items.length; i++) {
       var a = items[i];
@@ -363,7 +368,11 @@ var ALERTS = (function () {
       if (a.last !== b.last) return b.last - a.last;
       return b.id - a.id;
     });
-    if (arr.length > 6) arr = arr.slice(0, 6);
+    /* alerts merged into another radio call show on that call's card only */
+    if (typeof DISPATCH !== "undefined" && DISPATCH.callFor) {
+      arr = arr.filter(function (a) { var c = DISPATCH.callFor(a.id); return !c || c.id === a.id; });
+    }
+    if (arr.length > 4) arr = arr.slice(0, 4);
     return arr;
   }
 
@@ -388,11 +397,42 @@ var ALERTS = (function () {
     knownSquads = {};
   }
 
+  var dismissed = [];
+  function dismiss(a, G) {
+    var i = items.indexOf(a);
+    if (i >= 0) items.splice(i, 1);
+    dismissed.push({ kind: a.kind, x: a.x, y: a.y, until: now(G) + 30 });
+    if (typeof DISPATCH !== "undefined" && DISPATCH.dismiss) DISPATCH.dismiss(a.id);
+  }
+  function closeBox(c, k) { var sz = 14 * k; return { x: c.x + c.w - sz - 4 * k, y: c.y + 4 * k, w: sz, h: sz }; }
+  /* radio line for a card: who is suggested / on the way */
+  function radioLine(a, G, agoSec) {
+    var c = (typeof DISPATCH !== "undefined" && DISPATCH.callFor) ? DISPATCH.callFor(a.id) : null;
+    var tag = function (s) { return UNITTYPES.tag(G, s); };
+    if (c && c.units && c.units.length) return tag(c.units[0]) + " on the way";
+    if (c && c.suggest >= 0) return agoSec + "s  Enter: send " + tag(c.suggest);
+    if (c) return agoSec + "s  no free unit";
+    return agoSec + "s ago  click to view";
+  }
+  /* Enter: send the suggested unit to the top card's call */
+  function sendTop(G) {
+    var arr = visibleList(), i, r;
+    for (i = 0; i < arr.length; i++) {
+      var c = (typeof DISPATCH !== "undefined" && DISPATCH.callFor) ? DISPATCH.callFor(arr[i].id) : null;
+      if (!c || (c.units && c.units.length)) continue;
+      r = DISPATCH.sendTo(G, arr[i].id);
+      if (r === "ok") return true;
+    }
+    if (typeof UI !== "undefined" && UI.say) UI.say("Radio: no call waiting for a unit");
+    return false;
+  }
+  function dismissTop(G) { var arr = visibleList(); if (arr.length) dismiss(arr[0], G); return arr.length > 0; }
+
   // ---- layout ----
 
   function columnLayout(G) {
     var k = textScale();
-    var w = 300 * k;
+    var w = 250 * k;   /* narrow: the list should not cover the streets */
     var x = 12;
     var y = 130;
     return { x: x, y: y, w: w, k: k };
@@ -401,8 +441,8 @@ var ALERTS = (function () {
   function cardLayout(idx, lay) {
     var k = lay.k;
     var pad = 6 * k;
-    var h = 46 * k;
-    var gap = 6 * k;
+    var h = 38 * k;
+    var gap = 4 * k;
     var y = lay.y + 34 * k + idx * (h + gap);
     return { x: lay.x, y: y, w: lay.w, h: h, bar: 6 * k, pad: pad };
   }
@@ -491,8 +531,9 @@ var ALERTS = (function () {
       ctx.fillStyle = "#ffffff";
       ctx.textBaseline = "top";
       ctx.textAlign = "left";
-      var labelText = a.label;
-      var maxW = c.w - c.bar - c.pad * 2;
+      var dc = (typeof DISPATCH !== "undefined" && DISPATCH.callFor) ? DISPATCH.callFor(a.id) : null;
+      var labelText = (dc && dc.extra ? "(" + (dc.extra + 1) + ") " : "") + a.label;
+      var maxW = c.w - c.bar - c.pad * 2 - 18 * k;
       var measured = ctx.measureText(labelText).width;
       if (measured > maxW) {
         // truncate with ellipsis
@@ -511,8 +552,15 @@ var ALERTS = (function () {
       ctx.font = secPx + "px Consolas, monospace";
       ctx.fillStyle = "rgba(200,200,210,0.75)";
       var agoSec = Math.max(0, Math.floor(t - a.last));
-      var second = agoSec + " s ago  ·  click to view";
+      var second = radioLine(a, G, agoSec);
+      if (second.indexOf("Enter") >= 0 && i === 0) ctx.fillStyle = "#8fff9f";
       ctx.fillText(second, c.x + c.bar + c.pad, c.y + c.pad + fontPx + 3 * k);
+      var xb = closeBox(c, k);   /* delete this alert */
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath();
+      ctx.moveTo(xb.x + 3 * k, xb.y + 3 * k); ctx.lineTo(xb.x + xb.w - 3 * k, xb.y + xb.h - 3 * k);
+      ctx.moveTo(xb.x + xb.w - 3 * k, xb.y + 3 * k); ctx.lineTo(xb.x + 3 * k, xb.y + xb.h - 3 * k);
+      ctx.stroke();
 
       ctx.restore();
     }
@@ -636,6 +684,8 @@ var ALERTS = (function () {
     for (var i = 0; i < arr.length; i++) {
       var c = cardLayout(i, lay);
       if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+        var xb = closeBox(c, k);
+        if (x >= xb.x - 4 * k && y <= xb.y + xb.h + 4 * k) { dismiss(arr[i], G); return true; }
         centerOnAlert(arr[i]);
         return true;
       }
@@ -643,7 +693,7 @@ var ALERTS = (function () {
 
     // clicking anywhere in the column area should count as hit
     var colRight = lay.x + lay.w;
-    var colBottom = lay.y + 34 * k + arr.length * (46 * k + 6 * k);
+    var colBottom = lay.y + 34 * k + arr.length * (38 * k + 4 * k);
     if (x >= lay.x && x <= colRight && y >= lay.y - 26 * k && y <= Math.max(colBottom, lay.y + 40 * k)) {
       return true;
     }
@@ -671,6 +721,8 @@ var ALERTS = (function () {
     list: list,
     toggle: toggle,
     clear: clear,
+    sendTop: sendTop,
+    dismissTop: dismissTop,
     push: pushAlert   /* push(kind, label, x, y, colour, G): other modules raise alerts */
   };
 })();
