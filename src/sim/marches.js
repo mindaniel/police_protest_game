@@ -21,6 +21,7 @@ var MARCHES = (function () {
     if (!MAP) return false;
     if (x < 0 || y < 0 || x >= MAP.width || y >= MAP.height) return false;
     var c = MAP.rows[y].charAt(x);
+    if (G && G._barSet && G._barSet[y * MAP.width + x]) return false;   /* police barriers close the road */
     return c === '.' || c === 'a' || c === 'P' || c === 'G';
   }
 
@@ -100,6 +101,8 @@ var MARCHES = (function () {
   }
 
   function planMarch(G) {
+    G._barSet = {};
+    for (var bi = 0; G.barriers && bi < G.barriers.length; bi++) G._barSet[Math.floor(G.barriers[bi].y) * MAP.width + Math.floor(G.barriers[bi].x)] = 1;
     if (typeof LANDMARKS === "undefined" || !LANDMARKS.rallyPoints) return null;
     var points = LANDMARKS.rallyPoints();
     if (!points || points.length < 2) return null;
@@ -206,7 +209,9 @@ var MARCHES = (function () {
       var nextAt = lastSchedule < 0 ? 90 : lastSchedule + scheduleNext(G, count);
       if (lastSchedule < 0) lastSchedule = 90;
       if (G.time >= nextAt && count < 4) {
-        var plan = planMarch(G);
+        /* the first march follows the forecast shown in planning (intel keeps its promise) */
+        var plan = (count === 0 && G._marchForecast) ? G._marchForecast : planMarch(G);
+        G._marchForecast = null;
         if (plan) {
           var m = {
             id: nextId++,
@@ -558,6 +563,22 @@ var MARCHES = (function () {
     return mm + ":" + (ss < 10 ? "0" : "") + ss;
   }
 
-  return { init: init, update: update, draw: draw, list: list };
+  /* planning intel: where the first march will start, go and which way (recomputed as roads are closed) */
+  function forecast(G) {
+    /* start and goal are fixed once per map; only the route changes as barriers go up */
+    var lock = G._marchLock;
+    if (!lock || lock.map !== MAP) {
+      var p = planMarch(G);
+      if (p) G._marchLock = { map: MAP, start: p.start, end: p.end };   /* no lock until the crowd has gathered */
+      G._marchForecast = p;
+      return p;
+    }
+    G._barSet = {};
+    for (var bi = 0; G.barriers && bi < G.barriers.length; bi++) G._barSet[Math.floor(G.barriers[bi].y) * MAP.width + Math.floor(G.barriers[bi].x)] = 1;
+    var route = pickRoute(G, lock.start, lock.end);
+    G._marchForecast = route && route.length >= 2 ? { start: lock.start, end: lock.end, route: route } : null;
+    return G._marchForecast;
+  }
+  return { init: init, update: update, draw: draw, list: list, forecast: forecast };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = MARCHES;

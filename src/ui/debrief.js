@@ -87,85 +87,191 @@ var DEBRIEF = (function () {
     var liaisonWithdrawals = s(G, "liaisonWithdrawals");
     var shopsTotal = (G.shops && G.shops.length) ? G.shops.length : 0;
 
+    var ownersHurt = s(G, "ownersHurt");
+    var fightInjuries = s(G, "fightInjuries");
+    var fires = s(G, "fires");
+    var crimeSolved = s(G, "crimeSolved");
+    var crimeMissed = s(G, "crimeMissed");
+    var marchesArrived = s(G, "marchesArrived");
+    var marchesBroken = s(G, "marchesBroken");
+    var dispersed = s(G, "dispersed");
+    var landmarkDamage = s(G, "landmarkDamage");
+    var waterUsed = s(G, "waterUsed");
+
     var cats = [];
 
-    // Arrests
-    var arrestLines = [];
-    var arrestScore = 30;
-    if (rt > 0) {
-      arrestScore = 30 * (rioterArrested / rt);
-      arrestLines.push(rioterArrested + " of " + rt + " rioters arrested");
-    } else {
-      arrestScore = 0;
-      arrestLines.push("No rioter count available");
+    // Safety
+    var safeLines = [];
+    var safeScore = 25;
+    var sd = 0;
+    if (ownersHurt > 0) {
+      var d0 = Math.min(10, 3 * ownersHurt);
+      safeScore -= d0; sd += d0;
+      safeLines.push("-" + d0 + ": " + ownersHurt + " shop owner" + (ownersHurt === 1 ? "" : "s") + " hurt");
     }
-    arrestScore -= 6 * wrongArrests;
-    if (arrestScore < 0) arrestScore = 0;
-    if (wrongArrests > 0) arrestLines.push(wrongArrests + " wrong arrest" + (wrongArrests === 1 ? "" : "s"));
-    if (snatches > 0) arrestLines.push(snatches + " snatch-squad arrest" + (snatches === 1 ? "" : "s"));
-    cats.push({ name: "Arrests", score: Math.round(arrestScore), max: 30, lines: arrestLines });
-
-    // Property
-    var propLines = [];
-    var propScore;
-    if (shopsTotal > 0) {
-      propScore = 25 * (1 - shopsDamaged / shopsTotal);
-      propLines.push(shopsDamaged + " of " + shopsTotal + " shops damaged");
-    } else {
-      propScore = 25;
-      propLines.push("No shops in this city");
+    if (fightInjuries > 0) {
+      var d1 = Math.min(8, 2 * fightInjuries);
+      safeScore -= d1; sd += d1;
+      safeLines.push("-" + d1 + ": " + fightInjuries + " injur" + (fightInjuries === 1 ? "y" : "ies") + " in fights");
     }
-    if (propScore < 0) propScore = 0;
-    if (barricadesCleared > 0) propLines.push(barricadesCleared + " barricades cleared");
-    cats.push({ name: "Property", score: Math.round(propScore), max: 25, lines: propLines });
+    if (fires > 0) {
+      var d2 = Math.min(8, 2 * fires);
+      safeScore -= d2; sd += d2;
+      safeLines.push("-" + d2 + ": " + fires + " fire" + (fires === 1 ? "" : "s") + " started");
+    }
+    if (peakMood > 70) {
+      var d3 = Math.min(6, Math.round((peakMood - 70) / 5));
+      safeScore -= d3; sd += d3;
+      safeLines.push("-" + d3 + ": peak mood " + Math.round(peakMood) + " (dangerously high)");
+    }
+    if (crimeSolved > 0) {
+      var b0 = Math.min(4, Math.round(crimeSolved / 2));
+      safeScore += b0;
+      safeLines.push("+" + b0 + ": " + crimeSolved + " crime" + (crimeSolved === 1 ? "" : "s") + " solved");
+    }
+    if (crimeMissed > 0) {
+      var d4 = Math.min(6, crimeMissed);
+      safeScore -= d4; sd += d4;
+      safeLines.push("-" + d4 + ": " + crimeMissed + " crime" + (crimeMissed === 1 ? "" : "s") + " missed");
+    }
+    if (safeScore < 0) safeScore = 0;
+    if (safeScore > 25) safeScore = 25;
+    if (sd === 0 && safeLines.length === 0) safeLines.push("No one was hurt");
+    cats.push({ name: "Safety", score: Math.round(safeScore), max: 25, lines: safeLines });
 
-    // Restraint
-    var resLines = [];
-    var resScore = 25;
-    var ded = 0;
+    // Right to protest
+    var protLines = [];
+    var protScore = 25;
+    var pd = 0;
+    if (marchesArrived > 0) {
+      var b1 = Math.min(8, 4 * marchesArrived);
+      protScore += b1;
+      protLines.push("+" + b1 + ": " + marchesArrived + " march" + (marchesArrived === 1 ? "" : "es") + " reached their goal");
+    }
+    if (marchesBroken > 0) {
+      var d5 = Math.min(12, 6 * marchesBroken);
+      protScore -= d5; pd += d5;
+      protLines.push("-" + d5 + ": " + marchesBroken + " march" + (marchesBroken === 1 ? "" : "es") + " broken up");
+    }
+    if (kettles > 0) {
+      var d6 = Math.min(8, 2 * kettles);
+      protScore -= d6; pd += d6;
+      protLines.push("-" + d6 + ": " + kettles + " kettle" + (kettles === 1 ? "" : "s") + " (" + kettledPeople + " people held)");
+    }
+    if (wrongArrests > 0) {
+      var d7 = Math.min(10, 4 * wrongArrests);
+      protScore -= d7; pd += d7;
+      protLines.push("-" + d7 + ": " + wrongArrests + " wrong arrest" + (wrongArrests === 1 ? "" : "s"));
+    }
+    if (dispersed > 0) {
+      var d8 = Math.min(8, 2 * dispersed);
+      protScore -= d8; pd += d8;
+      protLines.push("-" + d8 + ": " + dispersed + " crowd" + (dispersed === 1 ? "" : "s") + " dispersed");
+    }
     if (gassedPeaceful > 0) {
-      var d1 = Math.min(12, 4 * gassedPeaceful);
-      resScore -= d1; ded += d1;
-      resLines.push("-" + d1 + ": " + gassedPeaceful + " peaceful caught in gas");
+      var d9 = Math.min(8, 4 * gassedPeaceful);
+      protScore -= d9; pd += d9;
+      protLines.push("-" + d9 + ": " + gassedPeaceful + " peaceful protester" + (gassedPeaceful === 1 ? "" : "s") + " gassed");
     }
-    if (gasUsed > 3) {
-      var d2 = Math.min(6, 3 * (gasUsed - 3));
-      resScore -= d2; ded += d2;
-      resLines.push("-" + d2 + ": " + (gasUsed - 3) + " extra gas grenade" + (gasUsed - 3 === 1 ? "" : "s"));
+    if (protScore < 0) protScore = 0;
+    if (protScore > 25) protScore = 25;
+    if (pd === 0 && protLines.length === 0) protLines.push("Protests were left alone");
+    cats.push({ name: "Right to protest", score: Math.round(protScore), max: 25, lines: protLines });
+
+    // City
+    var cityLines = [];
+    var cityScore = 25;
+    var cd = 0;
+    if (shopsTotal > 0) {
+      var d10 = Math.min(12, Math.round(12 * shopsDamaged / shopsTotal));
+      cityScore -= d10; cd += d10;
+      cityLines.push("-" + d10 + ": " + shopsDamaged + " of " + shopsTotal + " shops damaged");
+    } else {
+      cityLines.push("No shops in this city");
     }
-    if (kettles > 0 && (kettledPeople / Math.max(1, kettles)) > 25) {
-      var d3 = Math.min(6, 3 * kettles);
-      resScore -= d3; ded += d3;
-      resLines.push("-" + d3 + ": over-large kettle" + (kettles === 1 ? "" : "s"));
+    if (landmarkDamage > 0) {
+      var d11 = Math.min(8, 4 * landmarkDamage);
+      cityScore -= d11; cd += d11;
+      cityLines.push("-" + d11 + ": landmark damage (" + landmarkDamage + ")");
+    }
+    var netBarricades = barricadesBuilt - barricadesCleared;
+    if (netBarricades > 0) {
+      var d12 = Math.min(6, netBarricades);
+      cityScore -= d12; cd += d12;
+      cityLines.push("-" + d12 + ": " + netBarricades + " barricade" + (netBarricades === 1 ? "" : "s") + " left standing");
+    } else if (barricadesCleared > 0) {
+      cityLines.push(barricadesCleared + " barricade" + (barricadesCleared === 1 ? "" : "s") + " cleared");
+    }
+    if (crimeMissed > 0) {
+      var d13 = Math.min(6, crimeMissed);
+      cityScore -= d13; cd += d13;
+      cityLines.push("-" + d13 + ": " + crimeMissed + " crime" + (crimeMissed === 1 ? "" : "s") + " missed");
+    }
+    if (cityScore < 0) cityScore = 0;
+    if (cityScore > 25) cityScore = 25;
+    if (cd === 0) cityLines.push("City left in good order");
+    cats.push({ name: "City", score: Math.round(cityScore), max: 25, lines: cityLines });
+
+    // Force used
+    var forceLines = [];
+    var forceScore = 25;
+    var fd = 0;
+    if (gasUsed > 0) {
+      var d14 = Math.min(10, 3 * gasUsed);
+      forceScore -= d14; fd += d14;
+      forceLines.push("-" + d14 + ": " + gasUsed + " gas grenade" + (gasUsed === 1 ? "" : "s") + " fired");
+    }
+    if (waterUsed > 0) {
+      var d15 = Math.min(8, 4 * waterUsed);
+      forceScore -= d15; fd += d15;
+      forceLines.push("-" + d15 + ": water cannon used " + waterUsed + " time" + (waterUsed === 1 ? "" : "s"));
     }
     if (horsePanics > 0) {
-      var d4 = Math.min(4, 2 * horsePanics);
-      resScore -= d4; ded += d4;
-      resLines.push("-" + d4 + ": " + horsePanics + " horse panic" + (horsePanics === 1 ? "" : "s"));
+      var d16 = Math.min(6, 3 * horsePanics);
+      forceScore -= d16; fd += d16;
+      forceLines.push("-" + d16 + ": " + horsePanics + " horse panic" + (horsePanics === 1 ? "" : "s"));
     }
-    if (resScore < 0) resScore = 0;
-    if (ded === 0) resLines.push("No excessive force recorded");
-    cats.push({ name: "Restraint", score: Math.round(resScore), max: 25, lines: resLines });
-
-    // Public trust
-    var ptLines = [];
-    var ptScore = 20 * (mediaScore / 100);
-    ptLines.push("Media score " + Math.round(mediaScore) + "/100");
-    if (mediaIncidents > 0) ptLines.push(mediaIncidents + " incident" + (mediaIncidents === 1 ? "" : "s") + " filmed");
-    var talkBonus = Math.min(4, Math.floor(liaisonTalk / 30));
-    ptScore += talkBonus;
-    var wdPen = 2 * liaisonWithdrawals;
-    ptScore -= wdPen;
-    if (ptScore < 0) ptScore = 0;
-    if (ptScore > 20) ptScore = 20;
-    if (talkBonus > 0) ptLines.push("Liaison officers talked for " + Math.round(liaisonTalk / 60) + " min");
-    if (liaisonWithdrawals > 0) ptLines.push("-" + wdPen + ": " + liaisonWithdrawals + " liaison withdrawal" + (liaisonWithdrawals === 1 ? "" : "s"));
-    cats.push({ name: "Public trust", score: Math.round(ptScore), max: 20, lines: ptLines });
+    if (snatchFailed > 0) {
+      var d17 = Math.min(6, 3 * snatchFailed);
+      forceScore -= d17; fd += d17;
+      forceLines.push("-" + d17 + ": " + snatchFailed + " failed snatch" + (snatchFailed === 1 ? "" : "es"));
+    }
+    if (mediaIncidents > 0) {
+      var d18 = Math.min(6, 2 * mediaIncidents);
+      forceScore -= d18; fd += d18;
+      forceLines.push("-" + d18 + ": " + mediaIncidents + " incident" + (mediaIncidents === 1 ? "" : "s") + " caught on camera");
+    }
+    if (mediaScore < 0) {
+      var d19 = Math.min(6, Math.round(-mediaScore / 10));
+      forceScore -= d19; fd += d19;
+      forceLines.push("-" + d19 + ": bad press (media score " + Math.round(mediaScore) + ")");
+    }
+    if (forceScore < 0) forceScore = 0;
+    if (forceScore > 25) forceScore = 25;
+    if (fd === 0) forceLines.push("Minimum force used");
+    cats.push({ name: "Force used", score: Math.round(forceScore), max: 25, lines: forceLines });
 
     var total = 0, i;
     for (i = 0; i < cats.length; i++) total += cats[i].score;
     r.score = Math.max(0, Math.min(100, Math.round(total)));
     r.cats = cats;
+
+    if (typeof DISPATCH !== "undefined" && DISPATCH.score) {
+      var handled = DISPATCH.handled || 0;
+      var missed = DISPATCH.missed || 0;
+      var avgResponse = DISPATCH.avgResponse || 0;
+      var pulled = DISPATCH.pulled || 0;
+      r.cats.push({
+        name: "Radio",
+        score: handled,
+        max: handled + missed,
+        lines: [
+          "Calls handled " + handled + ", missed " + missed,
+          "Average response " + Math.round(avgResponse) + " s",
+          "Squads pulled off a big crowd " + pulled
+        ]
+      });
+    }
 
     var sc = r.score;
     if (sc >= 85) { r.grade = "A"; r.title = "Textbook public order policing"; }
@@ -185,17 +291,20 @@ var DEBRIEF = (function () {
     // Tips based on weakest categories
     var tips = [];
     var order = [];
-    for (i = 0; i < cats.length; i++) order.push({ idx: i, pct: cats[i].score / cats[i].max, name: cats[i].name });
+    for (i = 0; i < cats.length; i++) {
+      if (cats[i].name === "Radio") continue;
+      order.push({ idx: i, pct: cats[i].score / cats[i].max, name: cats[i].name });
+    }
     order.sort(function (a, b) { return a.pct - b.pct; });
     var tipPool = {
-      "Arrests": ["Arrest only people the police have seen being violent (high suspicion)",
-                  "Use snatch squads for identified rioters, not the crowd"],
-      "Property": ["Park a squad near shop clusters: rioters avoid guarded shops",
-                   "Build barricades to protect shop fronts"],
-      "Restraint": ["Use gas sparingly: it hits peaceful people too",
-                    "Keep kettles small and move people through quickly"],
-      "Public trust": ["Send medics into angry areas early",
-                       "Use the drone to spot rioters from above"]
+      "Safety": ["Put medics near crowded areas before fights start",
+                 "Solve crimes quickly to keep people safe"],
+      "Right to protest": ["Escort the march along its route instead of blocking it",
+                           "Kettle only when a group turns violent"],
+      "City": ["Clear barricades before the day ends",
+               "Guard shop clusters so rioters cannot damage them"],
+      "Force used": ["Use gas only on violent groups, never on a peaceful crowd",
+                     "Pull snatch squads back when a grab fails"]
     };
     for (i = 0; i < order.length && tips.length < 3; i++) {
       var pool = tipPool[order[i].name];

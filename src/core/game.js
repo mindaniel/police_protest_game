@@ -385,6 +385,7 @@ function restartGame(newCity) {
   if (typeof FRONTLINE !== "undefined") FRONTLINE.reset();
   if (typeof DISPATCH !== "undefined") DISPATCH.reset();
   if (typeof CRIME !== "undefined") CRIME.reset(G);
+  if (typeof INTEL !== "undefined") INTEL.reset();
   if (typeof CIVLIFE !== "undefined") CIVLIFE.reset(G);
   if (typeof ARRESTFX !== "undefined") ARRESTFX.reset();   /* parked cars intact again for the new match */
   Crowd.init(G);

@@ -1633,6 +1633,7 @@ function uiDrawScreen(ctx, g) {
   }
   if (UI.mode === "patrolArea" && UI.screen === "playing") uiPatrolAreaOverlay(ctx, g);
   if (UI.screen === "planning" && typeof SQUADPLAN !== "undefined" && SQUADPLAN.drawSectors && !(typeof FORCE !== "undefined" && FORCE.isOpen())) SQUADPLAN.drawSectors(ctx, g);   /* sector grid + threat tint */
+  if (UI.screen === "planning" && typeof INTEL !== "undefined" && !(typeof FORCE !== "undefined" && FORCE.isOpen())) { INTEL.update(g); INTEL.draw(ctx, g); }   /* march forecast + briefing */
   uiGround(ctx, false);
 
   // Top bar

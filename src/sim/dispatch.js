@@ -82,6 +82,7 @@
     var idx = calls.indexOf(call);
     if (idx >= 0) calls.splice(idx, 1);
     if (byId[call.id]) delete byId[call.id];
+    if (call.ids) for (var di = 0; di < call.ids.length; di++) delete byId[call.ids[di]];
     delete panelBlink[call.id];
     for (var i = 0; i < call.units.length; i++) {
       var s = call.units[i];
@@ -158,6 +159,23 @@
       var a = list[i];
       if (a.kind === "squad" || a.kind === "crowd") continue;
       if (!byId[a.id]) {
+        /* protest trouble (shops, violence, owners) close to an open call joins it: one call per area */
+        if (a.kind !== "crime" && a.kind !== "fire") {
+          var host = null;
+          for (var h = 0; h < calls.length && !host; h++) {
+            var hc = calls[h];
+            if (hc.kind === "crime" || hc.kind === "fire") continue;
+            if ((hc.x - a.x) * (hc.x - a.x) + (hc.y - a.y) * (hc.y - a.y) < 144) host = hc;
+          }
+          if (host) {
+            byId[a.id] = host;
+            host.extra = (host.extra || 0) + 1;
+            if (a.kind === "violence" || a.kind === "owner_hurt") { host.kind = a.kind; host.hurt = host.hurt || a.kind === "owner_hurt"; }
+            host.ids = host.ids || [host.id];
+            host.ids.push(a.id);
+            continue;
+          }
+        }
         var c = makeCall(a);
         calls.push(c);
         byId[a.id] = c;
@@ -168,6 +186,10 @@
     for (var j = calls.length - 1; j >= 0; j--) {
       var call = calls[j];
       var al = alertExists(call.id);
+      if (call.ids) for (var q = 0; q < call.ids.length; q++) {
+        var al2 = alertExists(call.ids[q]);
+        if (al2 && (!al || (al2.last || 0) > (al.last || 0))) al = al2;
+      }
       if (!al) { dropCall(call); continue; }
       if (al.last != null && t - al.last > 60) { dropCall(call); continue; }
       if (t - call.at > 60 && call.units.length === 0) { dropCall(call); continue; }
@@ -285,6 +307,7 @@
       var cut = lbl.search(/: | - /);
       var kindStr = c.kind === "crime" && cut > 0 ? lbl.slice(0, cut).toLowerCase() : c.kind.replace(/_/g, " ");
       var place = cut >= 0 ? lbl.slice(cut + 2) : "";
+      if (c.extra) kindStr = "trouble x" + (c.extra + 1);
       var line = fmtAge(t - c.at) + " " + kindStr + (place ? ", " + place : "");
       var room = w - 16 - ctx.measureText(sugStr).width - 10;
       if (ctx.measureText(line).width > room) {
