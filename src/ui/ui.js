@@ -183,6 +183,7 @@ UI.init = function (g, game) {
   }
 
   window.addEventListener("keydown", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     var k = e.key;
     if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) {   /* settings / guide screen takes all keys */
       SETTINGS.key(k);
@@ -334,12 +335,14 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
 
   /* releasing W / L stops the held water cannon / loudspeaker */
   window.addEventListener("keyup", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     var k = e.key;
     if ((k === "w" || k === "W" || k === "l" || k === "L") && typeof METERS !== "undefined") METERS.stop(G);
   });
 
   var cv = game.canvas;
   cv.addEventListener("mousemove", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     UI.lastTile = UI.toTile(e);
     UI.hover = UI.toTile(e);
     if (UI.screen === "title" && typeof uiTitleHover === "function") { var th = UI.toLogical(e); uiTitleHover(th.x, th.y); }
@@ -351,6 +354,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
 
   /* Left button: click = select / command, hold and drag = pan the map. */
   cv.addEventListener("mousedown", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) return;   /* handled on mouseup */
     if (e.button === 0) {
       if (typeof MINIMAP !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) {
@@ -369,6 +373,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
   });
   window.addEventListener("mousemove", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     if (UI.mode === "patrolArea" && e.target === cv) UI.hoverTile = UI.toTile(e);   /* patrol area preview */
     if (UI._mini) { var mmv = UI.toLogical(e); MINIMAP.mouseMove(mmv.x, mmv.y); return; }
     if (typeof METERS !== "undefined" && METERS.using(G)) { var mt = UI.toTile(e); METERS.aim(G, mt.x + 0.5, mt.y + 0.5); }
@@ -396,6 +401,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
   });
   window.addEventListener("mouseup", function (e) {
+    g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     if (e.button === 2 && typeof METERS !== "undefined") METERS.stop(G);
     if (UI._mini && e.button === 0) { UI._mini = false; MINIMAP.mouseUp(); return; }
     if (typeof SETTINGS !== "undefined" && SETTINGS.isOpen()) {
@@ -495,7 +501,7 @@ function uiArrest(e) {
 function uiSquadGo(s, x, y, run) {
   if (typeof LINES !== "undefined") LINES.onManualMove(G, s);   /* a move order releases a line / checkpoint */
   if (typeof ORDERFX !== "undefined") ORDERFX.note(G, s, x, y);   /* click marker + route line */
-  UI.say(UNITTYPES.tag(G, s) + " moving to the marked spot");   /* confirmation; ride messages below may replace it */
+  if (!UI._quietGo) UI.say(UNITTYPES.tag(G, s) + " moving to the marked spot");   /* confirmation; ride messages below may replace it */
   if (typeof TRANSPORT !== "undefined") {
     if (!UI.selVehicle) TRANSPORT.boardRest(G, s);   /* officers still on foot get in before the ride */
     if (TRANSPORT.drive(G, s, x, y)) return;

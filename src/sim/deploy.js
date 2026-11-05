@@ -167,7 +167,7 @@ DEPLOY.update = function (G, dt) {
   while (DEPLOY.timer >= 0.7 && DEPLOY.queue.length) {
     DEPLOY.timer -= 0.7;
     var it = DEPLOY.queue.shift();
-    if (typeof uiSquadGo === 'function') uiSquadGo(it.s, it.x, it.y, false);
+    if (typeof uiSquadGo === 'function') { UI._quietGo = true; uiSquadGo(it.s, it.x, it.y, false); UI._quietGo = false; }   /* not a player order: no message */
   }
 };
 
