@@ -1913,7 +1913,32 @@ var Art = (function () {
     else if (it.k === 4) drawDetainee(ctx, it.o);
     else if (it.k === 5) { if (it.o.type) drawClutter(ctx, it.o); else drawTree(ctx, it.o); }
     else if (it.k === 7) THEME_PARIS.drawProp(ctx, it.o, t);
+    else if (it.k === 8) drawPerson(ctx, it.o.x, it.o.y, it.o.id, it.o.shirt, it.o.speed);
     else drawLamp(ctx, it.o);
+  }
+
+  /* passers-by, shop owners and thieves join the depth-sorted pass so buildings hide them */
+  function ppOf(src, id, shirt, speed) {
+    var o = src._pp || (src._pp = { x: 0, y: 0, id: id, shirt: shirt, speed: 0 });
+    o.x = src.x; o.y = src.y; o.shirt = shirt; o.speed = speed;
+    return o;
+  }
+  function pushPeople(G, cm) {
+    var i, j, c, L;
+    if (typeof CIVLIFE !== "undefined" && CIVLIFE.list) for (i = 0; i < CIVLIFE.list.length; i++) {
+      c = CIVLIFE.list[i];
+      if (visibleWorld(c.x, c.y, 0, cm)) push(8, ppOf(c, 5000 + c.id, c.color, c.state === "flee" ? 2.5 : 1), c.x, c.y);
+    }
+    if (typeof OWNERS !== "undefined" && OWNERS.list) { L = OWNERS.list(); for (i = 0; i < L.length; i++) {
+      c = L[i];
+      if (!c.hurt && visibleWorld(c.x, c.y, 0, cm)) push(8, ppOf(c, 9000 + i, c.arguing ? "#5577cc" : "#99bbee", 0), c.x, c.y);
+    } }
+    if (typeof CRIME !== "undefined" && CRIME.list) { L = CRIME.list(); for (i = 0; i < L.length; i++) {
+      for (j = 0; L[i].culprits && j < L[i].culprits.length; j++) {
+        c = L[i].culprits[j];
+        if (!c.caught && visibleWorld(c.x, c.y, 0, cm)) push(8, ppOf(c, 7000 + L[i].id * 3 + j, "#2a2030", c.fleeT > 0 ? 2.5 : 0), c.x, c.y);
+      }
+    } }
   }
 
   /* ---------- per-frame passes ---------- */
@@ -1945,6 +1970,7 @@ var Art = (function () {
       if (lodDots) { lodList[lodN++] = a; continue; }
       push(0, a, a.x, a.y);
     }
+    if (!lodDots) pushPeople(G, cm);
     if (G.barriers) for (i = 0; i < G.barriers.length; i++) {
       var b = G.barriers[i];
       if (!visibleWorld(b.x + 0.5, b.y + 0.5, 0, cm)) continue;

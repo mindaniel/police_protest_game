@@ -7,7 +7,7 @@ var SQUADCAM = (function () {
   var closeBtn = null;
   var easeX = null, easeY = null, easeSquad = -1;
 
-  var CSS_W = 280, CSS_H = 180;
+  var CSS_W = 200, CSS_H = 128;   /* small: it sits over the map corner */
   var PANEL_W = 96;        // side strip width in CSS px
 
   function tileColor(ch) {
@@ -274,8 +274,8 @@ var SQUADCAM = (function () {
     var headH = 20 * gm.k;
     var ix = gm.x + pad, iy = gm.y + headH, iw = gm.w - pad * 2, ih = gm.h - headH - pad;
 
-    var stripW = Math.max(60 * gm.k, PANEL_W * gm.k);
-    var mapW = Math.max(1, iw - stripW - pad);
+    var stripW = 0;   /* no side panel: status is one line in the header */
+    var mapW = Math.max(1, iw);
 
     ctx.save();
     ctx.beginPath();
@@ -394,7 +394,7 @@ var SQUADCAM = (function () {
 
     ctx.restore(); // un-clip map
 
-    // ---- Side strip (unchanged) ----
+    if (false) {   // ---- old side strip, replaced by the header line ----
     var sxStrip = ix + mapW + pad * 0.75;
     var stripX = sxStrip, stripY = iy, stripW2 = iw - (stripX - ix);
 
@@ -480,13 +480,18 @@ var SQUADCAM = (function () {
       ty2 += fnt + 1 * gm.k;
     }
 
+    }
     var headY = gm.y + 3 * gm.k;
     var hf = Math.round(11 * gm.k);
     ctx.font = "bold " + hf + "px Consolas, monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillStyle = "#dfe6ef";
-    ctx.fillText(UNITTYPES.tag(g, s), gm.x + 6 * gm.k, headY);
+    var hdr = UNITTYPES.tag(g, s), ord = g.orders && g.orders[s];
+    if (ord && ord.order) hdr += "  " + ord.order;
+    var hv = (typeof TRANSPORT !== "undefined" && TRANSPORT.vehicleOf) ? TRANSPORT.vehicleOf(g, s) : null;
+    if (hv && TRANSPORT.seats(hv.type).arrest) hdr += "  load " + (hv.load || 0) + "/" + TRANSPORT.seats(hv.type).arrest;
+    ctx.fillText(hdr, gm.x + 6 * gm.k, headY);
 
     var cb = 9 * gm.k;
     closeBtn = { x: gm.x + gm.w - cb - 4 * gm.k, y: gm.y + 4 * gm.k, r: cb };
