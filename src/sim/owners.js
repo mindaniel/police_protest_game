@@ -179,7 +179,9 @@ var OWNERS = (function () {
       var p = Art.project(o.x, o.y, 0), q = Art.project(o.x + 1, o.y, 0);
       var pt = Math.abs(q.x - p.x) || 8;   /* screen units per tile */
       if (p.x < -20 || p.y < -20 || p.x > ctx.canvas.width + 20 || p.y > ctx.canvas.height + 20) continue;
-      if (lvl !== "far") {   /* the person, real size (~0.4 tiles) */
+      if (lvl !== "far" && !o.hurt && Art.drawPerson && Art.drawPerson(ctx, o.x, o.y, 9000 + i, o.arguing ? "#5577cc" : "#99bbee", 0)) {
+        /* real sprite drawn */
+      } else if (lvl !== "far") {   /* the person, real size (~0.4 tiles) */
         var r = pt * 0.14;
         if (o.hurt) {
           ctx.fillStyle = "#5577cc";

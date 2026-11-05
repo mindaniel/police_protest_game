@@ -1483,6 +1483,23 @@ var Art = (function () {
     if (e._rx === undefined || Math.abs(e._rx - e.x) > 1.5 || Math.abs(e._ry - e.y) > 1.5) { e._rx = e.x; e._ry = e.y; }
     else { e._rx += (e.x - e._rx) * smoothK; e._ry += (e.y - e._ry) * smoothK; }
   }
+  /* the crowd's person sprite for other modules (civilians, owners, culprits):
+   * x, y in tiles, id picks the look, shirt colour, speed animates the walk */
+  var personSpecs = {};
+  function drawPerson(ctx, x, y, id, shirt, speed) {
+    if (typeof PEOPLE === "undefined") return false;
+    var key = (id | 0) + shirt, spec = personSpecs[key];
+    if (!spec) spec = personSpecs[key] = PEOPLE.civSpec(hash2(id | 0, 11) % 24, shirt);
+    P(x, y, 0);
+    var fr = Q_BOB ? PEOPLE.frameFor(id | 0, speed || 0, Date.now() / 1000) : 0;
+    var sp = PEOPLE.sprite(spec, fr, spriteScale(cam.S));
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(sp.c, _rs * _px - sp.ax, _rs * _py - sp.ay);
+    ctx.restore();
+    return true;
+  }
+
   function drawAgent(ctx, a, t) {
     var s = cam.S;
     smoothPos(a);
@@ -2593,6 +2610,7 @@ var Art = (function () {
   }
   return {
     invalidate: invalidate,
+    drawPerson: drawPerson,
     init: init,
     drawTerrain: drawTerrain,
     drawAgents: drawAgents,

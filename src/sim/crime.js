@@ -230,6 +230,7 @@ var CRIME = (function () {
         for (var c = 0; c < inc.culprits.length; c++) {
           var cu = inc.culprits[c];
           if (cu.caught) continue;
+          if (Art.drawPerson && Art.drawPerson(ctx, cu.x, cu.y, 7000 + inc.id * 3 + c, "#2a2030", cu.fleeT > 0 ? 2.5 : 0)) continue;   /* real sprite, dark clothes */
           var cp = Art.project(cu.x, cu.y, 0);
           var r = Math.max(2, pt * 0.14);
           ctx.fillStyle = "#2a2030";

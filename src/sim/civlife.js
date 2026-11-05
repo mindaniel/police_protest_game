@@ -411,6 +411,14 @@
       var lean = c.lean || 0;
       var lx = lean * size * 0.8;
       var bodyY = s.y - size * 1.2;
+      /* real person sprite, same as the crowd */
+      if (Art.drawPerson && Art.drawPerson(ctx, c.x, c.y, 5000 + c.id, c.color, c.state === 'flee' ? 2.5 : (c.moving === false ? 0 : 1))) {
+        if (c.hasPhone) {
+          ctx.fillStyle = '#aef0ff';
+          ctx.fillRect(s.x - 1, s.y - pt * 0.75, 2, 2);
+        }
+        continue;
+      }
 
       ctx.globalAlpha = 0.95;
       ctx.fillStyle = c.color;
