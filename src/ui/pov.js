@@ -93,7 +93,7 @@ var POV = (function () {
     if (k === "s" || k === "S" || k === "ArrowDown" || code === 40) { keys.down = true; return true; }
     if (k === "a" || k === "A" || k === "ArrowLeft" || code === 37) { keys.left = true; return true; }
     if (k === "d" || k === "D" || k === "ArrowRight" || code === 39) { keys.right = true; return true; }
-    if (k === " " || code === 32) { return true; }
+    if (k === " " || code === 32) { keys.brake = true; return true; }   /* handbrake when driving */
     if (k === "e" || k === "E" || code === 69) { return true; }
     if (k === "f" || k === "F" || code === 70) { return true; }
     if (k === "Tab" || code === 9 || k === "q" || k === "Q" || code === 81) { return true; }
@@ -110,6 +110,7 @@ var POV = (function () {
     if (k === "s" || k === "S" || k === "ArrowDown" || code === 40) { keys.down = false; return true; }
     if (k === "a" || k === "A" || k === "ArrowLeft" || code === 37) { keys.left = false; return true; }
     if (k === "d" || k === "D" || k === "ArrowRight" || code === 39) { keys.right = false; return true; }
+    if (k === " " || code === 32) { keys.brake = false; pressState.space = false; return true; }
     if (!e.shiftKey) keys.shift = false;
     return false;
   }
@@ -125,6 +126,7 @@ var POV = (function () {
   function doPressActions(G, k) {
     if (!on || !G) return;
     if (k === "space") {
+      if (typeof CARDRIVE !== "undefined" && CARDRIVE.driven()) return;   /* Space = handbrake in a car */
       try { Police.shove(G, squad); } catch (e) {}
       return;
     }
@@ -278,6 +280,17 @@ var POV = (function () {
     if (keys.right) dx += 1;
     var hasDir = (dx !== 0 || dy !== 0);
 
+    /* in a vehicle the player drives it for real (cardrive.js): W/S throttle, A/D steer, Space handbrake */
+    var dveh = (typeof CARDRIVE !== "undefined" && isAboard(G, squad) && TRANSPORT.vehicleOf) ? TRANSPORT.vehicleOf(G, squad) : null;
+    if (dveh) {
+      if (CARDRIVE.driven() !== dveh) CARDRIVE.drive(dveh);
+      CARDRIVE.setInput(keys.up, keys.down, keys.left, keys.right, !!keys.brake);
+      haveLast = false; moveAcc = 0;
+      if (typeof UI !== "undefined" && UI) { UI.selected = squad; UI.follow = null; }
+      return;
+    }
+    if (typeof CARDRIVE !== "undefined" && CARDRIVE.driven()) CARDRIVE.release();
+
     var aboard = isAboard(G, squad);
 
     if (hasDir) {
@@ -338,6 +351,8 @@ var POV = (function () {
     try { tag = UNITTYPES.tag(G, squad); } catch (e) {}
     var text = "POV: " + tag +
       "  [WASD] move  [Shift] run  [E] vehicle  [Space] shove  [F/click] arrest  [Tab/Q] next squad  [H/Esc] exit";
+    if (typeof CARDRIVE !== "undefined" && CARDRIVE.driven()) text = "DRIVING: " + tag + "  " + CARDRIVE.kmh() + " km/h" +
+      "  [W] gas  [S] brake/reverse  [A/D] steer  [Space] handbrake  [E] get out  [Tab/Q] next  [H/Esc] exit";
 
     ctx.save();
     ctx.font = "bold 13px sans-serif";

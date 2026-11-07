@@ -594,6 +594,7 @@ var Police = (function () {
 
   /* Move a unit one step toward its goal, avoiding solids. */
   function stepToward(G, off, dt) {
+    if (typeof CARDRIVE !== "undefined" && CARDRIVE.owns(off)) return;   /* the player is driving it */
     var goal = goalOf(G, off);
     var dx = goal.x - off.x;
     var dy = goal.y - off.y;

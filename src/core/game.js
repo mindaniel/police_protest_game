@@ -329,6 +329,10 @@ function frame(now) {
       if (typeof CRIME !== "undefined") CRIME.update(G, step);
       if (typeof TRAFFIC !== "undefined") TRAFFIC.update(G, step);
       if (typeof CHASE !== "undefined") CHASE.update(G, step);
+      if (typeof CARDRIVE !== "undefined") {   /* player driving (POV) */
+        if (typeof POV !== "undefined" && POV.active()) CARDRIVE.update(G, step);
+        else if (CARDRIVE.driven()) CARDRIVE.release();
+      }
       if (typeof TAKEIN !== "undefined") TAKEIN.update(G, step);
       if (typeof POV !== "undefined") POV.update(G, step);
       if (typeof DISPATCH !== "undefined") DISPATCH.update(G, step);
