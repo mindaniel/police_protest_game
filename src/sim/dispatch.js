@@ -260,6 +260,7 @@
         o = i < offs.length ? offs[i] : vs[i - offs.length];
         s = o.squad;
         if (s == null || onCall(s) || isBusy(s)) continue;
+        if (typeof POV !== "undefined" && POV.controlled() === s) continue;   /* the player is driving it */
         var ord = g.orders && g.orders[s];
         if (ord && ord.order && ord.order !== "patrol") continue;   /* only patrols and idle squads */
         if (!fits(c.kind, loadout(s), c)) continue;

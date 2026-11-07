@@ -226,6 +226,7 @@ var TRANSPORT = (function () {
 
   function autoDismount(G, s) {
     ensure(G);
+    if (typeof POV !== "undefined" && POV.controlled() === s) return false;   /* player drives: out only with E */
     var st = G._transport.runs[s];
     if (st && typeof st.autoDismount === "boolean") return st.autoDismount;
     return true;

@@ -26,6 +26,7 @@ var CHASE = (function () {
     var L = CRIME.list(), s, i, j, n = CONFIG.squadCount;
     for (s = 0; s < n; s++) {
       var ch = G._chase[s];
+      if (typeof POV !== "undefined" && POV.controlled() === s) { if (ch) delete G._chase[s]; continue; }   /* the player drives this one */
       if (!UNITTYPES.canArrest(Police.getLoadout(G, s)) || !free(G, s)) { if (ch) delete G._chase[s]; continue; }
       var p = squadPos(G, s);
       if (!p) continue;

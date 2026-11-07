@@ -328,6 +328,7 @@ function frame(now) {
       if (typeof CRIME !== "undefined") CRIME.update(G, step);
       if (typeof TRAFFIC !== "undefined") TRAFFIC.update(G, step);
       if (typeof CHASE !== "undefined") CHASE.update(G, step);
+      if (typeof POV !== "undefined") POV.update(G, step);
       if (typeof DISPATCH !== "undefined") DISPATCH.update(G, step);
       if (typeof CIVLIFE !== "undefined") CIVLIFE.update(G, step);
       if (typeof MISSIONS !== "undefined") MISSIONS.update(G, step);

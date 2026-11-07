@@ -190,6 +190,11 @@ UI.init = function (g, game) {
       if (!SETTINGS.isOpen()) uiSettingsClosed();
       e.preventDefault(); return;
     }
+    /* POV (pov.js): H takes control of the selected squad; while active it gets the keys first */
+    if (typeof POV !== "undefined" && UI.screen === "playing") {
+      if (POV.active()) { if (POV.keydown(e)) { e.preventDefault(); return; } }
+      else if (k === "h" || k === "H") { POV.toggle(G); e.preventDefault(); return; }
+    }
     if ((k === "?" || k === "F1") && typeof HELP !== "undefined" && UI.screen !== "title") {
       HELP.toggle(); e.preventDefault(); return;
     }
@@ -337,6 +342,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
   window.addEventListener("keyup", function (e) {
     g = (typeof G !== "undefined" && G) ? G : g;   /* restartGame makes a new G: never use a stale one */
     var k = e.key;
+    if (typeof POV !== "undefined" && POV.active() && POV.keyup(e)) { e.preventDefault(); return; }
     if ((k === "w" || k === "W" || k === "l" || k === "L") && typeof METERS !== "undefined") METERS.stop(G);
   });
 
@@ -656,6 +662,10 @@ function uiStartLevel() {
 }
 
 function uiLeftClick(e) {
+  if (UI.screen === "playing" && typeof POV !== "undefined" && POV.active()) {   /* POV: click = arrest near the leader */
+    var pt = UI.toTile(e);
+    if (POV.click(G, pt.x + 0.5, pt.y + 0.5)) return;
+  }
   if (UI.screen === "title") {
     var lp = UI.toLogical(e);
     if (typeof uiTitleClick === "function" && uiTitleClick(lp.x, lp.y)) return;
@@ -992,6 +1002,7 @@ var UI_CONTROLS = [
   "Space : pause     T : speed 1x / 2x     N (planning) : next map",
   "I : camera follows the selected squad (I again or drag to stop)",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
+  "H : take control of the selected squad (WASD move, E vehicle, Space shove, F arrest, Tab next, H/Esc back)",
   "Alerts: click a card or PgUp/PgDn to pick, Enter sends a unit, Delete removes it",
   "? or F1 : show / shrink / hide the controls panel (top right)",
   "Click the squad cam (bottom right) to jump to the squad.  Graphics and low buildings: S settings"
@@ -1734,6 +1745,7 @@ function uiDrawScreen(ctx, g) {
   if (typeof ARRESTFX !== "undefined" && UI.screen === "playing") ARRESTFX.draw(ctx, g);
   if (typeof ORDERFX !== "undefined" && (UI.screen === "playing" || UI.screen === "planning")) ORDERFX.draw(ctx, g);
   if (typeof SQUADCAM !== "undefined" && (UI.screen === "planning" || UI.screen === "playing")) SQUADCAM.draw(ctx, g);
+  if (typeof POV !== "undefined" && UI.screen === "playing" && POV.active()) POV.draw(ctx, g, w, h);
 
   var forceOpen = UI.screen === "planning" && typeof FORCE !== "undefined" && FORCE.isOpen();   /* the planner covers the middle */
   if (typeof HELP !== "undefined" && !forceOpen && (UI.screen === "planning" || (UI.screen === "playing" && !UI.Game.paused))) {

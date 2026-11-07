@@ -224,6 +224,7 @@ if (typeof Art !== "undefined" && Art.getView && Art.toggleView) {
     { t: "k", k: "Space", d: "pause" },
     { t: "k", k: "T", d: "speed 1x / 2x" },
     { t: "k", k: "Q", d: "next squad of the same type" },
+    { t: "k", k: "H", d: "take control of the selected squad: WASD/arrows move (Shift runs), E in/out of vehicle, Space shove, F or click arrest, Tab next squad, H or Esc back" },
     { t: "k", k: "PgUp/PgDn", d: "pick an alert (or click it); Enter sends a unit there, Delete removes it" },
     { t: "k", k: "wheel / drag", d: "zoom / pan" },
     { t: "k", k: "Esc", d: "cancel click mode" },
