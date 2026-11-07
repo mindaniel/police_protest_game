@@ -223,6 +223,7 @@
       }
     }
     if (!DISPATCH.enabled) return;
+    streetPickup();
     recomputeSuggestions();
     if (DISPATCH.autoMinor) {
       for (var k = 0; k < calls.length; k++) {
@@ -231,6 +232,40 @@
         if (cc.units.length >= needCount(cc)) continue;
         if (cc.suggest >= 0) sendSquad(cc.suggest, cc);
       }
+    }
+  }
+  /* a free squad on patrol (or standing idle) that meets a street call takes it itself */
+  function streetPickup() {
+    var g = G(), offs = g.officers || [], vs = g.vehicles || [], k, i, s, o;
+    for (k = 0; k < calls.length; k++) {
+      var c = calls[k];
+      if (c.kind !== "crime" && c.kind !== "medical" && c.kind !== "fire") continue;
+      if (c.units.length >= needCount(c)) continue;
+      var pts = [{ x: c.x, y: c.y }];
+      if (c.kind === "crime" && typeof CRIME !== "undefined" && CRIME.list) {   /* or runs into the suspect */
+        var L = CRIME.list();
+        for (i = 0; i < L.length; i++) {
+          if ((L[i].x - c.x) * (L[i].x - c.x) + (L[i].y - c.y) * (L[i].y - c.y) > 4) continue;
+          for (var j = 0; j < L[i].culprits.length; j++) if (!L[i].culprits[j].caught) pts.push(L[i].culprits[j]);
+        }
+      }
+      var found = -1;
+      for (i = 0; i < offs.length + vs.length && found < 0; i++) {
+        o = i < offs.length ? offs[i] : vs[i - offs.length];
+        s = o.squad;
+        if (s == null || onCall(s) || isBusy(s)) continue;
+        var ord = g.orders && g.orders[s];
+        if (ord && ord.order && ord.order !== "patrol") continue;   /* only patrols and idle squads */
+        if (!fits(c.kind, loadout(s), c)) continue;
+        for (var p = 0; p < pts.length; p++) {
+          var dx = o.x - pts[p].x, dy = o.y - pts[p].y;
+          if (dx * dx + dy * dy <= 25) { found = s; break; }
+        }
+      }
+      if (found < 0) continue;
+      sendSquad(found, c);
+      var tag = UNITTYPES.tag ? UNITTYPES.tag(g, found) : ("SQUAD " + found);
+      if (UI && UI.say) UI.say("Radio: " + tag + " on patrol spotted it - taking " + c.label);
     }
   }
   function fmtAge(sec) {
