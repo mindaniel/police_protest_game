@@ -1139,6 +1139,7 @@ var ORDERS = (function () {
       if (G.time < r.nextThink) continue;
       r.nextThink = G.time + 1 + i * 0.03;
       if (G.dispatch && G.dispatch[i]) continue;   /* on a radio call: the order resumes when the call ends */
+      if (typeof CHASE !== "undefined" && CHASE.chasing(G, i)) continue;   /* chasing a suspect */
       think(G, i);
     }
   }

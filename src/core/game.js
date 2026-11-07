@@ -327,6 +327,7 @@ function frame(now) {
       if (typeof FRONTLINE !== "undefined") FRONTLINE.update(G, step);
       if (typeof CRIME !== "undefined") CRIME.update(G, step);
       if (typeof TRAFFIC !== "undefined") TRAFFIC.update(G, step);
+      if (typeof CHASE !== "undefined") CHASE.update(G, step);
       if (typeof DISPATCH !== "undefined") DISPATCH.update(G, step);
       if (typeof CIVLIFE !== "undefined") CIVLIFE.update(G, step);
       if (typeof MISSIONS !== "undefined") MISSIONS.update(G, step);
@@ -387,6 +388,7 @@ function restartGame(newCity) {
   if (typeof DISPATCH !== "undefined") DISPATCH.reset();
   if (typeof CRIME !== "undefined") CRIME.reset(G);
   if (typeof TRAFFIC !== "undefined") TRAFFIC.reset(G);
+  if (typeof CHASE !== "undefined") CHASE.reset(G);
   if (typeof INTEL !== "undefined") INTEL.reset();
   if (typeof CIVLIFE !== "undefined") CIVLIFE.reset(G);
   if (typeof ARRESTFX !== "undefined") ARRESTFX.reset();   /* parked cars intact again for the new match */
