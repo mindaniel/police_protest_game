@@ -244,7 +244,7 @@ var MARCHES = (function () {
         m.t -= dt;
         if (m.t <= 0) {
           m.phase = "forming";
-          m.t = 20;
+          m.t = 30;
         }
         continue;
       }
@@ -253,14 +253,19 @@ var MARCHES = (function () {
         m.t -= dt;
         var agents = G.agents || [];
         var joined = members.length;
-        for (var ai = 0; ai < agents.length && joined < 120; ai++) {
+        /* a real march: about 45% of the crowd, recruited from a radius that grows while it forms */
+        var nAct = 0;
+        for (var ci = 0; ci < agents.length; ci++) if (agents[ci].active) nAct++;
+        var want = Math.max(80, Math.min(240, Math.round(nAct * 0.45)));
+        var rr = Math.min(46, 14 + (30 - m.t) * 1.2), rr2 = rr * rr;
+        for (var ai = 0; ai < agents.length && joined < want; ai++) {
           var a = agents[ai];
           if (!a.active || a._march != null) continue;
           if (a.role !== "peaceful" && a.role !== "rioter") continue;   /* rioters march hidden among protesters */
-          if (a.role === "peaceful" && a.mood < 25) continue;
+          if (a.role === "peaceful" && a.mood < 10) continue;
           if (a.role === "rioter" && (a.state !== "march" || a.braced)) continue;
           var dx = a.x - m.start.x, dy = a.y - m.start.y;
-          if (dx * dx + dy * dy > 196) continue;
+          if (dx * dx + dy * dy > rr2) continue;
           a._march = m.id;
           a._zone = -1;
           a._flow = (typeof Crowd !== "undefined" && Crowd.fieldTo) ? Crowd.fieldTo(G, m.start.x, m.start.y) : null;
@@ -277,6 +282,22 @@ var MARCHES = (function () {
       if (m.phase === "marching" || m.phase === "stuck") {
         var mem = getMembers(G, m);
         m.centre = centreOf(mem);
+        /* people on the way join in: the march grows as it passes (checked once a second) */
+        m.recruitT = (m.recruitT || 0) + dt;
+        if (m.recruitT >= 1 && m.centre && m.phase === "marching") {
+          m.recruitT = 0;
+          var ag = G.agents || [], nA = 0, gi;
+          for (gi = 0; gi < ag.length; gi++) if (ag[gi].active) nA++;
+          var cap = Math.max(80, Math.min(240, Math.round(nA * 0.45)));
+          for (gi = 0; gi < ag.length && mem.length < cap; gi++) {
+            var ga = ag[gi];
+            if (!ga.active || ga._march != null || ga.role !== "peaceful" || ga.mood < 10) continue;
+            var gx = ga.x - m.centre.x, gy = ga.y - m.centre.y;
+            if (gx * gx + gy * gy > 100) continue;
+            ga._march = m.id; ga._zone = -1;
+            mem.push(ga);
+          }
+        }
 
         // Escort check
         var officers = G.officers || [];
@@ -382,11 +403,11 @@ var MARCHES = (function () {
           if (fm.state === "attackShop" || fm.state === "flee") continue;   /* off smashing: rejoins after */
           fm._flow = field;
           var fdx = fm.x - wp.x, fdy = fm.y - wp.y;
-          if (fdx * fdx + fdy * fdy <= 16) near++;
+          if (fdx * fdx + fdy * fdy <= Math.max(16, mem.length * 0.25)) near++;   /* bigger march, bigger head */
         }
         var wpTime = m.t + dt;
         m.t = wpTime;
-        if (mem.length > 0 && near / mem.length >= 0.4) {
+        if (mem.length > 0 && near / mem.length >= 0.55) {   /* wait for the body of the march: it stays packed */
           m.wi++;
           m.t = 0;
         } else if (m.t >= 25) {

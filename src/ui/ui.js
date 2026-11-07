@@ -646,6 +646,10 @@ function uiStartLevel() {
   uiBusy(function () {
     UI._starting = false;
     if (UI.screen === "title") uiCommitChosenMap();
+    if (UI.screen === "title" && typeof LEVELS !== "undefined") {   /* no difficulty choice: each match rolls one */
+      var lvl = LEVELS.list();
+      LEVELS.set(lvl[Math.floor(Math.random() * lvl.length)].id);
+    }
     if (typeof LEVELS !== "undefined" && CONFIG._levelId !== LEVELS.current().id) restartGame(false);
     UI.screen = "planning";
   });
@@ -1440,7 +1444,7 @@ var uiTitleScreen = function (ctx, g) {
 
   /* Level buttons */
   var lvY = cardY + cardH + Math.round(34 * small);
-  var list = (typeof LEVELS !== "undefined") ? LEVELS.list() : [];
+  var list = [];   /* difficulty is random per match: no level buttons */
   var curId = (typeof LEVELS !== "undefined") ? LEVELS.current().id : null;
   var btnW = Math.min(w * 0.19, 210 * small), btnH = Math.round(52 * small), gap = Math.round(12 * small);
   var totW = list.length * btnW + (list.length - 1) * gap;
@@ -1557,7 +1561,7 @@ function uiDrawScreen(ctx, g) {
       (MAP.realName ? "Map: " + MAP.realName + "   (M = next map)" : ""),
       "S = settings and full guide"
     ], typeof LEVELS !== "undefined" ? null : "Press Enter to go to planning");
-    if (typeof LEVELS !== "undefined") LEVELS.drawPicker(ctx, w, h, (typeof UI_OVERLAY_BOTTOM === "number" ? UI_OVERLAY_BOTTOM : 0) + 20);
+    if (false) LEVELS.drawPicker(ctx, w, h, (typeof UI_OVERLAY_BOTTOM === "number" ? UI_OVERLAY_BOTTOM : 0) + 20);
     return;
   }
 

@@ -562,6 +562,7 @@ var Art = (function () {
 
   /* pavement follows the diagonal on the ground too */
   function groundWedges(g, t) {
+    if (BSON) return;
     var x, y;
     for (y = GY0; y < GY1; y++) {
       for (x = 0; x < W; x++) {
@@ -597,6 +598,7 @@ var Art = (function () {
   /* Corner code of a BUILDING tile whose box corner is cut by a diagonal
      street, or 0. Codes: 1=NW, 2=NE, 3=SW, 4=SE (the OPEN corner). */
   function chamferAt(x, y) {
+    if (BSON) return 0;   /* blockshape.js draws smooth outlines instead */
     var h = hAt(x, y);
     if (!(h > 0) || h > 2.0 || tints[y * W + x] === 3) return 0;
     var nN = hAt(x, y - 1), nS = hAt(x, y + 1);
@@ -717,8 +719,130 @@ var Art = (function () {
     }
   }
 
+  /* ---------- smooth outlines (blockshape.js): staircase edges become slanted walls ---------- */
+  var BSON = false;
+  function shapeSolid(x, y) { return heights[y * W + x] > 0; }
+  function shapeTop(p, poly, h) {
+    p.moveTo(ix(poly[0], poly[1]), iy(poly[0], poly[1], h));
+    for (var i = 2; i < poly.length; i += 2) p.lineTo(ix(poly[i], poly[i + 1]), iy(poly[i], poly[i + 1], h));
+    p.closePath();
+  }
+  function addShape(set, c, h, t) {
+    var i, w;
+    for (i = 0; i < c.polys.length; i++) shapeTop(set.tops[t], c.polys[i], h);
+    for (i = 0; i < c.walls.length; i++) {
+      w = c.walls[i];
+      quad(set.sw, w[0], w[1], 0, w[2], w[3], 0, w[2], w[3], h, w[0], w[1], h);
+    }
+  }
+  /* open tile that the smoothed outline reaches into: take the tallest plain neighbour */
+  function shapeWedge(x, y) {
+    var c = BLOCKSHAPE.cell(x, y);
+    if (!c || !c.polys.length) return;
+    var best = -1, bh = 0, d, nx, ny;
+    var DX = [0, 1, 0, -1, 1, 1, -1, -1], DY = [-1, 0, 1, 0, -1, 1, 1, -1];
+    for (d = 0; d < 8; d++) {
+      nx = x + DX[d]; ny = y + DY[d];
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      var hh = heights[ny * W + nx];
+      if (hh > bh && tints[ny * W + nx] !== 3) { bh = hh; best = ny * W + nx; }
+    }
+    if (best < 0) return;
+    addShape(diags[y] || (diags[y] = newSet()), c, bh, tints[best]);
+  }
+  /* pavement where a building tile was cut away by the smooth outline */
+  function groundShapes(g, t) {
+    if (!BSON) return;
+    var x, y, c;
+    g.fillStyle = PAVE;
+    for (y = GY0; y < GY1; y++) for (x = 0; x < W; x++) {
+      if (!(heights[y * W + x] > 0) || tints[y * W + x] === 3) continue;
+      c = BLOCKSHAPE.cell(x, y);
+      if (!c) continue;
+      g.beginPath();
+      g.rect(x * t, y * t, t, t);
+      for (var pi = 0; pi < c.polys.length; pi++) {
+        var P = c.polys[pi];
+        g.moveTo(P[0] * t, P[1] * t);
+        for (var pj = 2; pj < P.length; pj += 2) g.lineTo(P[pj] * t, P[pj + 1] * t);
+        g.closePath();
+      }
+      g.fill("evenodd");
+    }
+  }
+
+  /* smooth road outline: edge cells repainted (pavement, then the asphalt part), kerb + pavement strip on slanted edges */
+  var RSHAPE = null;
+  function roadSolid(x, y) { return tile(x, y) === "."; }
+  function slantCell(x, y) {
+    var c = RSHAPE.cell(x, y);
+    if (!c) return false;
+    return tile(x, y) === "." ? c.area <= 0.999 : c.area >= 0.001;
+  }
+  function nearSlant(x, y) {
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) if ((dx || dy) && slantCell(x + dx, y + dy)) return true;
+    return false;
+  }
+  function groundRoads(g, t) {
+    if (!BSON || !RSHAPE) return;
+    var x, y, c, i, j, n, P, isR, base = (MAP.roads && MAP.roads.length) ? "#666a71" : "#54585e";
+    for (y = GY0; y < GY1; y++) for (x = 0; x < W; x++) {
+      c = RSHAPE.cell(x, y);
+      if (solidCh(tile(x, y))) continue;
+      isR = tile(x, y) === ".";
+      if (!c || (isR ? c.area > 0.999 : c.area < 0.001)) {
+        /* full road tile beside a slanted edge: clear the old tile-stepped pavement strip */
+        if (isR && nearSlant(x, y)) { g.fillStyle = base; g.fillRect(x * t, y * t, t, t); }
+        continue;
+      }
+      g.fillStyle = PAVE; g.fillRect(x * t, y * t, t, t);
+      g.fillStyle = base; g.beginPath();
+      for (i = 0; i < c.polys.length; i++) {
+        P = c.polys[i];
+        g.moveTo(P[0] * t, P[1] * t);
+        for (j = 2; j < P.length; j += 2) g.lineTo(P[j] * t, P[j + 1] * t);
+        g.closePath();
+      }
+      g.fill();
+    }
+    /* pavement strip + kerb inside the road along slanted edges (clipped to the road shape) */
+    var L = RSHAPE.outlines(), pass;
+    g.save();
+    g.beginPath();
+    for (i = 0; i < L.length; i++) {
+      P = L[i];
+      g.moveTo(P[0] * t, P[1] * t);
+      for (j = 2; j < P.length; j += 2) g.lineTo(P[j] * t, P[j + 1] * t);
+      g.closePath();
+    }
+    g.clip("evenodd");
+    g.lineCap = "round";
+    for (pass = 0; pass < 2; pass++) {
+      g.strokeStyle = pass ? PAVE : "rgba(80,84,90,0.75)";
+      g.lineWidth = t * (pass ? 0.56 : 0.64);
+      g.beginPath();
+      for (i = 0; i < L.length; i++) {
+        P = L[i]; n = P.length / 2;
+        for (j = 0; j < n; j++) {
+          var k2 = (j + 1) % n, ax = P[j * 2], ay = P[j * 2 + 1], bx = P[k2 * 2], by = P[k2 * 2 + 1];
+          if (ax === bx || ay === by) continue;   /* straight tile edges keep the normal kerb */
+          if (Math.max(ay, by) < GY0 - 1 || Math.min(ay, by) > GY1 + 1) continue;
+          g.moveTo(ax * t, ay * t); g.lineTo(bx * t, by * t);
+        }
+      }
+      g.stroke();
+    }
+    g.restore();
+  }
+
   function buildCity() {
     computeHeights();
+    BSON = !lowMode && typeof BLOCKSHAPE !== "undefined";
+    if (BSON) {
+      BLOCKSHAPE.build(W, H, shapeSolid);
+      RSHAPE = RSHAPE || BLOCKSHAPE.make();
+      RSHAPE.build(W, H, roadSolid);
+    }
     cityVer++;
     HMAXZ = 0.5;
     for (var hi = 0; hi < heights.length; hi++) if (heights[hi] + 0.5 > HMAXZ) HMAXZ = heights[hi] + 0.5;
@@ -743,6 +867,10 @@ var Art = (function () {
           continue;
         }
         /* outer step of a diagonal edge: cut the open corner off */
+        if (BSON) {
+          var bsc = BLOCKSHAPE.cell(x, y);
+          if (bsc) { addShape(set, bsc, h, tints[y * W + x]); continue; }
+        }
         var cc = lowMode ? 0 : chamferAt(x, y);
         if (cc) { addChamfer(set, x, y, h, tints[y * W + x], cc); continue; }
         addBox(set, x, y, x + 1, y + 1, 0, h, set.tops[tints[y * W + x]], set.sw, showS);
@@ -768,7 +896,8 @@ var Art = (function () {
         }
       }
     }
-    if (!lowMode) addWedges();
+    if (!lowMode && !BSON) addWedges();
+    if (BSON) for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (!(heights[y * W + x] > 0)) shapeWedge(x, y);
   }
 
   /* ---------- ground texture ---------- */
@@ -919,7 +1048,7 @@ var Art = (function () {
       if (paris()) THEME_PARIS.decor(g, t, tile);
     }
     if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);
-    if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); }
+    if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); groundRoads(g, t); groundShapes(g, t); }
     g.restore();
   }
 

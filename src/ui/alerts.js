@@ -49,6 +49,7 @@ var ALERTS = (function () {
   function importance(kind) {
     switch (kind) {
       case "violence": return 5;
+      case "medical": return 5;
       case "shop_attack": return 4;
       case "squad": return 4;
       case "shop_looted": return 3;
@@ -414,9 +415,32 @@ var ALERTS = (function () {
     if (c) return agoSec + "s  no free unit";
     return agoSec + "s ago  click to view";
   }
-  /* Enter: send the suggested unit to the top card's call */
+  /* picked card (click or PageUp/PageDown): Enter and Delete act on it, else on the top card */
+  var pickedId = null;
+  function pickedIdx(arr) {
+    for (var i = 0; i < arr.length; i++) if (arr[i].id === pickedId) return i;
+    pickedId = null;
+    return -1;
+  }
+  function pickStep(d) {
+    var arr = visibleList();
+    if (!arr.length) return false;
+    var i = pickedIdx(arr);
+    i = i < 0 ? (d > 0 ? 0 : arr.length - 1) : (i + d + arr.length) % arr.length;
+    pickedId = arr[i].id;
+    centerOnAlert(arr[i]);
+    return true;
+  }
+  /* Enter: send the suggested unit to the picked card's call (or the first one waiting) */
   function sendTop(G) {
-    var arr = visibleList(), i, r;
+    var arr = visibleList(), i, r, pi = pickedIdx(arr);
+    if (pi >= 0) {
+      r = DISPATCH.sendTo(G, arr[pi].id);
+      if (r === "ok") { pickedId = null; return true; }
+      var pc = DISPATCH.callFor ? DISPATCH.callFor(arr[pi].id) : null;
+      if (typeof UI !== "undefined" && UI.say) UI.say(pc && pc.units && pc.units.length ? "Radio: a unit is already on the way there" : "Radio: no free unit fits that call");
+      return false;
+    }
     for (i = 0; i < arr.length; i++) {
       var c = (typeof DISPATCH !== "undefined" && DISPATCH.callFor) ? DISPATCH.callFor(arr[i].id) : null;
       if (!c || (c.units && c.units.length)) continue;
@@ -426,7 +450,11 @@ var ALERTS = (function () {
     if (typeof UI !== "undefined" && UI.say) UI.say("Radio: no call waiting for a unit");
     return false;
   }
-  function dismissTop(G) { var arr = visibleList(); if (arr.length) dismiss(arr[0], G); return arr.length > 0; }
+  function dismissTop(G) {
+    var arr = visibleList(), pi = pickedIdx(arr);
+    if (arr.length) { dismiss(arr[pi >= 0 ? pi : 0], G); pickedId = null; }
+    return arr.length > 0;
+  }
 
   // ---- layout ----
 
@@ -520,6 +548,11 @@ var ALERTS = (function () {
       ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.lineWidth = Math.max(1, Math.floor(k));
       ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
+      if (a.id === pickedId) {   /* picked card: Enter acts on it */
+        ctx.strokeStyle = "#ffd866";
+        ctx.lineWidth = Math.max(2, Math.floor(2 * k));
+        ctx.strokeRect(c.x + 1, c.y + 1, c.w - 2, c.h - 2);
+      }
 
       // colored bar
       ctx.fillStyle = a.color || "#ffffff";
@@ -553,7 +586,7 @@ var ALERTS = (function () {
       ctx.fillStyle = "rgba(200,200,210,0.75)";
       var agoSec = Math.max(0, Math.floor(t - a.last));
       var second = radioLine(a, G, agoSec);
-      if (second.indexOf("Enter") >= 0 && i === 0) ctx.fillStyle = "#8fff9f";
+      if (second.indexOf("Enter") >= 0 && (pickedId ? a.id === pickedId : i === 0)) ctx.fillStyle = "#8fff9f";
       ctx.fillText(second, c.x + c.bar + c.pad, c.y + c.pad + fontPx + 3 * k);
       var xb = closeBox(c, k);   /* delete this alert */
       ctx.strokeStyle = "rgba(255,255,255,0.55)";
@@ -686,6 +719,7 @@ var ALERTS = (function () {
       if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
         var xb = closeBox(c, k);
         if (x >= xb.x - 4 * k && y <= xb.y + xb.h + 4 * k) { dismiss(arr[i], G); return true; }
+        pickedId = arr[i].id;
         centerOnAlert(arr[i]);
         return true;
       }
@@ -702,6 +736,8 @@ var ALERTS = (function () {
   }
 
   function key(k) {
+    if (k === "PageDown") return pickStep(1);
+    if (k === "PageUp") return pickStep(-1);
     if (k === "Backspace") {
       var arr = visibleList();
       if (arr.length) {

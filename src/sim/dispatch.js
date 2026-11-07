@@ -44,6 +44,7 @@
   function arresting(type) { return UNITTYPES.canArrest(type); }
   function fits(kind, type, call) {
     if (kind === "fire") return type === "fireengine" || type === "watertruck";
+    if (kind === "medical") return type === "ambulance";
     if (kind === "owner_hurt") return type === "ambulance" || arresting(type);
     if (kind === "violence") {
       if (call && call.hurt) return type === "ambulance" || arresting(type);
@@ -143,6 +144,9 @@
         var pos = squadPos(fs);
         if (!pos) continue;
         var dd = (pos.x - c.x) * (pos.x - c.x) + (pos.y - c.y) * (pos.y - c.y);
+        /* small crime: fast light units first, crowd-control trucks only when nothing else is near */
+        if (c.kind === "crime" && (lt === "watertruck" || lt === "barriertruck" || lt === "truck")) dd = dd * 9 + 400;
+        else if (c.kind === "crime" && (lt === "car" || lt === "motorbike")) dd *= 0.6;
         if (dd < bestD) { bestD = dd; best = fs; }
       }
       c.suggest = best;

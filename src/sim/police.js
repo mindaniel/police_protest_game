@@ -1681,8 +1681,20 @@ var Police = (function () {
     var truck = barrierTruckFor(G, squadIndex);
     if (!truck || !(truck.stock > 0)) return false;
     truck.stock--;
-    G.blocked.add(tkey(x, y));
-    G.barriers.push({ x: x, y: y, squad: squadIndex });
+    /* One barrier piece closes the whole street: span the shorter open run (across the road). */
+    var run = function (dx, dy) {
+      var a = 0, b = 0;
+      while (a < 12 && inBounds(x - dx * (a + 1), y - dy * (a + 1)) && !isSolid(G, x - dx * (a + 1), y - dy * (a + 1))) a++;
+      while (b < 12 && inBounds(x + dx * (b + 1), y + dy * (b + 1)) && !isSolid(G, x + dx * (b + 1), y + dy * (b + 1))) b++;
+      return { a: a, b: b, n: a + b + 1 };
+    };
+    var h = run(1, 0), v = run(0, 1), r = h.n <= v.n ? h : v, dx = h.n <= v.n ? 1 : 0, dy = 1 - dx;
+    if (r.n > 14) { r = { a: Math.min(r.a, 3), b: Math.min(r.b, 3) }; }   /* open square: short wall only */
+    for (var k = -r.a; k <= r.b; k++) {
+      var bx = x + dx * k, by = y + dy * k;
+      G.blocked.add(tkey(bx, by));
+      G.barriers.push({ x: bx, y: by, squad: squadIndex });
+    }
     if (typeof Art !== "undefined") Art.invalidate();
     Crowd.rebuildFlow(G);
     G.log("Barrier placed at " + x + "," + y);

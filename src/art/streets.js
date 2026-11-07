@@ -242,9 +242,8 @@ var STREETS = (function () {
     }
 
     function roadColour(road) {
-      if (road.c === "major") return "#5d6168";
-      if (road.c === "minor") return "#6a6e75";
-      return "#777b80";
+      /* one asphalt tone: per-tile class colours drew stair steps where roads meet at an angle */
+      return "#666a71";
     }
 
     function drawRoadMarkings(junctions) {
