@@ -53,9 +53,15 @@ var TACT = (function () {
     ensure(G);
     if (kettleObj) { release(G); return "released"; }
     var Cfg = C();
-    var range = Cfg.kettleRange || 12;
-    var R = Cfg.kettleRadius || 3.5;
+    var range = 16;
     var r2 = range * range;
+    /* squads riding nearby jump out and join */
+    if (typeof TRANSPORT !== "undefined" && TRANSPORT.isAboard) {
+      for (var vs = 0; vs < G.vehicles.length; vs++) {
+        var vv = G.vehicles[vs];
+        if (dist2(vv.x, vv.y, x, y) <= r2 && TRANSPORT.isAboard(G, vv.squad)) TRANSPORT.toggle(G, vv.squad);
+      }
+    }
     // gather squads with >=3 foot officers near (x,y)
     var counts = {}, quals = [], i, o, d2;
     for (i = 0; i < G.officers.length; i++) {
@@ -67,10 +73,11 @@ var TACT = (function () {
       if (!counts[o.squad]) counts[o.squad] = 0;
       counts[o.squad]++;
     }
+    var tot = 0;
     for (var s in counts) {
-      if (counts[s] >= 3) quals.push(parseInt(s, 10));
+      if (counts[s] >= 3) { quals.push(parseInt(s, 10)); tot += counts[s]; }
     }
-    if (quals.length < 2) return "few";
+    if (quals.length < 2 && tot < 8) return "few";
 
     // participating officers
     var offs = [];
@@ -92,6 +99,10 @@ var TACT = (function () {
 
     var n = arr.length;
     var slot = 0;
+    /* ring size: big enough for the group at the click, small enough for the officers
+       (one per 2.6 tiles of ring at most) */
+    var crowdN = Crowd.neighbors(G, x, y, 9).length;
+    var R = Math.max(3, Math.min(8, 1.2 + Math.sqrt(crowdN / 2.5), n * 2.6 / (Math.PI * 2)));
     var offsSorted = [];
     for (i = 0; i < n; i++) {
       o = arr[i].o;
@@ -116,9 +127,10 @@ var TACT = (function () {
       officers: offsSorted,
       squads: quals,
       closed: false,
-      t: 0
+      t: 0, held: 0, checked: 0, found: 0, checkT: 0
     };
     kettleObj = k;
+    kettleClose(G, k);   /* the group is held from the start; checks begin once the ring is in place */
     return "ok";
   }
 
@@ -165,7 +177,7 @@ var TACT = (function () {
     var k = kettleObj;
     if (!k) return;
     var Cfg = C();
-    var maxSec = Cfg.kettleMaxSeconds || 60;
+    var maxSec = Cfg.kettleMaxSeconds || 120;
     k.t += dt;
 
     // count remaining assigned officers
@@ -177,17 +189,45 @@ var TACT = (function () {
     if (assigned < 4) { release(G); return; }
     if (k.t >= maxSec) { release(G, "Kettle released (time limit)"); return; }
 
-    if (!k.closed) {
+    if (!k.ready) {
       var near = 0;
       for (i = 0; i < k.officers.length; i++) {
         o = k.officers[i];
         if (o.kettleX == null) continue;
         if (dist2(o.x, o.y, o.kettleX, o.kettleY) <= 0.8 * 0.8) near++;
       }
-      if (near >= 0.7 * k.officers.length) kettleClose(G, k);
+      if (near >= 0.7 * k.officers.length) k.ready = true;
     }
 
     if (k.closed) {
+      /* screening: every 4 s officers check the person nearest the ring;
+         rioters (and the ringleader) are exposed, peaceful people are let out */
+      if (k.ready) k.checkT += dt;
+      if (k.checkT >= 4) {
+        k.checkT = 0;
+        var pick = null, pd = -1, held = 0, ql = Crowd.neighbors(G, k.x, k.y, k.R + 0.5);
+        for (var qi = 0; qi < ql.length; qi++) {
+          var qa = ql[qi];
+          if (!qa || qa.active === false || qa._kettled !== k.id) continue;
+          held++;
+          if (qa._checked === k.id) continue;
+          var qd = dist2(qa.x, qa.y, k.x, k.y);
+          if (qd > pd) { pd = qd; pick = qa; }
+        }
+        k.held = held;
+        if (pick) {
+          pick._checked = k.id; k.checked++;
+          if (pick.role === "rioter" || pick._ringleader) {
+            pick.revealedUntil = G.time + 40;
+            pick._identifiedUntil = G.time + 40;
+            k.found++;
+            if (typeof UI !== "undefined" && UI.say) UI.say(pick._ringleader ? "Kettle check: the RINGLEADER is in the kettle - arrest him!" : "Kettle check: rioter found - arrest him (A)");
+          } else {
+            pick._kettled = null;   /* checked and let go: walks out through the line */
+            pick.mood = Math.max(0, (pick.mood || 0) - 8);
+          }
+        }
+      }
       var innerR = k.R - 0.4;
       var outerR = k.R + 0.3;
       var list = Crowd.neighbors(G, k.x, k.y, k.R + 1.5);
@@ -204,7 +244,7 @@ var TACT = (function () {
             ny = k.y + (dy / d) * innerR;
             if (!Crowd.collides(G, nx, ny)) { a.x = nx; a.y = ny; }
           }
-          a.mood = Math.min(100, (a.mood || 0) + 1.2 * dt);
+          a.mood = Math.min(100, (a.mood || 0) + 0.5 * dt);
         } else {
           if (d < outerR) {
             if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
@@ -411,6 +451,16 @@ var TACT = (function () {
         ctx.arc(p.x, p.y, rpx, 0, Math.PI * 2);
         ctx.stroke();
       }
+      var inPlace = 0;
+      for (i = 0; i < k.officers.length; i++) { o = k.officers[i]; if (o.kettleX != null && dist2(o.x, o.y, o.kettleX, o.kettleY) <= 0.64) inPlace++; }
+      ctx.font = "bold " + Math.round(12 * Math.max(1, S * 0.6)) + "px Consolas, monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(10,20,40,0.75)";
+      var kt = k.ready ? "KETTLE  held " + k.held + "  checked " + k.checked + (k.found ? "  rioters " + k.found : "") : "KETTLE closing  " + inPlace + "/" + k.officers.length + " in place";
+      var tw = ctx.measureText(kt).width + 10;
+      ctx.fillRect(p.x - tw / 2, p.y - rpx - 22, tw, 17);
+      ctx.fillStyle = "#cfe0ff";
+      ctx.fillText(kt, p.x, p.y - rpx - 9);
       ctx.restore();
     }
 

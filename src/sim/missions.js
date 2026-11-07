@@ -170,6 +170,7 @@
       var t = m._agent;
       if (!t || t.arrested || !t.active) { finish(G, true); return; }
       t._ringleader = true;
+      if (t._identifiedUntil > G.time && !(G.time < m.revealed)) m.revealed = t._identifiedUntil;   /* found in a kettle check */
       if (G.time < m.revealed) {   /* identified: officers can see him */
         t.revealedUntil = G.time + 1;
         m.x = t.x; m.y = t.y; m.r = 2;

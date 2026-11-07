@@ -320,7 +320,7 @@ if ((k === "\\" || k === "F3") && typeof Art !== "undefined" && Art.toggleView) 
     }
     else if ((k === "k" || k === "K") && typeof TACT !== "undefined") {
       if (TACT.kettleActive()) { TACT.release(G); UI.mode = null; }
-      else { UI.mode = "kettle"; UI.say("Click the centre of the group to kettle (needs 2 squads with 3+ officers nearby)"); }
+      else { UI.mode = "kettle"; UI.say("Click the centre of the group to kettle (2 squads or 8+ officers within 16 tiles)"); }
     }
     else if ((k === "d" || k === "D") && typeof UNITS !== "undefined") { UI.mode = "drone"; UI.say("Click where the drone should watch (spots violent people from above)"); }
     else if ((k === "x" || k === "X") && typeof TACT !== "undefined") { UI.mode = "snatch"; UI.say("Click a person: 2 officers dash in and grab them"); }
@@ -708,8 +708,8 @@ function uiLeftClick(e) {
   }
   else if (UI.mode === "kettle") {
     var kr = TACT.kettle(G, t.x + 0.5, t.y + 0.5);
-    if (kr === "few") UI.say("Kettling needs at least 2 squads with 3+ foot officers within reach");
-    else if (kr === "ok") UI.say("Squads moving to encircle - mood inside will rise. K again to release");
+    if (kr === "few") UI.say("Kettling needs 2 squads (or 8+ officers) within 16 tiles of the click - squads in vehicles jump out");
+    else if (kr === "ok") UI.say("Squads encircling the group - once closed they check people one by one: rioters are exposed, others let out. K again to release");
   }
   else if (UI.mode === "snatch") {
     var sa = UI.pickAgent(e);
