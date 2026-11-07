@@ -248,7 +248,7 @@ var Art = (function () {
       drawBackdrop(ctx);
       drawGround(ctx);
       var rr = visibleRowRange(), d;
-      if (diags) for (d = rr.d0; d <= rr.d1; d++) if (diags[d]) fillSet(ctx, d);
+      if (diags) for (d = rr.d0; d <= rr.d1; d++) if (drow(d)) fillSet(ctx, d);
       return;
     }
     var cw = Math.max(1, Math.ceil(LW * _rs)), ch = Math.max(1, Math.ceil(LH * _rs));
@@ -268,7 +268,7 @@ var Art = (function () {
       drawGround(g);
       var rr2 = visibleRowRange(), d2;
       paintFarTrees(g);
-      if (diags) for (d2 = rr2.d0; d2 <= rr2.d1; d2++) if (diags[d2]) fillSet(g, d2);
+      if (diags) for (d2 = rr2.d0; d2 <= rr2.d1; d2++) if (drow(d2)) fillSet(g, d2);
       FC.key = key;
       FAR_DIRTY = false;
     }
@@ -283,7 +283,7 @@ var Art = (function () {
   }
 
   function updateCamera() {
-    cam.fit = LW / (W * TS);
+    cam.fit = LW / (Math.min(W, 480) * TS);   /* zoom 1 = at most 480 tiles across: big maps cannot zoom out further (draw cost) */
     cam.zoom = clamp(cam.zoom, 1, MAX_ZOOM);
     cam.S = cam.fit * cam.zoom;
     var vw = LW / cam.S, vh = LH / cam.S;
@@ -509,9 +509,9 @@ var Art = (function () {
     }
   }
 
-  function addWedges() {
-    var x, y;
-    for (y = 0; y < H; y++) {
+  function addWedgesRow(y) {
+    var x;
+    {
       for (x = 0; x < W; x++) {
         if (solidCh(tile(x, y))) continue;
         var c = cornerAt(x, y);
@@ -565,7 +565,7 @@ var Art = (function () {
     if (BSON) return;
     var x, y;
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         if (solidCh(tile(x, y))) continue;
         var c = cornerAt(x, y);
         if (!c) continue;
@@ -680,7 +680,7 @@ var Art = (function () {
     var x, y, cc;
     g.lineWidth = 1.5;
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         cc = chamferAt(x, y);
         if (!cc) continue;
         g.beginPath();
@@ -755,7 +755,7 @@ var Art = (function () {
     if (!BSON) return;
     var x, y, c;
     g.fillStyle = PAVE;
-    for (y = GY0; y < GY1; y++) for (x = 0; x < W; x++) {
+    for (y = GY0; y < GY1; y++) for (x = GX0; x < GX1; x++) {
       if (!(heights[y * W + x] > 0) || tints[y * W + x] === 3) continue;
       c = BLOCKSHAPE.cell(x, y);
       if (!c) continue;
@@ -786,7 +786,7 @@ var Art = (function () {
   function groundRoads(g, t) {
     if (!BSON || !RSHAPE) return;
     var x, y, c, i, j, n, P, isR, base = (MAP.roads && MAP.roads.length) ? "#666a71" : "#54585e";
-    for (y = GY0; y < GY1; y++) for (x = 0; x < W; x++) {
+    for (y = GY0; y < GY1; y++) for (x = GX0; x < GX1; x++) {
       c = RSHAPE.cell(x, y);
       if (solidCh(tile(x, y))) continue;
       isR = tile(x, y) === ".";
@@ -851,7 +851,16 @@ var Art = (function () {
     shopTiles = new Array(ND);
     var x, y;
     if (typeof Path2D === "undefined") return;
-    for (y = 0; y < H; y++) {
+    rowDone = new Uint8Array(ND);   /* building shapes are made per row when a row is first drawn */
+  }
+  var rowDone = null;
+  function drow(d) {
+    if (!diags || d < 0 || d >= ND) return null;
+    if (rowDone && !rowDone[d]) { rowDone[d] = 1; buildRow(d); }
+    return diags[d];
+  }
+  function buildRow(y) {
+    var x;
       for (x = 0; x < W; x++) {
         var h = heights[y * W + x];
         if (!(h > 0)) continue;
@@ -895,48 +904,123 @@ var Art = (function () {
           addBox(set, x + 0.22, y + 0.25, x + 0.78, y + 0.75, h, h + 0.22, set.rTop, set.rS, true);
         }
       }
-    }
-    if (!lowMode && !BSON) addWedges();
-    if (BSON) for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (!(heights[y * W + x] > 0)) shapeWedge(x, y);
+    if (!lowMode && !BSON) addWedgesRow(y);
+    if (BSON) for (x = 0; x < W; x++) if (!(heights[y * W + x] > 0)) shapeWedge(x, y);
   }
 
   /* ---------- ground texture ---------- */
-  /* The ground layer is painted in bands of rows, one band per tick, so the planning
-   * screen stays usable while a big map loads (a corner spinner shows meanwhile). */
-  var GY0 = 0, GY1 = 0, groundJob = 0;
+  /* The ground is cut into CH x CH tile chunks, each its own canvas, painted in the
+   * background nearest-to-view first; chunks far from view are dropped when memory runs
+   * short (big maps). A cheap 2 px-per-tile picture of the whole map (miniCv) shows under
+   * chunks that are not painted yet and when zoomed far out. */
+  var GY0 = 0, GY1 = 0, GX0 = 0, GX1 = 0, groundJob = 0;
+  var CH = 32, MS = 2, CW = 0, CHH = 0, chunks = null, chunkWant = [], chunkCount = 0, CHMAX = 100, chunkTick = 0, pumping = false, miniCv = null;
   function groundSpinner(on) {
     var d = document.getElementById("loading");
     if (d) d.style.display = on ? "flex" : "none";
   }
+  function buildMini() {
+    var cv = makeCanvas(W * MS, H * MS), g = cv.getContext("2d"), one = makeCanvas(W, H), og = one.getContext("2d");
+    var img = og.createImageData(W, H), d = img.data, x, y, i = 0, c;
+    var col = { ".": [102, 106, 113], "a": [150, 154, 162], "P": [228, 224, 214], "G": [150, 186, 120], "#": [184, 178, 166], "S": [184, 178, 166], "W": [134, 183, 220] };
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++, i += 4) {
+      c = col[tile(x, y)] || [226, 222, 212];
+      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+    }
+    og.putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(one, 0, 0, W * MS, H * MS);
+    return cv;
+  }
   function buildGround() {
     if (typeof document === "undefined") return;
     cityVer++;
-    groundCv = document.createElement("canvas");
-    groundCv.width = W * GT;
-    groundCv.height = H * GT;
-    var job = ++groundJob, rows = Math.max(16, Math.ceil(H / 6)), y0 = 0, cv = groundCv;
-    function band() {
-      if (job !== groundJob) return;   /* a newer map took over */
-      paintGroundBand(cv, y0, Math.min(H, y0 + rows));
-      y0 += rows;
-      cityVer++; FAR_DIRTY = true;   /* zoomed-out snapshot must pick up the new band */
-      if (y0 < H) { groundSpinner(true); setTimeout(band, 0); return; }
-      if (typeof STREETS !== "undefined") STREETS.paint(cv.getContext("2d"), W, H, GT, tile, paris() ? "paris" : "grid", 0, 0, "marks");
-      cityVer++; FAR_DIRTY = true;
-      groundSpinner(false);
+    groundJob++;
+    CW = Math.ceil(W / CH); CHH = Math.ceil(H / CH);
+    chunks = new Array(CW * CHH); chunkWant = []; chunkCount = 0;
+    CHMAX = Math.max(24, Math.floor(420e6 / (CH * GT * CH * GT * 4)));   /* about 420 MB of chunks */
+    miniCv = buildMini();
+    groundCv = miniCv;   /* "ground ready"; detail comes per chunk */
+    FAR_DIRTY = true;
+    if (CW * CHH <= CHMAX) for (var i = 0; i < CW * CHH; i++) chunkWant.push(i);   /* small map: paint it all */
+    pumpChunks();
+  }
+  function paintChunk(ci) {
+    var cx = ci % CW, cy = (ci - cx) / CW, x0 = cx * CH, y0 = cy * CH, x1 = Math.min(W, x0 + CH), y1 = Math.min(H, y0 + CH);
+    var cv = makeCanvas((x1 - x0) * GT, (y1 - y0) * GT), g = cv.getContext("2d");
+    g.translate(-x0 * GT, -y0 * GT);
+    window.GROUNDWIN = { x0: x0 - 2, y0: y0 - 2, x1: x1 + 2, y1: y1 + 2 };   /* painters outside art.js read it */
+    try { paintGroundBand(g, y0, y1, x0, x1); } finally { window.GROUNDWIN = null; }
+    chunks[ci] = { cv: cv, used: chunkTick };
+    chunkCount++;
+    if (chunkCount > CHMAX) {   /* drop the chunk unused the longest */
+      var old = -1, ou = 1e18;
+      for (var k = 0; k < chunks.length; k++) if (chunks[k] && chunks[k].used < ou && k !== ci) { ou = chunks[k].used; old = k; }
+      if (old >= 0 && ou < chunkTick) { chunks[old] = null; chunkCount--; }
     }
-    band();
+    cityVer++; FAR_DIRTY = true;
+  }
+  function pumpChunks() {
+    if (pumping) return;
+    pumping = true;
+    var job = groundJob;
+    function tick() {
+      if (job !== groundJob) { pumping = false; if (chunkWant.length) pumpChunks(); return; }
+      var t0 = Date.now();
+      while (chunkWant.length && Date.now() - t0 < 12) {
+        var ci = chunkWant.shift();
+        if (!chunks[ci]) paintChunk(ci);
+      }
+      if (chunkWant.length) setTimeout(tick, 0); else pumping = false;
+    }
+    setTimeout(tick, 0);
+  }
+  /* Draw ground tiles [tx0,tx1) x [ty0,ty1); tile (x, y) lands at (ox + x * s, oy + y * s) in g's
+   * current transform. fine = use painted chunks (else only the mini picture). */
+  function blitGround(g, tx0, ty0, tx1, ty1, ox, oy, s, fine) {
+    if (!miniCv) return;
+    tx0 = Math.max(0, Math.floor(tx0)); ty0 = Math.max(0, Math.floor(ty0));
+    tx1 = Math.min(W, Math.ceil(tx1)); ty1 = Math.min(H, Math.ceil(ty1));
+    if (tx1 <= tx0 || ty1 <= ty0) return;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(miniCv, tx0 * MS, ty0 * MS, (tx1 - tx0) * MS, (ty1 - ty0) * MS, ox + tx0 * s, oy + ty0 * s, (tx1 - tx0) * s, (ty1 - ty0) * s);
+    if (!fine || !chunks) return;
+    chunkTick++;
+    var want = [], cx, cy, c0x = Math.floor(tx0 / CH), c1x = Math.floor((tx1 - 1) / CH), c0y = Math.floor(ty0 / CH), c1y = Math.floor((ty1 - 1) / CH);
+    for (cy = c0y; cy <= c1y; cy++) for (cx = c0x; cx <= c1x; cx++) {
+      var ci = cy * CW + cx, c = chunks[ci];
+      if (c) {
+        c.used = chunkTick;
+        g.drawImage(c.cv, ox + cx * CH * s, oy + cy * CH * s, c.cv.width / GT * s, c.cv.height / GT * s);
+      } else if (chunkWant.indexOf(ci) < 0) want.push(ci);
+    }
+    if (want.length) {   /* nearest to the view centre first, ahead of background work */
+      var mx = (c0x + c1x) / 2, my = (c0y + c1y) / 2;
+      want.sort(function (a, b) {
+        var ax = a % CW - mx, ay = (a - a % CW) / CW - my, bx = b % CW - mx, by = (b - b % CW) / CW - my;
+        return (ax * ax + ay * ay) - (bx * bx + by * by);
+      });
+      chunkWant = want.concat(chunkWant);
+      pumpChunks();
+    }
+  }
+  /* visible tile rectangle of a context whose transform maps tiles * unit to device pixels */
+  function visTiles(g, unit) {
+    var m = g.getTransform(), inv = m.inverse(), cw = g.canvas.width, ch = g.canvas.height;
+    var a = inv.transformPoint({ x: 0, y: 0 }), b = inv.transformPoint({ x: cw, y: ch });
+    return { x0: Math.min(a.x, b.x) / unit, y0: Math.min(a.y, b.y) / unit, x1: Math.max(a.x, b.x) / unit, y1: Math.max(a.y, b.y) / unit, px: m.a * unit };
   }
 
-  function paintGroundBand(cv, B0, B1) {
-    var g = cv.getContext("2d"), x, y, ch, t = GT;
-    /* paint a 2-row margin so tiles that spill over the edge layer correctly, clipped to the band */
+  function paintGroundBand(g, B0, B1, X0, X1) {
+    var x, y, ch, t = GT;
+    /* paint a 2-tile margin so tiles that spill over the edge layer correctly, clipped to the chunk */
     GY0 = Math.max(0, B0 - 2); GY1 = Math.min(H, B1 + 2);
+    GX0 = Math.max(0, X0 - 2); GX1 = Math.min(W, X1 + 2);
     g.save();
-    g.beginPath(); g.rect(0, B0 * t, W * t, (B1 - B0) * t); g.clip();
+    g.beginPath(); g.rect(X0 * t, B0 * t, (X1 - X0) * t, (B1 - B0) * t); g.clip();
     var base = { ".": "#eef1f5", "P": "#e4e8ee", "G": "#bfd8a8", "a": "#d4dae2", "#": "#cdd4dd", "S": "#cdd4dd", "W": "#86b7dc" };
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         ch = tile(x, y);
         g.fillStyle = base[ch] || "#e3e8ee";
         g.fillRect(x * t, y * t, t + 1, t + 1);
@@ -976,7 +1060,7 @@ var Art = (function () {
     }
     /* sidewalks + curbs along buildings */
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         ch = tile(x, y);
         if (solidCh(ch) || ch === "G") continue;
         var sw = t * 0.26;
@@ -994,7 +1078,7 @@ var Art = (function () {
     }
     /* soft cast shadows: light from the north-west */
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         if (solidCh(tile(x, y))) continue;
         var gr;
         if (solidCh(tile(x - 1, y))) {
@@ -1017,7 +1101,7 @@ var Art = (function () {
     }
     g.fillStyle = "rgba(255,255,255,0.95)";
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         if (tile(x, y) !== ".") continue;
         var up = run(x, y - 1, 0, -1), dn = run(x, y + 1, 0, 1), vext = up + dn + 1;
         var lf = run(x - 1, y, -1, 0), rt = run(x + 1, y, 1, 0), hext = lf + rt + 1;
@@ -1031,7 +1115,7 @@ var Art = (function () {
     g.strokeStyle = "rgba(255,255,255,0.55)";
     g.lineWidth = 1;
     for (y = GY0; y < GY1; y++) {
-      for (x = 0; x < W; x++) {
+      for (x = GX0; x < GX1; x++) {
         if (tile(x, y) === "P") g.strokeRect(x * t + 0.5, y * t + 0.5, t - 1, t - 1);
       }
     }
@@ -1049,6 +1133,7 @@ var Art = (function () {
     }
     if (typeof BUILDINGS !== "undefined" && !lowMode) BUILDINGS.shadows(g, W, H, t, hAt);
     if (!lowMode) { groundWedges(g, t); PAVE = paris() ? THEME_PARIS.colors.pavement : "#f1f4f7"; groundChamfers(g, t); groundRoads(g, t); groundShapes(g, t); }
+    if (typeof STREETS !== "undefined") STREETS.paint(g, W, H, GT, tile, paris() ? "paris" : "grid", 0, 0, "marks");   /* road markings on top */
     g.restore();
   }
 
@@ -2177,8 +2262,8 @@ var Art = (function () {
   function drawGround(ctx) {
     if (!groundCv) return;
     setGround(ctx, 1);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(groundCv, 0, 0, W, H);
+    var v = visTiles(ctx, 1);
+    blitGround(ctx, v.x0 - 1, v.y0 - 1, v.x1 + 1, v.y1 + 1, 0, 0, 1, v.px >= 7);   /* chunks only when tiles are big enough to see */
     setScreen(ctx);
   }
   function drawDecals(ctx, G) {
@@ -2362,7 +2447,7 @@ var Art = (function () {
 
   function fillSet(ctx, d) {
     setIso(ctx);
-    fillPaths(ctx, diags[d]);
+    fillPaths(ctx, drow(d));
     setScreen(ctx);
   }
 
@@ -2432,23 +2517,21 @@ var Art = (function () {
     SC.rx0 = rx0; SC.rx1 = rx1; SC.ry0 = ry0; SC.ry1 = ry1;
     var bg = makeCanvas((rx1 - rx0) * k, (ry1 - ry0) * k), g = bg.getContext("2d");
     g.setTransform(k, 0, 0, k, -rx0 * k, -ry0 * k);
-    if (groundCv) {
-      g.imageSmoothingEnabled = true;
-      g.drawImage(groundCv, 0, 0, W * TS, H * TS);
-    }
+    if (groundCv) blitGround(g, rx0 / TS - 1, ry0 / TS - 1, rx1 / TS + 1, ry1 / TS + 1, 0, 0, TS, true);
     SC.bg = { c: bg, ox: rx0, oy: ry0 };
     SC.strips = [];
     for (d0 = 0; d0 < ND; d0 += 2) {
       var e = null;
-      if (diags && (diags[d0] || diags[d0 + 1])) {
+      var inY = (d0 + 2) * TS + 1 > ry0 && d0 * TS - HMAXZ * ZU - 1 < ry1;   /* only rows in this cache area get built */
+      if (diags && inY && (drow(d0) || drow(d0 + 1))) {
         var sx0 = Math.max(rx0, 0), sx1 = Math.min(rx1, W * TS);
         var top = snap(Math.max(ry0, d0 * TS - HMAXZ * ZU - 1), ry0, k);
         var bot = Math.min(ry1, (d0 + 2) * TS + 1);
         if (bot > top && sx1 > sx0) {
           var c = makeCanvas((sx1 - sx0) * k, (bot - top) * k), cg = c.getContext("2d");
           cg.setTransform(k, 0, 0, k, -sx0 * k, -top * k);
-          if (diags[d0]) fillPaths(cg, diags[d0]);
-          if (diags[d0 + 1]) fillPaths(cg, diags[d0 + 1]);
+          if (drow(d0)) fillPaths(cg, drow(d0));
+          if (drow(d0 + 1)) fillPaths(cg, drow(d0 + 1));
           e = { c: c, ox: sx0, oy: top };
         }
       }
@@ -2563,7 +2646,7 @@ var Art = (function () {
     drawBackdrop(ctx);
     drawGround(ctx);
     var rr = visibleRowRange(), d;
-    if (diags) for (d = rr.d0; d <= rr.d1; d++) if (diags[d]) fillSet(ctx, d);
+    if (diags) for (d = rr.d0; d <= rr.d1; d++) if (drow(d)) fillSet(ctx, d);
     ctx.restore();
   }
   function drawAgents(ctx, G) {
@@ -2743,9 +2826,9 @@ var Art = (function () {
                 setScreen(ctx);
               }
             }
-          } else if (diags && diags[d] && d >= rr.d0 && d <= rr.d1) fillSet(ctx, d);
+          } else if (diags && d >= rr.d0 && d <= rr.d1 && drow(d)) fillSet(ctx, d);
           if (d >= rr.d0 && d <= rr.d1) {
-            if (shopTiles && shopTiles[d]) drawShopDecor(ctx, shopTiles[d], G, t);
+            if (shopTiles && (drow(d), shopTiles[d])) drawShopDecor(ctx, shopTiles[d], G, t);
             if (lmRows && lmRows[d]) LANDMARKS_ART.draw(ctx, G, lmRows[d]);
           }
         }
@@ -2802,7 +2885,17 @@ var Art = (function () {
     centerOn: centerOn,
     isLow: function () { return lowMode; },
     toggleLow: toggleLow,
-    ground: function () { return groundCv ? { cv: groundCv, GT: GT } : null; },   /* cached street layer (GT px per tile) for insets */
+    groundStats: function () { return { chunks: chunkCount, want: chunkWant.length, CW: CW, CHH: CHH, CHMAX: CHMAX, GT: GT, pumping: pumping, tick: chunkTick }; },
+    ground: function () { return groundCv ? { cv: miniCv, GT: MS } : null; },
+    /* draw ground tiles [x0,x0+w) x [y0,y0+h) into the screen rect (dx,dy,dw,dh) (squad cam inset) */
+    groundDraw: function (ctx, x0, y0, w, h, dx, dy, dw, dh) {
+      if (!groundCv) return false;
+      var s = dw / w;
+      ctx.save(); ctx.beginPath(); ctx.rect(dx, dy, dw, dh); ctx.clip();
+      blitGround(ctx, x0, y0, x0 + w, y0 + h, dx - x0 * s, dy - y0 * s, s, true);
+      ctx.restore();
+      return true;
+    },   /* cached street layer (GT px per tile) for insets */
     camera: cam,
     setView: setView,
     getView: getView,

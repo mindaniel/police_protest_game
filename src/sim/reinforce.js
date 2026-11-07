@@ -68,8 +68,11 @@ var REINFORCE = (function () {
     var center = cfg.plazaCenter || { x: cfg.width / 2, y: cfg.height / 2 };
     var best = null;
     var bestScore = -1e9;
-    for (var y = 0; y + h <= cfg.height; y++) {
-      for (var x = 0; x + w <= cfg.width; x++) {
+    /* the best spots are 22-40 tiles from the centre: search 70 around it, not the whole (maybe huge) map */
+    var sy0 = Math.max(0, Math.floor(center.y - 70)), sy1 = Math.min(cfg.height - h, Math.ceil(center.y + 70));
+    var sx0 = Math.max(0, Math.floor(center.x - 70)), sx1 = Math.min(cfg.width - w, Math.ceil(center.x + 70));
+    for (var y = sy0; y <= sy1; y++) {
+      for (var x = sx0; x <= sx1; x++) {
         var ok = true;
         for (var yy = 0; yy < h && ok; yy++) {
           for (var xx = 0; xx < w && ok; xx++) {

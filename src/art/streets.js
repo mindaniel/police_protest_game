@@ -70,11 +70,14 @@ var STREETS = (function () {
 
   var segGrid = null, segFor = null, SEG_C = 8, segCols = 0, segRows = 0;   /* nearestRoad index, kept per map */
   /* Y0..Y1: rows to paint (banded loading); mode "band" skips road markings, "marks" paints only them */
+  var junCache = null, junCacheFor = null;
   function paint(g, W, H, GT, tile, style, Y0, Y1, mode) {
     var T = GT, i, x, y, px, py, n, k;
     if (Y0 == null) Y0 = 0;
     if (Y1 == null) Y1 = H;
     if (mode === "marks") { Y0 = 0; Y1 = 0; }
+    var gw = (typeof GROUNDWIN !== "undefined" && GROUNDWIN);   /* chunk being painted: only its columns (and rows) */
+    var X0 = gw ? Math.max(0, gw.x0) : 0, X1 = gw ? Math.min(W, gw.x1) : W;
     var isGrid = style !== "paris";
     var legacyRoadBase = isGrid ? "#c4c8ce" : "#cfc8bb";
     var paveCol = isGrid ? "#eceef1" : "#ece6da";
@@ -170,58 +173,75 @@ var STREETS = (function () {
       return best;
     }
 
+    /* junctions keep a grid (8-tile cells) so lookups and the build stay fast on big maps */
+    var JC = 8;
     function inJunction(px0, py0, junctions) {
-      var j;
-      for (j = 0; j < junctions.length; j++) {
-        var q = junctions[j];
-        var dx = px0 - q.x, dy = py0 - q.y;
-        if (dx * dx + dy * dy < q.r * q.r) return true;
+      var gr = junctions.grid;
+      if (!gr) {
+        for (var j = 0; j < junctions.length; j++) {
+          var q = junctions[j], dx = px0 - q.x, dy = py0 - q.y;
+          if (dx * dx + dy * dy < q.r * q.r) return true;
+        }
+        return false;
+      }
+      var cx = Math.floor(px0 / JC), cy = Math.floor(py0 / JC), ox, oy, k, L, i;
+      for (oy = -1; oy <= 1; oy++) for (ox = -1; ox <= 1; ox++) {
+        L = gr[(cx + ox) + "," + (cy + oy)];
+        if (!L) continue;
+        for (i = 0; i < L.length; i++) {
+          var qq = L[i], ex = px0 - qq.x, ey = py0 - qq.y;
+          if (ex * ex + ey * ey < qq.r * qq.r) return true;
+        }
       }
       return false;
     }
 
+    /* pairs of road points closer than the roads' half widths (same rule as before, grid search) */
     function buildJunctions() {
       var roads = MAP.roads || [];
-      var junctions = [];
-      var i0, j0, a, b, pa, pb, ia, ib, ax, ay, bx, by;
-      var limit, dx, dy, d2, duplicate, q;
+      var junctions = [], pgrid = {}, jgrid = {};
+      var i0, ia, a, pa, key, cx, cy, ox, oy, L, k, e, b, limit, dx, dy, mx, my, dup, JL, q, t;
+      for (i0 = 0; i0 < roads.length; i0++) {
+        pa = roads[i0].p || [];
+        for (ia = 0; ia + 1 < pa.length; ia += 2) {
+          key = Math.floor(pa[ia] / JC) + "," + Math.floor(pa[ia + 1] / JC);
+          (pgrid[key] || (pgrid[key] = [])).push(i0, ia);
+        }
+      }
       for (i0 = 0; i0 < roads.length; i0++) {
         a = roads[i0];
         pa = a.p || [];
         for (ia = 0; ia + 1 < pa.length; ia += 2) {
-          ax = pa[ia];
-          ay = pa[ia + 1];
-          for (j0 = i0; j0 < roads.length; j0++) {
-            b = roads[j0];
-            pb = b.p || [];
-            for (ib = (j0 === i0 ? ia + 2 : 0); ib + 1 < pb.length; ib += 2) {
-              bx = pb[ib];
-              by = pb[ib + 1];
+          var ax = pa[ia], ay = pa[ia + 1];
+          cx = Math.floor(ax / JC); cy = Math.floor(ay / JC);
+          for (oy = -1; oy <= 1; oy++) for (ox = -1; ox <= 1; ox++) {
+            L = pgrid[(cx + ox) + "," + (cy + oy)];
+            if (!L) continue;
+            for (k = 0; k < L.length; k += 2) {
+              var j0 = L[k], ib = L[k + 1];
+              if (j0 < i0 || (j0 === i0 && ib < ia + 2)) continue;   /* each pair once, as before */
+              b = roads[j0];
+              var bx = b.p[ib], by = b.p[ib + 1];
               limit = ((a.w || 1) + (b.w || 1)) * 0.25;
-              dx = ax - bx;
-              dy = ay - by;
-              d2 = dx * dx + dy * dy;
-              if (d2 > limit * limit) continue;
-              duplicate = false;
-              for (q = 0; q < junctions.length; q++) {
-                dx = junctions[q].x - (ax + bx) * 0.5;
-                dy = junctions[q].y - (ay + by) * 0.5;
-                if (dx * dx + dy * dy < 0.04) {
-                  duplicate = true;
-                  break;
-                }
+              dx = ax - bx; dy = ay - by;
+              if (dx * dx + dy * dy > limit * limit) continue;
+              mx = (ax + bx) * 0.5; my = (ay + by) * 0.5;
+              dup = false;
+              t = Math.floor(mx / JC) + "," + Math.floor(my / JC);
+              JL = jgrid[t];
+              if (JL) for (q = 0; q < JL.length; q++) {
+                dx = JL[q].x - mx; dy = JL[q].y - my;
+                if (dx * dx + dy * dy < 0.04) { dup = true; break; }
               }
-              if (!duplicate) {
-                junctions.push({
-                  x: (ax + bx) * 0.5,
-                  y: (ay + by) * 0.5,
-                  r: Math.max(a.w || 1, b.w || 1) * 0.5
-                });
-              }
+              if (dup) continue;
+              e = { x: mx, y: my, r: Math.max(a.w || 1, b.w || 1) * 0.5 };
+              junctions.push(e);
+              (jgrid[t] || (jgrid[t] = [])).push(e);
             }
           }
         }
       }
+      junctions.grid = jgrid;
       return junctions;
     }
 
@@ -269,6 +289,7 @@ var STREETS = (function () {
           ay = pts[j + 1];
           bx = pts[j + 2];
           by = pts[j + 3];
+          if (gw && (Math.max(ax, bx) < gw.x0 - 2 || Math.min(ax, bx) > gw.x1 + 2 || Math.max(ay, by) < gw.y0 - 2 || Math.min(ay, by) > gw.y1 + 2)) continue;   /* outside the chunk */
           dx = bx - ax;
           dy = by - ay;
           len = Math.sqrt(dx * dx + dy * dy);
@@ -344,6 +365,7 @@ var STREETS = (function () {
         crossing = crossings[ci];
         tx = crossing[0];
         ty = crossing[1];
+        if (gw && (tx < gw.x0 - 2 || tx > gw.x1 + 2 || ty < gw.y0 - 2 || ty > gw.y1 + 2)) continue;
         if (!roadAt(Math.floor(tx), Math.floor(ty))) continue;
 
         nearest = nearestRoad(tx, ty);
@@ -382,7 +404,7 @@ var STREETS = (function () {
 
     // ---- 1. ROAD SURFACE ----
     var spkA = [], spkB = [];
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== ".") continue;
 
       var ox = x * T, oy = y * T;
@@ -430,7 +452,7 @@ var STREETS = (function () {
 
     // ---- 2. PAVEMENTS ----
     var paveW = T * 0.32;
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== ".") continue;
 
       var sides = [];
@@ -524,13 +546,15 @@ var STREETS = (function () {
 
     // ---- 3. ROAD MARKINGS AND JUNCTION CLEARING ----
     if (hasRoadData && mode !== "band") {
-      var junctions = buildJunctions();
+      /* junctions depend only on the road list: build once (O(n^2)), not once per ground chunk */
+      if (junCacheFor !== MAP.roads) { junCache = buildJunctions(); junCacheFor = MAP.roads; }
+      var junctions = junCache;
       drawRoadMarkings(junctions);
       drawZebras();
     } else {
       // Preserve the legacy road-marking appearance for maps without road metadata.
       var runs = {};
-      for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+      for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
         if (tile(x, y) !== ".") continue;
         var hl = 1, hr = 1, vu = 1, vd = 1;
         while (tile(x - hl, y) === ".") hl++;
@@ -545,7 +569,7 @@ var STREETS = (function () {
 
       var whiteLegacy = "rgba(255,255,255,1)";
       var edgeLegacy = "rgba(255,255,255,0.9)";
-      for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+      for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
         if (tile(x, y) !== ".") continue;
         var r = runs[x + "," + y];
         var isJuncH = r.hl >= 2 && r.hr >= 2 && r.v >= 3;
@@ -609,7 +633,7 @@ var STREETS = (function () {
     }
 
     // ---- 4. STREET FURNITURE ----
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== ".") continue;
       var ox4 = x * T, oy4 = y * T;
       var nearPave = isB(tile(x - 1, y)) || isB(tile(x + 1, y)) ||
@@ -644,7 +668,7 @@ var STREETS = (function () {
     }
 
     // ---- 5. LANES 'a' ----
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== "a") continue;
       var ox5 = x * T, oy5 = y * T;
       g.fillStyle = cobBase; g.fillRect(ox5, oy5, T, T);
@@ -664,7 +688,7 @@ var STREETS = (function () {
 
     // ---- 6. PLAZA 'P' ----
     var plazaCount = 0, pminx = W, pmaxx = 0, pminy = H, pmaxy = 0;
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) === "P") {
         plazaCount++;
         if (x < pminx) pminx = x;
@@ -678,7 +702,7 @@ var STREETS = (function () {
       (pmaxx - pminx + 1) * (pmaxy - pminy + 1) > 60;
     var plazaBand = bigPlaza && (pmaxx - pminx) > 4 && (pmaxy - pminy) > 4;
 
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== "P") continue;
       var ox6 = x * T, oy6 = y * T;
       var half = T * 0.5;
@@ -708,7 +732,7 @@ var STREETS = (function () {
     }
 
     // ---- 7. GARDENS 'G' ----
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== "G") continue;
       var ox7 = x * T, oy7 = y * T;
       g.fillStyle = grassCol; g.fillRect(ox7, oy7, T, T);
@@ -745,7 +769,7 @@ var STREETS = (function () {
     }
 
     // ---- 8. WATER SHORELINE ----
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       if (tile(x, y) !== "W") continue;
       var ox8 = x * T, oy8 = y * T, sw = T * 0.12;
       if (tile(x, y - 1) !== "W" && tile(x, y - 1) !== "#") {
@@ -763,7 +787,7 @@ var STREETS = (function () {
     }
 
     // ---- 9. AMBIENT OCCLUSION ----
-    for (y = Y0; y < Y1; y++) for (x = 0; x < W; x++) {
+    for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) {
       var c = tile(x, y);
       if (c === "#" || c === "S" || c === "W") continue;
       var ox9 = x * T, oy9 = y * T;

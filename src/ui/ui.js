@@ -1136,8 +1136,11 @@ function uiPlanningLayer(ctx, g) {
   if (UI.mode !== "barrier") {
     /* roads keep their normal look; only street tiles where squads may NOT be placed get a faint red */
     ctx.fillStyle = "rgba(220,60,60,0.14)";
-    for (y = 0; y < MAP.height; y++) {
-      for (x = 0; x < MAP.width; x++) {
+    var vm = ctx.getTransform().inverse(), va = vm.transformPoint({ x: 0, y: 0 }), vb = vm.transformPoint({ x: ctx.canvas.width, y: ctx.canvas.height });   /* visible tiles only */
+    var vx0 = Math.max(0, Math.floor(Math.min(va.x, vb.x) / ts) - 1), vx1 = Math.min(MAP.width, Math.ceil(Math.max(va.x, vb.x) / ts) + 1);
+    var vy0 = Math.max(0, Math.floor(Math.min(va.y, vb.y) / ts) - 1), vy1 = Math.min(MAP.height, Math.ceil(Math.max(va.y, vb.y) / ts) + 1);
+    for (y = vy0; y < vy1; y++) {
+      for (x = vx0; x < vx1; x++) {
         if (Police.isWalkable(g, x, y) && !Police.canDeploy(g, x, y)) ctx.fillRect(x * ts, y * ts, ts, ts);
       }
     }

@@ -42,19 +42,26 @@ var TRAFFIC = (function(){
       return kx + ":" + ky;
     }
 
+    var ngrid = {};   // 1-tile cells -> nodes, so snapping is not a scan of every node (big maps)
     function addNode(x,y){
       var n = { x:x, y:y, idx:nodes.length };
       nodes.push(n);
+      var k = Math.floor(x) + "," + Math.floor(y);
+      (ngrid[k] || (ngrid[k] = [])).push(n);
       return n;
     }
 
     function snapNode(x,y){
-      var best = null, bestD = 0.8;
-      for (var i=0;i<nodes.length;i++){
-        var n = nodes[i];
-        var dx = n.x-x, dy = n.y-y;
-        var d = Math.sqrt(dx*dx+dy*dy);
-        if (d < bestD){ bestD = d; best = n; }
+      var best = null, bestD = 0.8, cx = Math.floor(x), cy = Math.floor(y);
+      for (var oy=-1; oy<=1; oy++) for (var ox=-1; ox<=1; ox++){
+        var L = ngrid[(cx+ox) + "," + (cy+oy)];
+        if (!L) continue;
+        for (var i=0;i<L.length;i++){
+          var n = L[i];
+          var dx = n.x-x, dy = n.y-y;
+          var d = Math.sqrt(dx*dx+dy*dy);
+          if (d < bestD || (d === bestD && best && n.idx < best.idx)){ bestD = d; best = n; }
+        }
       }
       if (best) return best;
       return addNode(x,y);
@@ -76,17 +83,27 @@ var TRAFFIC = (function(){
     // Build split points per road (indices into pts).
     var splits = [];
     for (var i=0;i<roadVerts.length;i++) splits.push([]);
+    // endpoints in 8-tile cells: each segment only checks endpoints near it (was every road x every road)
+    var EC = 8, egrid = {};
+    for (var b0=0;b0<roadVerts.length;b0++){
+      var rbs = roadVerts[b0], ends = [rbs.pts[0], rbs.pts[rbs.pts.length-1]];
+      for (var e0=0;e0<2;e0++){
+        var ek = Math.floor(ends[e0].x/EC) + "," + Math.floor(ends[e0].y/EC);
+        (egrid[ek] || (egrid[ek] = [])).push(b0, ends[e0]);
+      }
+    }
     for (var a=0;a<roadVerts.length;a++){
       var ra = roadVerts[a];
-      for (var b=0;b<roadVerts.length;b++){
-        if (a===b) continue;
-        var rb = roadVerts[b];
-        // endpoints of rb
-        var eps = [rb.pts[0], rb.pts[rb.pts.length-1]];
-        for (var e=0;e<2;e++){
-          var ep = eps[e];
-          // find closest point on ra interior
-          for (var s=0; s<ra.pts.length-1; s++){
+      for (var s=0; s<ra.pts.length-1; s++){
+        var q0 = ra.pts[s], q1 = ra.pts[s+1];
+        var gx0 = Math.floor((Math.min(q0.x,q1.x)-1)/EC), gx1 = Math.floor((Math.max(q0.x,q1.x)+1)/EC);
+        var gy0 = Math.floor((Math.min(q0.y,q1.y)-1)/EC), gy1 = Math.floor((Math.max(q0.y,q1.y)+1)/EC);
+        for (var gy=gy0; gy<=gy1; gy++) for (var gx=gx0; gx<=gx1; gx++){
+          var EL = egrid[gx + "," + gy];
+          if (!EL) continue;
+          for (var ei=0; ei<EL.length; ei+=2){
+            if (EL[ei] === a) continue;
+            var ep = EL[ei+1];
             var p0 = ra.pts[s], p1 = ra.pts[s+1];
             var dx = p1.x-p0.x, dy = p1.y-p0.y;
             var len2 = dx*dx+dy*dy;

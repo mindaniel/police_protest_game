@@ -113,6 +113,37 @@ var BLOCKSHAPE = (function make() {   /* make() gives a separate instance (roads
     return s / 2;
   }
 
+  function bounds(p, axis) {
+    var lo = 1e9, hi = -1e9;
+    for (var i = axis; i < p.length; i += 2) { if (p[i] < lo) lo = p[i]; if (p[i] > hi) hi = p[i]; }
+    return [lo, hi];
+  }
+  function splitY(p, ya, yb, touched) {
+    if (p.length < 6 || yb <= ya) return;
+    if (yb - ya === 1) {
+      var bx = bounds(p, 0);
+      splitX(p, ya, Math.max(0, Math.floor(bx[0])), Math.min(W, Math.ceil(bx[1])), touched);
+      return;
+    }
+    var m = (ya + yb) >> 1;
+    splitY(clipAxis(p, 1, m, -1), ya, m, touched);
+    splitY(clipAxis(p, 1, m, 1), m, yb, touched);
+  }
+  function splitX(p, y, xa, xb, touched) {
+    if (p.length < 6 || xb <= xa) return;
+    if (xb - xa === 1) {
+      var a = area(p);
+      if (Math.abs(a) < 1e-4) return;
+      var c = cells[y * W + xa] || (cells[y * W + xa] = { polys: [], walls: [], area: 0 });
+      c.polys.push(p); c.area += a;
+      touched[y * W + xa] = 1;
+      return;
+    }
+    var m = (xa + xb) >> 1;
+    splitX(clipAxis(p, 0, m, -1), y, xa, m, touched);
+    splitX(clipAxis(p, 0, m, 1), y, m, xb, touched);
+  }
+
   function build(w, h, solid) {
     var t0 = Date.now(), i, x, y;
     W = w; H = h; cells = new Array(W * H);
@@ -126,21 +157,9 @@ var BLOCKSHAPE = (function make() {   /* make() gives a separate instance (roads
     for (var pi = 0; pi < polys.length; pi++) {
       var P = polys[pi], y0 = 1e9, y1 = -1e9, x0 = 1e9, x1 = -1e9;
       for (i = 0; i < P.length; i += 2) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); }
-      for (y = Math.max(0, Math.floor(y0)); y < Math.min(H, Math.ceil(y1)); y++) {
-        var strip = clipAxis(clipAxis(P, 1, y, 1), 1, y + 1, -1);
-        if (strip.length < 6) continue;
-        var sx0 = 1e9, sx1 = -1e9;
-        for (i = 0; i < strip.length; i += 2) { sx0 = Math.min(sx0, strip[i]); sx1 = Math.max(sx1, strip[i]); }
-        for (x = Math.max(0, Math.floor(sx0)); x < Math.min(W, Math.ceil(sx1)); x++) {
-          var cp = clipAxis(clipAxis(strip, 0, x, 1), 0, x + 1, -1);
-          if (cp.length < 6) continue;
-          var a = area(cp);
-          if (Math.abs(a) < 1e-4) continue;
-          var c = cells[y * W + x] || (cells[y * W + x] = { polys: [], walls: [], area: 0 });
-          c.polys.push(cp); c.area += a;
-          touched[y * W + x] = 1;
-        }
-      }
+      /* halve the polygon recursively (rows, then columns) instead of clipping the whole outline
+         once per row and column: same pieces, far less work for big outlines like a road network */
+      splitY(P, Math.max(0, Math.floor(y0)), Math.min(H, Math.ceil(y1)), touched);
       /* south-facing walls: edges with outward normal pointing +y, i.e. dx < 0 */
       var n = P.length / 2;
       for (i = 0; i < n; i++) {

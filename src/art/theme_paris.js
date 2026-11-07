@@ -86,8 +86,9 @@ var THEME_PARIS = (function () {
 
   function ground(g, W, H, GT, tile) {
     var x, y, ch, px, py, h1;
-    for (y = 0; y < H; y++) {
-      for (x = 0; x < W; x++) {
+    var gw = (typeof GROUNDWIN !== "undefined" && GROUNDWIN) || { x0: 0, y0: 0, x1: W, y1: H };   /* chunk being painted */
+    for (y = Math.max(0, gw.y0); y < Math.min(H, gw.y1); y++) {
+      for (x = Math.max(0, gw.x0); x < Math.min(W, gw.x1); x++) {
         ch = tile(x, y);
         px = x * GT; py = y * GT;
         if (ch === "W") {
@@ -152,8 +153,9 @@ var THEME_PARIS = (function () {
       }
     }
     // dashed centre lines on wide roads
-    for (y = 0; y < H; y++) {
-      for (x = 0; x < W; x++) {
+    var gw = (typeof GROUNDWIN !== "undefined" && GROUNDWIN) || { x0: 0, y0: 0, x1: W, y1: H };   /* chunk being painted */
+    for (y = Math.max(0, gw.y0); y < Math.min(H, gw.y1); y++) {
+      for (x = Math.max(0, gw.x0); x < Math.min(W, gw.x1); x++) {
         if (tile(x, y) !== ".") continue;
         if ((x + y) % 2 !== 0) continue;
         var horiz = tile(x - 1, y) === "." && tile(x + 1, y) === ".";

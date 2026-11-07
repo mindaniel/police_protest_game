@@ -25,6 +25,7 @@ var SQUADCAM = (function () {
   function buildBase() {
     if (typeof MAP === "undefined" || !MAP || !MAP.rows) return;
     if (baseRef === MAP.rows && base) return;
+    if (typeof Art !== "undefined" && Art.groundDraw) return;   /* the inset uses the painted ground instead */
     var c = document.createElement("canvas");
     c.width = MAP.width * px;
     c.height = MAP.height * px;
@@ -290,7 +291,9 @@ var SQUADCAM = (function () {
     if (typeof Art !== "undefined" && Art.ground) {
       try { gr = Art.ground(); } catch (e) { gr = null; }
     }
-    if (gr && gr.cv && gr.GT) {
+    if (Art.groundDraw && Art.groundDraw(ctx, x0, y0, viewW, viewH, ix, iy, mapW, ih)) {
+      /* painted ground chunks (art.js) */
+    } else if (gr && gr.cv && gr.GT) {
       var GT = gr.GT;
       var sx = x0 * GT, sy = y0 * GT, sw = viewW * GT, sh = viewH * GT;
       ctx.imageSmoothingEnabled = true;

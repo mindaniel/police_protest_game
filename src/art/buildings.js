@@ -330,21 +330,22 @@ var BUILDINGS = (function () {
   function shadows(g, W, H, GT, hAt) {
     // draw at 1/4 of the ground resolution, then scale up (that is the blur)
     var sc = 0.25;
-    var sw = Math.max(1, Math.ceil(W * GT * sc));
-    var sh = Math.max(1, Math.ceil(H * GT * sc));
+    var gw = (typeof GROUNDWIN !== "undefined" && GROUNDWIN) || { x0: 0, y0: 0, x1: W, y1: H };   /* only the chunk being painted */
+    var X0 = Math.max(0, gw.x0), Y0 = Math.max(0, gw.y0), X1 = Math.min(W, gw.x1), Y1 = Math.min(H, gw.y1);
+    var sw = Math.max(1, Math.ceil((X1 - X0) * GT * sc));
+    var sh = Math.max(1, Math.ceil((Y1 - Y0) * GT * sc));
     var off = mk(sw, sh);
     var o = off.getContext("2d");
     o.fillStyle = "#000";
     var x, y, h, hx, hy;
-    // iterate all tiles
-    for (y = 0; y < H; y++) {
-      for (x = 0; x < W; x++) {
+    for (y = Math.max(0, Y0 - 4); y < Y1; y++) {   /* shadows fall down-right: start a little above/left */
+      for (x = Math.max(0, X0 - 4); x < X1; x++) {
         h = hAt(x, y);
         if (!h) continue;
         hx = h * 0.55; hy = h * 0.35;
         // sweep the footprint from the building to its offset (a solid shadow volume)
         for (var st = 0.25; st <= 1.001; st += 0.25) {
-          o.fillRect((x + hx * st) * GT * sc, (y + hy * st) * GT * sc, GT * sc, GT * sc);
+          o.fillRect((x - X0 + hx * st) * GT * sc, (y - Y0 + hy * st) * GT * sc, GT * sc, GT * sc);
         }
       }
     }
@@ -355,7 +356,7 @@ var BUILDINGS = (function () {
     // cheap blur: draw downscaled canvas scaled up (its own pixel blur from scaling)
     g.imageSmoothingEnabled = true;
     if (g.imageSmoothingQuality) g.imageSmoothingQuality = "low";
-    g.drawImage(off, 0, 0, sw, sh, 0, 0, W * GT, H * GT);
+    g.drawImage(off, 0, 0, sw, sh, X0 * GT, Y0 * GT, (X1 - X0) * GT, (Y1 - Y0) * GT);
     g.restore();
     // fallback if multiply unsupported
     var op = g.globalCompositeOperation;
