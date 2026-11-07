@@ -104,6 +104,7 @@ var HELP = (function () {
       ln("T", "speed 1x / 2x", 2);
       ln("Q", "next squad of the same type", 2);
       ln("H", "take control of the squad (WASD, E, F, Tab)", 2);
+      ln("V", "3D street view while in control (drag to look)", 2);
       ln("PgUp/PgDn", "pick alert (or click it), Enter sends unit", 2);
       ln("wheel / drag", "zoom / pan", 3);
       ln("Esc", "cancel click mode", 2);

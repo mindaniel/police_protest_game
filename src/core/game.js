@@ -357,6 +357,14 @@ function frame(now) {
   }
 
   if (!drawIt) { requestAnimationFrame(frame); return; }
+  if (typeof VIEW3D !== "undefined" && VIEW3D.active()) {   /* 3D street view replaces the map drawing */
+    var now3 = performance.now(), d3 = Math.min(0.1, (now3 - (Game._t3 || now3)) / 1000);
+    Game._t3 = now3;
+    VIEW3D.render(G, d3);
+    requestAnimationFrame(frame);
+    return;
+  }
+  Game._t3 = 0;
   Game.ctx.setTransform(Game.renderScale || 1, 0, 0, Game.renderScale || 1, 0, 0);
   if (typeof Art !== "undefined") {
     Art.draw(Game.ctx, G);

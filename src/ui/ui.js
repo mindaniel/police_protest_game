@@ -192,6 +192,10 @@ UI.init = function (g, game) {
     }
     /* POV (pov.js): H takes control of the selected squad; while active it gets the keys first */
     if (typeof POV !== "undefined" && UI.screen === "playing") {
+      if (POV.active() && (k === "v" || k === "V") && typeof VIEW3D !== "undefined" && typeof THREE !== "undefined") {   /* 3D street view */
+        UI.say(VIEW3D.toggle(G) ? "3D view (V for the map)" : "Map view");
+        e.preventDefault(); return;
+      }
       if (POV.active()) { if (POV.keydown(e)) { e.preventDefault(); return; } }
       else if (k === "h" || k === "H") { POV.toggle(G); e.preventDefault(); return; }
     }

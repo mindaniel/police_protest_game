@@ -279,6 +279,10 @@ var POV = (function () {
     if (hasDir) {
       var len = Math.sqrt(dx * dx + dy * dy);
       if (len > 0) { dx /= len; dy /= len; }
+      if (typeof VIEW3D !== "undefined" && VIEW3D.active()) {   /* 3D: W = away from the camera, D = to its right */
+        var yw = VIEW3D.yaw(), fx = Math.cos(yw), fz = Math.sin(yw), fwd = -dy, rgt = dx;
+        dx = fx * fwd - fz * rgt; dy = fz * fwd + fx * rgt;
+      }
       moveAcc += dt;
       if (moveAcc >= MOVE_INTERVAL) {
         moveAcc = 0;

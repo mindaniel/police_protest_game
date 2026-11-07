@@ -2785,6 +2785,7 @@ var Art = (function () {
     if (det !== "far") drawHiddenOutlines(ctx, G);
   }
   return {
+    heightAt: function (x, y) { return heights ? hAt(x, y) : 0; },   /* building height (view3d.js) */
     invalidate: invalidate,
     drawPerson: drawPerson,
     init: init,
