@@ -1122,6 +1122,46 @@ var Police = (function () {
     return "ok";
   }
 
+  /* Watchdog: a unit that has not moved half a tile in 25 s while its goal is more than
+   * 3 tiles away is put on the nearest street tile (12 tiles) that is closer to the goal. */
+  function unstick(G, dt) {
+    G._unstickT = (G._unstickT || 0) + dt;
+    if (G._unstickT < 1) return;
+    var step = G._unstickT, said = {}, W = MAP.width, k, u, veh;
+    G._unstickT = 0;
+    var n1 = G.vehicles.length, n2 = G.officers.length;
+    for (k = 0; k < n1 + n2; k++) {
+      u = k < n1 ? G.vehicles[k] : G.officers[k - n1];
+      veh = k < n1;
+      if (typeof u.tx !== "number") continue;
+      if (veh ? !(u.ctrl || (u.crew && u.crew.length)) : (u.escorting || u.snatch || typeof u.kettleX === "number" || u.arrestHold > 0 || u.talking)) { u._wdT = 0; continue; }
+      var gdx = u.x - u.tx, gdy = u.y - u.ty;
+      if (gdx * gdx + gdy * gdy < 9 || typeof u._wdX !== "number" ||
+          (u.x - u._wdX) * (u.x - u._wdX) + (u.y - u._wdY) * (u.y - u._wdY) > 0.25) {
+        u._wdX = u.x; u._wdY = u.y; u._wdT = 0;
+        continue;
+      }
+      u._wdT += step;
+      if (u._wdT < 25) continue;
+      u._wdT = 0;
+      var gx = Math.floor(u.tx), gy = Math.floor(u.ty);
+      var f = veh ? vehicleFlowField(G, gx, gy, narrowVeh(u)) : tileFlowField(G, gx, gy);
+      var cur = f[Math.floor(u.y) * W + Math.floor(u.x)];
+      var n = nearestAllowed(G, Math.floor(u.x), Math.floor(u.y), function (x, y) {
+        var v = f[y * W + x];
+        if (v < 0 || (cur >= 0 && v >= cur)) return false;
+        return veh ? driveTileOk(G, x, y) : walkTileOk(G, x, y);
+      }, 12);
+      if (!n) continue;
+      u.x = n.x + 0.5; u.y = n.y + 0.5; u._wdX = u.x; u._wdY = u.y;
+      if (veh && typeof DRIVE !== "undefined") DRIVE.reset(u);
+      if (!said[u.squad] && typeof UI !== "undefined" && UI.say) {
+        said[u.squad] = 1;
+        UI.say((UNITTYPES.tag ? UNITTYPES.tag(G, u.squad) : "Squad " + (u.squad + 1)) + " was stuck - moved to a nearby street");
+      }
+    }
+  }
+
   function update(G, dt) {
     if (G.over) return;
     if (G.time >= CONFIG.matchSeconds) {
@@ -1129,6 +1169,7 @@ var Police = (function () {
       G.endReason = "time";
       return;
     }
+    unstick(G, dt);
 
     /* Per-squad observe radius: a car adds a bonus. */
     var squadObs = [];

@@ -60,12 +60,20 @@
     }
     if (!best) return null;
     best._ringleader = true;
-    best.revealedUntil = G.time + 1;
-    return {
-      type: 'Ringleader', title: 'Arrest the ringleader',
-      x: best.x, y: best.y, r: 3, t0: G.time, limit: 150,
-      progress: 0, state: 'active', _agent: best
+    /* hidden: police only get a rough tip (search circle); officers must get close to
+       identify him, and a dense crowd hides him - split the crowd to find him */
+    var m = {
+      type: 'Ringleader', title: 'Find and arrest the ringleader',
+      x: best.x, y: best.y, r: 11, t0: G.time, limit: 300,
+      progress: 0, state: 'active', _agent: best, idT: 0, revealed: 0, tipAt: G.time
     };
+    ringTip(m, best);
+    return m;
+  }
+  /* new tip: circle around his real position, centre off by up to 0.6 r */
+  function ringTip(m, a) {
+    var ang = Math.random() * Math.PI * 2, off = Math.random() * m.r * 0.6;
+    m.x = a.x + Math.cos(ang) * off; m.y = a.y + Math.sin(ang) * off;
   }
 
   function makeProtect(G) {
@@ -161,9 +169,33 @@
     if (m.type === 'Ringleader') {
       var t = m._agent;
       if (!t || t.arrested || !t.active) { finish(G, true); return; }
-      t.revealedUntil = G.time + 1;
       t._ringleader = true;
-      m.x = t.x; m.y = t.y;
+      if (G.time < m.revealed) {   /* identified: officers can see him */
+        t.revealedUntil = G.time + 1;
+        m.x = t.x; m.y = t.y; m.r = 2;
+      } else {
+        if (m.r === 2) m.r = 6;
+        if (G.time - m.tipAt >= 30) {   /* fresh intel every 30 s, a little tighter each time */
+          m.tipAt = G.time; m.r = Math.max(6, m.r - 1.5);
+          ringTip(m, t);
+          if (global.UI && UI.say) UI.say('Intel: the ringleader is still in the crowd inside the blue circle');
+        }
+        /* an officer close by spots him; packed crowd around him makes it slow */
+        var offs = G.officers || [], close = false, oi;
+        for (oi = 0; oi < offs.length && !close; oi++) if (dist2(offs[oi].x, offs[oi].y, t.x, t.y) < 6.25) close = true;
+        if (close) {
+          var dense = 0;
+          for (i = 0; i < agents.length; i++) {
+            a = agents[i];
+            if (a.active && !a.arrested && a !== t && dist2(a.x, a.y, t.x, t.y) < 9) dense++;
+          }
+          m.idT += dt * (dense < 8 ? 1 : dense < 16 ? 0.35 : 0.08);
+          if (m.idT >= 2) {
+            m.idT = 0; m.revealed = G.time + 25;
+            if (global.UI && UI.say) UI.say('Ringleader identified! Arrest him now (25 s before he blends in again)');
+          }
+        } else m.idT = Math.max(0, m.idT - dt * 0.5);
+      }
       m.progress = Math.min(1, (G.time - m.t0) / m.limit);
       if (G.time - m.t0 >= m.limit) finish(G, false);
     } else if (m.type === 'Protect') {
@@ -264,7 +296,7 @@
       ctx.arc(cx, cy, rs, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
-      if (cur.type === 'Ringleader' && ringleader && ringleader.active && !ringleader.arrested) {
+      if (cur.type === 'Ringleader' && ringleader && ringleader.active && !ringleader.arrested && G.time < cur.revealed) {   /* star only once identified */
         var p = global.Art ? Art.project(ringleader.x, ringleader.y, 0) : { x: ringleader.x, y: ringleader.y };
         ctx.save();
         ctx.fillStyle = '#facc15';

@@ -1670,6 +1670,13 @@ var Art = (function () {
       sp = revealed ? agentSprite("R", dark, base, "#ff6b78") : agentSprite(pal.id, dark, base, pal.light);
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (a.mood > 55) {   /* anger shows as a red glow on the ground: clothes hide the shirt tint */
+      var ga = Math.min(0.75, (a.mood - 55) / 45 * 0.75);
+      ctx.fillStyle = a.mood > 80 ? "rgba(235,30,45," + ga + ")" : "rgba(240,120,40," + ga + ")";
+      ctx.beginPath();
+      ctx.ellipse(_rs * bx, _rs * _py, _rs * r * 1.7, _rs * r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.drawImage(sp.c, _rs * bx - sp.ax, _rs * by - sp.ay);
     setScreen(ctx);
     if (a.hasTool) {

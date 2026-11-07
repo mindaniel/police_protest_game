@@ -549,7 +549,12 @@ var SQUADCAM = (function () {
 
     if (typeof Art !== "undefined" && Art.centerOn && typeof G !== "undefined") {
       var c = squadCentre(G, UI.selected);
-      if (c) { Art.centerOn(c.x, c.y); return true; }
+      if (c) {   /* jump to the squad, zoom in and follow it (drag the map to stop) */
+        UI.follow = UI.selected;
+        Art.centerOn(c.x, c.y, Math.max(3, (Art.camera && Art.camera.zoom) || 3));
+        if (UI.say) UI.say("Camera follows " + (UNITTYPES.tag ? UNITTYPES.tag(G, UI.selected) : "squad") + " (drag the map to stop)");
+        return true;
+      }
     }
     return true;
   }

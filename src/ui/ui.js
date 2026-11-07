@@ -973,7 +973,7 @@ function uiOverlay(ctx, title, lines, footer) {
 }
 
 var UI_CONTROLS = [
-  "Left click a squad, or 1-0 by type (1 foot 2 sedan 3 van 4 truck 5 water 6 barrier 7 bikes 8 horses 9 medics 0 fire; again = next one) : select it",
+  "Left click a squad, or 1-0 by type (1 foot 2 sedan 3 van 4 truck 5 water 6 barrier 7 bikes 8 horses 9 medics 0 fire; Q = next of that type) : select it",
   "Left click the street : send the selected squad there (Shift = run)",
   "Hold left button and drag : move the map",
   "Right click : squad tool - water truck sprays, car loudspeaker,",
@@ -992,9 +992,9 @@ var UI_CONTROLS = [
   "Space : pause     T : speed 1x / 2x     N (planning) : next map",
   "I : camera follows the selected squad (I again or drag to stop)",
   "Wheel / + - : zoom   Arrows / middle-drag : pan   0 : reset view",
-  "H : low buildings (see behind blocks)",
+  "Alerts: click a card or PgUp/PgDn to pick, Enter sends a unit, Delete removes it",
   "? or F1 : show / shrink / hide the controls panel (top right)",
-  "Q : graphics quality (Auto / High / Medium / Low) - use Low on a slow computer"
+  "Click the squad cam (bottom right) to jump to the squad.  Graphics and low buildings: S settings"
 ];
 
 function uiSquadDesc(g, s) {
