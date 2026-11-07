@@ -272,7 +272,7 @@ var Police = (function () {
       else if (allow(Math.floor(e.tx), Math.floor(e.ty))) { gx = e.tx; gy = e.ty; }
     }
     if (veh) {   /* park in the middle of the road, not against the kerb */
-      var clr = driveClear(G), pw = MAP.rows[0].length, pen = kerbPenalty(G, clr, pw, MAP.rows.length);
+      var clr = driveClear(G, narrowVeh(e)), pw = MAP.rows[0].length, pen = kerbPenalty(G, clr, pw, MAP.rows.length);
       var gi = Math.floor(gy) * pw + Math.floor(gx);
       if (pen[gi] > 0) {
         var mid = nearestAllowed(G, Math.floor(gx), Math.floor(gy), function (x, y) { var j = y * pw + x; return clr[j] && pen[j] === 0; }, 3);
@@ -335,9 +335,22 @@ var Police = (function () {
   }
 
   /* ---- vehicles drive only on streets at least 2 tiles wide and part crowds (DeepSeek) ---- */
-  function driveClear(G) {
+  /* narrow vehicles (sedan, van, ambulance: about 0.7 tiles wide, like a civilian car) fit
+   * 1-tile streets; trucks and fire engines need 2 tiles */
+  function narrowVeh(v) {
+    var d = v && typeof UNITTYPES !== "undefined" ? UNITTYPES.vehicle(v.type) : null;
+    return !!(d && d.wid / 32 <= 0.7);
+  }
+  function driveClear(G, narrow) {
     var h = MAP.rows.length, w = MAP.rows[0].length;
     var key = h + ":" + (G.blocked ? G.blocked.size : 0) + ":" + (G.barricadeTiles ? G.barricadeTiles.size : 0);
+    if (narrow) {
+      if (G._driveClearN && G._driveClearNKey === key) return G._driveClearN;
+      var cn = new Uint8Array(w * h);
+      for (var ny = 0; ny < h; ny++) for (var nx = 0; nx < w; nx++) cn[ny * w + nx] = driveTileOk(G, nx, ny) ? 1 : 0;
+      G._driveClearN = cn; G._driveClearNKey = key;
+      return cn;
+    }
     if (G._driveClear && G._driveClearKey === key) return G._driveClear;
     var solid = new Uint8Array(w * h);
     var x, y;
@@ -366,7 +379,7 @@ var Police = (function () {
 
   /* extra route cost per drivable tile: 2 beside a kerb or wall, 1 one tile further in */
   function kerbPenalty(G, clear, w, h) {
-    if (G._kerbPen && G._kerbPenFor === clear) return G._kerbPen;
+    if (clear._pen) return clear._pen;   /* one per clearance grid (wide / narrow) */
     var pen = new Uint8Array(w * h), i, x, y, k, near;
     var ring1 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     var ring2 = [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -379,12 +392,12 @@ var Police = (function () {
       for (k = 0; k < 8 && !near; k++) if (blocked(x + ring2[k][0], y + ring2[k][1])) near = 1;
       pen[i] = near;
     }
-    G._kerbPen = pen; G._kerbPenFor = clear;
+    clear._pen = pen;
     return pen;
   }
 
-  function vehicleFlowField(G, sx, sy) {
-    var clear = driveClear(G);
+  function vehicleFlowField(G, sx, sy, narrow) {
+    var clear = driveClear(G, narrow);
     var h = MAP.rows.length, w = MAP.rows[0].length;
     var cx = sx, cy = sy, r, dx, dy;
     if (!(sx >= 0 && sx < w && sy >= 0 && sy < h) || !clear[sy * w + sx]) {
@@ -400,7 +413,7 @@ var Police = (function () {
       }
       if (!found) cx = sx, cy = sy;
     }
-    var key = cx + "," + cy;
+    var key = (narrow ? "n" : "") + cx + "," + cy;
     if (!G._vehFlow || G._vehFlowN > 48) { G._vehFlow = {}; G._vehFlowN = 0; }
     if (!G._vehFlow[key]) {
       var dist = new Int16Array(w * h);
@@ -435,7 +448,7 @@ var Police = (function () {
   }
 
   function vehicleField(G, v, sx, sy) {
-    var f = vehicleFlowField(G, sx, sy);
+    var f = vehicleFlowField(G, sx, sy, narrowVeh(v));
     var w = MAP.rows[0].length;
     var tx = Math.floor(v.x), ty = Math.floor(v.y);
     if (tx < 0 || ty < 0 || ty >= MAP.rows.length || tx >= w) return tileFlowField(G, sx, sy);
@@ -592,7 +605,7 @@ var Police = (function () {
       var ox0 = off.x, oy0 = off.y;
       DRIVE.step(G, off, goal.x, goal.y, dt, {
         field: vehicleField(G, off, Math.floor(goal.x), Math.floor(goal.y)),
-        clear: driveClear(G),
+        clear: driveClear(G, narrowVeh(off)),
         solid: function (x, y) { return isSolidPolice(G, x, y); }
       });
       off._wantAng = off.ang;

@@ -2043,6 +2043,13 @@ var Art = (function () {
     else if (it.k === 5) { if (it.o.type) drawClutter(ctx, it.o); else drawTree(ctx, it.o); }
     else if (it.k === 7) THEME_PARIS.drawProp(ctx, it.o, t);
     else if (it.k === 8) drawPerson(ctx, it.o.x, it.o.y, it.o.id, it.o.shirt, it.o.speed);
+    else if (it.k === 9) {   /* moving civilian car (traffic.js), same sprite as parked cars */
+      if (_rs * cam.S * TS < 6) return;
+      P(it.o.x, it.o.y, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      PARKED.drawCar(ctx, it.o, _rs * _px, _rs * _py, _rs * cam.S * TS, G);
+      setScreen(ctx);
+    }
     else drawLamp(ctx, it.o);
   }
 
@@ -2054,6 +2061,12 @@ var Art = (function () {
   }
   function pushPeople(G, cm) {
     var i, j, c, L;
+    if (typeof TRAFFIC !== "undefined" && typeof PARKED !== "undefined") {
+      L = TRAFFIC.list();
+      for (i = 0; i < L.length; i++) if (visibleWorld(L[i].x, L[i].y, 0, cm)) push(9, L[i], L[i].x, L[i].y);
+      L = TRAFFIC.people();
+      for (i = 0; i < L.length; i++) { c = L[i]; if (visibleWorld(c.x, c.y, 0, cm)) push(8, ppOf(c, 12000 + c.id, c.col || "#8a7a6a", c.state === "walk" ? 1 : 0), c.x, c.y); }
+    }
     if (typeof CIVLIFE !== "undefined" && CIVLIFE.list) for (i = 0; i < CIVLIFE.list.length; i++) {
       c = CIVLIFE.list[i];
       if (visibleWorld(c.x, c.y, 0, cm)) push(8, ppOf(c, 5000 + c.id, c.color, c.state === "flee" ? 2.5 : 1), c.x, c.y);

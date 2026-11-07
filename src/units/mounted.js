@@ -1,1 +1,1 @@
-UNITTYPES.register({ id: "mounted", name: "Mounted unit", short: "mounted", label: null, order: 8, key: "8", slot: 8, cost: 3, swapCost: 3, officers: 4, desc: "4 horses, push crowds, scared by fire/gas", officerSpeed: "mounted", canArrest: true, isDefault: 0, vehicle: null });
+UNITTYPES.register({ id: "mounted", name: "Mounted unit", short: "mounted", label: null, order: 8, key: "8", slot: 8, cost: 2, swapCost: 3, officers: 4, desc: "4 horses, push crowds, scared by fire/gas", officerSpeed: "mounted", canArrest: true, isDefault: 0, vehicle: null });

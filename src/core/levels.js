@@ -2,25 +2,25 @@
 var LEVELS = (function () {
   var list = [
     {
-      id: "calm", forceBudget: 26, matchSeconds: 600, name: "Calm march", crowdSize: 260, rioterCount: 6, rioterMin: 4, rioterMax: 9,
+      id: "calm", forceBudget: 50, matchSeconds: 600, name: "Calm march", crowdSize: 260, rioterCount: 6, rioterMin: 4, rioterMax: 9,
       loadoutBudget: 12, lootJoinChance: 0.15, vanguardChance: 0.03,
       spawnTrickleSeconds: 90, duskStart: 0.5,
       blurb: "A peaceful march with a few troublemakers."
     },
     {
-      id: "tense", forceBudget: 22, matchSeconds: 720, name: "Tense rally", crowdSize: 520, rioterCount: 11, rioterMin: 7, rioterMax: 15,
+      id: "tense", forceBudget: 50, matchSeconds: 720, name: "Tense rally", crowdSize: 520, rioterCount: 11, rioterMin: 7, rioterMax: 15,
       loadoutBudget: 10, lootJoinChance: 0.25, vanguardChance: 0.05,
       spawnTrickleSeconds: 110, duskStart: 0.45,
       blurb: "A big angry rally. Rioters hide in the crowd."
     },
     {
-      id: "angry", forceBudget: 22, matchSeconds: 900, name: "Angry city", crowdSize: 780, rioterCount: 17, rioterMin: 12, rioterMax: 22,
+      id: "angry", forceBudget: 50, matchSeconds: 900, name: "Angry city", crowdSize: 780, rioterCount: 17, rioterMin: 12, rioterMax: 22,
       loadoutBudget: 10, lootJoinChance: 0.32, vanguardChance: 0.07,
       spawnTrickleSeconds: 130, duskStart: 0.4,
       blurb: "Huge crowds, looting spreads fast."
     },
     {
-      id: "riot", forceBudget: 20, matchSeconds: 900, name: "Riot night", crowdSize: 1100, rioterCount: 25, rioterMin: 18, rioterMax: 32,
+      id: "riot", forceBudget: 50, matchSeconds: 900, name: "Riot night", crowdSize: 1100, rioterCount: 25, rioterMin: 18, rioterMax: 32,
       loadoutBudget: 9, lootJoinChance: 0.40, vanguardChance: 0.09,
       spawnTrickleSeconds: 150, duskStart: 0,
       blurb: "The whole city is out. Starts at dusk."
@@ -73,7 +73,7 @@ var LEVELS = (function () {
     var big = (typeof MAP !== "undefined" && MAP.width) ? Math.min(2.2, Math.max(1, Math.sqrt(MAP.width * MAP.height / 6400))) : 1;
     CONFIG.crowdSize = Math.min(1500, Math.round(lv.crowdSize * big));   /* the crowd sim slows down past ~1500 */
     CONFIG.rioterCount = Math.round(CONFIG.rioterCount * big);
-    CONFIG.forceBudget = Math.round(lv.forceBudget * big);
+    CONFIG.forceBudget = lv.forceBudget;   /* fixed 50 points: squad cost follows its officers */
     CONFIG.maxPlanSquads = Math.min(20, Math.round(10 * big));   /* more squads to plan on a district */
     CONFIG.maxSquads = CONFIG.maxPlanSquads + 4;                 /* room for reinforcements */
   }

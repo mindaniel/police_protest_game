@@ -11,7 +11,16 @@ var DRIVE = (function () {
   function gw() { return (typeof MAP !== "undefined" && MAP) ? MAP.width : 0; }
   function gh() { return (typeof MAP !== "undefined" && MAP) ? MAP.height : 0; }
 
+  /* physics size = drawn size (unit defs are in world units, 32 per tile) */
+  var specs = {};
   function spec(t) {
+    if (specs[t]) return specs[t];
+    var d = typeof UNITTYPES !== "undefined" ? UNITTYPES.vehicle(t) : null, o = spec0(t);
+    if (d) { o.len = d.len / 32; o.wid = d.wid / 32; o.rmin = o.len * (o.wid > 0.75 ? 1.15 : 0.9); }
+    specs[t] = o;
+    return o;
+  }
+  function spec0(t) {
     if (t === "van") return { len: 2.0, wid: 0.9, rmin: 2.0, acc: 3.0 };
     if (t === "truck" || t === "watertruck" || t === "barriertruck") return { len: 2.4, wid: 1.0, rmin: 2.8, acc: 2.2 };
     if (t === "ambulance") return { len: 2.1, wid: 0.9, rmin: 2.0, acc: 3.5 };

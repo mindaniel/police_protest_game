@@ -50,6 +50,7 @@ var ALERTS = (function () {
     switch (kind) {
       case "violence": return 5;
       case "medical": return 5;
+      case "accident": return 3;
       case "shop_attack": return 4;
       case "squad": return 4;
       case "shop_looted": return 3;

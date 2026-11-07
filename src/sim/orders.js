@@ -1138,6 +1138,7 @@ var ORDERS = (function () {
       r = G.orders[i];
       if (G.time < r.nextThink) continue;
       r.nextThink = G.time + 1 + i * 0.03;
+      if (G.dispatch && G.dispatch[i]) continue;   /* on a radio call: the order resumes when the call ends */
       think(G, i);
     }
   }

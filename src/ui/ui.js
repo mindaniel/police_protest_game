@@ -1728,6 +1728,7 @@ function uiDrawScreen(ctx, g) {
   if (typeof MISSIONS !== "undefined" && UI.screen === "playing") MISSIONS.draw(ctx, g);
   if (typeof CIVLIFE !== "undefined" && UI.screen === "playing") CIVLIFE.draw(ctx, g);
   if (typeof CRIME !== "undefined" && UI.screen === "playing") CRIME.draw(ctx, g);
+  if (typeof TRAFFIC !== "undefined" && UI.screen === "playing") TRAFFIC.draw(ctx, g);
   if (typeof FRONTLINE !== "undefined" && UI.screen === "playing") FRONTLINE.draw(ctx, g);
   if (typeof DISPATCH !== "undefined" && UI.screen === "playing") DISPATCH.draw(ctx, g);
   if (typeof ARRESTFX !== "undefined" && UI.screen === "playing") ARRESTFX.draw(ctx, g);

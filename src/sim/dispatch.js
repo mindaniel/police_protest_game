@@ -45,6 +45,7 @@
   function fits(kind, type, call) {
     if (kind === "fire") return type === "fireengine" || type === "watertruck";
     if (kind === "medical") return type === "ambulance";
+    if (kind === "accident") return arresting(type);
     if (kind === "owner_hurt") return type === "ambulance" || arresting(type);
     if (kind === "violence") {
       if (call && call.hurt) return type === "ambulance" || arresting(type);
@@ -145,8 +146,9 @@
         if (!pos) continue;
         var dd = (pos.x - c.x) * (pos.x - c.x) + (pos.y - c.y) * (pos.y - c.y);
         /* small crime: fast light units first, crowd-control trucks only when nothing else is near */
-        if (c.kind === "crime" && (lt === "watertruck" || lt === "barriertruck" || lt === "truck")) dd = dd * 9 + 400;
-        else if (c.kind === "crime" && (lt === "car" || lt === "motorbike")) dd *= 0.6;
+        var small = c.kind === "crime" || c.kind === "accident";
+        if (small && (lt === "watertruck" || lt === "barriertruck" || lt === "truck")) dd = dd * 9 + 400;
+        else if (small && (lt === "car" || lt === "motorbike")) dd *= 0.6;
         /* rank by travel time, not distance: a foot squad far away is not the nearest help */
         var udef = UNITTYPES.get ? UNITTYPES.get(lt) : null;
         var spd = udef && udef.vehicle ? (udef.vehicle.speed === "truck" ? 3 : 4.5) : (lt === "mounted" ? 2.6 : 1.6);
@@ -170,11 +172,11 @@
       if (a.kind === "squad" || a.kind === "crowd") continue;
       if (!byId[a.id]) {
         /* protest trouble (shops, violence, owners) close to an open call joins it: one call per area */
-        if (a.kind !== "crime" && a.kind !== "fire") {
+        if (a.kind !== "crime" && a.kind !== "fire" && a.kind !== "medical" && a.kind !== "accident") {
           var host = null;
           for (var h = 0; h < calls.length && !host; h++) {
             var hc = calls[h];
-            if (hc.kind === "crime" || hc.kind === "fire") continue;
+            if (hc.kind === "crime" || hc.kind === "fire" || hc.kind === "medical" || hc.kind === "accident") continue;
             if ((hc.x - a.x) * (hc.x - a.x) + (hc.y - a.y) * (hc.y - a.y) < 144) host = hc;
           }
           if (host) {
@@ -243,7 +245,7 @@
     var g = G(), offs = g.officers || [], vs = g.vehicles || [], k, i, s, o;
     for (k = 0; k < calls.length; k++) {
       var c = calls[k];
-      if (c.kind !== "crime" && c.kind !== "medical" && c.kind !== "fire") continue;
+      if (c.kind !== "crime" && c.kind !== "medical" && c.kind !== "fire" && c.kind !== "accident") continue;
       if (c.units.length >= needCount(c)) continue;
       var pts = [{ x: c.x, y: c.y }];
       if (c.kind === "crime" && typeof CRIME !== "undefined" && CRIME.list) {   /* or runs into the suspect */
