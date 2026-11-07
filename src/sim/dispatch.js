@@ -147,6 +147,10 @@
         /* small crime: fast light units first, crowd-control trucks only when nothing else is near */
         if (c.kind === "crime" && (lt === "watertruck" || lt === "barriertruck" || lt === "truck")) dd = dd * 9 + 400;
         else if (c.kind === "crime" && (lt === "car" || lt === "motorbike")) dd *= 0.6;
+        /* rank by travel time, not distance: a foot squad far away is not the nearest help */
+        var udef = UNITTYPES.get ? UNITTYPES.get(lt) : null;
+        var spd = udef && udef.vehicle ? (udef.vehicle.speed === "truck" ? 3 : 4.5) : (lt === "mounted" ? 2.6 : 1.6);
+        dd /= spd * spd;
         if (dd < bestD) { bestD = dd; best = fs; }
       }
       c.suggest = best;

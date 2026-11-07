@@ -313,7 +313,7 @@ var CRIME = (function () {
       incType = "burglar alarm";
     }
 
-    var deadlineMap = { "stabbing": 90, "assault": 150 };
+    var deadlineMap = { "stabbing": 150, "assault": 210 };   /* big city maps: an ambulance across town needs ~90 s */
     var dLine = deadlineMap[kind] || rand(90, 150);
 
     var inc = {

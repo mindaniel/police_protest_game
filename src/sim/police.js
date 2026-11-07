@@ -615,6 +615,14 @@ var Police = (function () {
         if (field && stepByField(G, off, dt, field)) return;
       }
     }
+    /* on foot to any other goal: follow a real path (one shared field per squad goal tile),
+       walking straight at it gets officers stuck in dead ends and side streets */
+    if (d > 4 && !isVehicle(off)) {
+      var fgx = Math.floor(off.tx), fgy = Math.floor(off.ty);
+      if (isSolidPolice(G, fgx, fgy)) { fgx = Math.floor(goal.x); fgy = Math.floor(goal.y); }
+      var wf = tileFlowField(G, fgx, fgy);
+      if (wf && stepByField(G, off, dt, wf)) return;
+    }
     if (isVehicle(off)) {
       var want = Math.atan2(dy, dx);
       if (typeof off.ang !== "number") off.ang = want;
