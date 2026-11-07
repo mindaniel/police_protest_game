@@ -404,10 +404,11 @@ var TRANSPORT = (function () {
     return best || { x: v.x, y: v.y };
   }
 
-  function startStation(G, v, s) {
-    var tgt = stationTarget(G);
+  function startStation(G, v, s, dest) {
+    var tgt = dest || stationTarget(G);
     var station = !!tgt;
     if (!tgt) tgt = edgeTarget(G, v);
+    v._deliverKind = dest && dest.kind ? dest.kind : "station";
     v.run = "station";
     v.ctrl = true;
     v.backX = v.x; v.backY = v.y;
@@ -418,6 +419,19 @@ var TRANSPORT = (function () {
       var nm = v.type === "car" ? "sedan" : v.type;
       G.log("Squad " + (s + 1) + "'s " + nm + " takes " + (v.load || 0) + " arrested people to the station");
     }
+    return true;
+  }
+
+  /* takein.js: drive n people (suspects / a patient) to the station or the hospital, unload, come back */
+  function deliver(G, s, kind, n) {
+    ensure(G);
+    var v = vehicleOf(G, s);
+    if (!v || v.run === "station" || v.run === "unload") return false;
+    var tgt = kind === "hospital" ? (G.hospital ? { x: G.hospital.x, y: G.hospital.y, kind: "hospital" } : null) : stationTarget(G);
+    if (!tgt) return false;
+    if (kind !== "hospital") v.load = Math.max(v.load || 0, n || 1);
+    else v.patients = (v.patients || 0) + (n || 1);
+    startStation(G, v, s, tgt);
     return true;
   }
 
@@ -559,14 +573,22 @@ var TRANSPORT = (function () {
         continue;
       }
       if (v.run === "station") {
-        var sdx = v.tx - v.x, sdy = v.ty - v.y;
-        if (sdx * sdx + sdy * sdy <= 1.96) {
+        var sdx = v.tx - v.x, sdy = v.ty - v.y, sd2 = sdx * sdx + sdy * sdy;
+        /* arrived; vehicles park mid-road, so a door 2.5 tiles off (or 4 if it stopped) counts */
+        v._stStill = (Math.abs(v.x - (v._stLX || 0)) + Math.abs(v.y - (v._stLY || 0)) < 0.01) ? (v._stStill || 0) + dt : 0;
+        v._stLX = v.x; v._stLY = v.y;
+        if (sd2 <= 6.25 || (sd2 <= 16 && v._stStill > 2)) {
           v.run = "unload"; v.unloadT = 3; v.ctrl = true; v.tx = v.x; v.ty = v.y;
         }
       } else if (v.run === "unload") {
         v.unloadT -= dt;
         if (v.unloadT <= 0) {
-          onDelivered(G, v.load || 0);
+          if (v._deliverKind === "hospital") {
+            if (!G.stats) G.stats = {};
+            G.stats.patientsDelivered = (G.stats.patientsDelivered || 0) + (v.patients || 1);
+            v.patients = 0;
+            if (typeof UI !== "undefined" && UI.say) UI.say("Patient handed over at the hospital");
+          } else onDelivered(G, v.load || 0);
           v.load = 0; v.reserved = 0; v.run = "back";
           var hp = s !== null ? homePoint(G, v, s) : { x: v.backX, y: v.backY };
           v.tx = hp.x; v.ty = hp.y; v.ctrl = true;
@@ -749,6 +771,7 @@ var TRANSPORT = (function () {
     onDelivered: onDelivered,
     sendToStation: sendToStation,
     isAboard: isAboard,
+    deliver: deliver,
     isBoarding: isBoarding,
     crewCount: crewCount,
     vehicleOf: vehicleOf,

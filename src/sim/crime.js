@@ -385,14 +385,15 @@ var CRIME = (function () {
       var helped = false;
       var os = officersWithin(G, vic.x, vic.y, 1.5);
       for (var oi = 0; oi < os.length; oi++) {
-        if (isAmbulanceLoadout(getLoadout(G, os[oi].squad))) { helped = true; break; }
+        if (isAmbulanceLoadout(getLoadout(G, os[oi].squad))) { helped = true; inc.medSquad = os[oi].squad; break; }
       }
       if (helped) inc.medTimer += dt;
       else if (inc.medTimer > 0) inc.medTimer = Math.max(0, inc.medTimer - dt * 0.5);
 
       if (inc.medTimer >= 4) {
         vic.handled = true;
-        say("Medics took the victim to hospital");
+        say("Medics stabilised the victim - taking them to hospital");
+        if (typeof TAKEIN !== "undefined") TAKEIN.add(G, inc.medSquad, "hospital");
         ensureStats(G);
         G.stats.victimsSaved++;
       } else if (G.time >= inc.deadline) {
@@ -410,8 +411,10 @@ var CRIME = (function () {
       if (c.caught) continue;
 
       /* arrest check */
-      if (arrestOfficerNear(G, c.x, c.y, 1)) {
+      var catcher = arrestOfficerNear(G, c.x, c.y, 1);
+      if (catcher) {
         c.caught = true;
+        if (typeof TAKEIN !== "undefined") TAKEIN.add(G, catcher.squad, "station");   /* drive him to the station */
         continue;
       }
 

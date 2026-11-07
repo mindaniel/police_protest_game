@@ -19,8 +19,8 @@ var FORCE = (function () {
     if (C && typeof C[name] === "number") return C[name];
     return def;
   }
-  function budgetVal() { return cfgNum("forceBudget", 22); }
-  function maxSquadsVal() { return cfgNum("maxPlanSquads", 10); }
+  function budgetVal() { return cfgNum("forceBudget", 50); }
+  function maxSquadsVal() { return cfgNum("maxPlanSquads", 50); }
 
   function typeById(id) {
     for (var i = 0; i < TYPES.length; i++) if (TYPES[i].id === id) return TYPES[i];

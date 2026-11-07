@@ -18,7 +18,8 @@ var CONFIG = {
   // Reserved for later steps (crowd mood, police, tools)
   squadCount: 6,
   baseSquadCount: 6,         // squads at the start; reinforcements add more
-  maxSquads: 14,             // planned squads (up to 10) + 4 reinforcement calls
+  maxSquads: 54,             // planned squads (up to 50) + 4 reinforcement calls
+  maxPlanSquads: 50,
   officersPerSquad: 4,
   barrierCount: 4,
   barriersPerTruck: 3,       // stock carried by one barrier truck
@@ -328,6 +329,7 @@ function frame(now) {
       if (typeof CRIME !== "undefined") CRIME.update(G, step);
       if (typeof TRAFFIC !== "undefined") TRAFFIC.update(G, step);
       if (typeof CHASE !== "undefined") CHASE.update(G, step);
+      if (typeof TAKEIN !== "undefined") TAKEIN.update(G, step);
       if (typeof POV !== "undefined") POV.update(G, step);
       if (typeof DISPATCH !== "undefined") DISPATCH.update(G, step);
       if (typeof CIVLIFE !== "undefined") CIVLIFE.update(G, step);
@@ -390,6 +392,7 @@ function restartGame(newCity) {
   if (typeof CRIME !== "undefined") CRIME.reset(G);
   if (typeof TRAFFIC !== "undefined") TRAFFIC.reset(G);
   if (typeof CHASE !== "undefined") CHASE.reset(G);
+  if (typeof TAKEIN !== "undefined") TAKEIN.reset(G);
   if (typeof INTEL !== "undefined") INTEL.reset();
   if (typeof CIVLIFE !== "undefined") CIVLIFE.reset(G);
   if (typeof ARRESTFX !== "undefined") ARRESTFX.reset();   /* parked cars intact again for the new match */
@@ -405,6 +408,7 @@ function restartGame(newCity) {
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
   if (typeof REINFORCE !== "undefined") REINFORCE.init(G);
+  if (typeof HOSPITAL !== "undefined") HOSPITAL.init(G);
   if (typeof ATMO !== "undefined") ATMO.init(G);
   if (typeof LINES !== "undefined") LINES.init(G);
   if (typeof DISPERSE !== "undefined") DISPERSE.init(G);
@@ -446,6 +450,7 @@ function initGame() {
   if (typeof UNITS !== "undefined") UNITS.init(G);
   if (typeof LIAISON !== "undefined") LIAISON.init(G);
   if (typeof REINFORCE !== "undefined") REINFORCE.init(G);
+  if (typeof HOSPITAL !== "undefined") HOSPITAL.init(G);
   if (typeof ATMO !== "undefined") ATMO.init(G);
   if (typeof LINES !== "undefined") LINES.init(G);
   if (typeof DISPERSE !== "undefined") DISPERSE.init(G);

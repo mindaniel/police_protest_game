@@ -74,7 +74,7 @@ var LEVELS = (function () {
     CONFIG.crowdSize = Math.min(1500, Math.round(lv.crowdSize * big));   /* the crowd sim slows down past ~1500 */
     CONFIG.rioterCount = Math.round(CONFIG.rioterCount * big);
     CONFIG.forceBudget = lv.forceBudget;   /* fixed 50 points: squad cost follows its officers */
-    CONFIG.maxPlanSquads = Math.min(20, Math.round(10 * big));   /* more squads to plan on a district */
+    CONFIG.maxPlanSquads = 50;   /* up to 50 squads; the 50-point budget is the real limit */
     CONFIG.maxSquads = CONFIG.maxPlanSquads + 4;                 /* room for reinforcements */
   }
 

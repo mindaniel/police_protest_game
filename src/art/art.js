@@ -2767,6 +2767,7 @@ var Art = (function () {
     if (typeof TRANSPORT !== "undefined") TRANSPORT.draw(ctx, G);
     if (typeof METERS !== "undefined") METERS.draw(ctx, G);
     if (typeof REINFORCE !== "undefined") REINFORCE.draw(ctx, G);
+    if (typeof HOSPITAL !== "undefined") HOSPITAL.draw(ctx, G);
     if (typeof LINES !== "undefined") LINES.draw(ctx, G);
     if (typeof DISPERSE !== "undefined") DISPERSE.draw(ctx, G);
     if (typeof MARCHES !== "undefined") MARCHES.draw(ctx, G);
