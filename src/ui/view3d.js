@@ -148,6 +148,7 @@ var VIEW3D = (function () {
 
     // dynamic meshes
     _buildDynamicMeshes();
+    if (typeof VIEW3DX !== 'undefined') VIEW3DX.attach(_scene);   /* legs, target ring, crosshair */
 
     // input
     _attachInput();
@@ -157,7 +158,7 @@ var VIEW3D = (function () {
 
   function _buildDynamicMeshes() {
     var cylGeo = new THREE.CylinderGeometry(0.16, 0.18, 0.55, 6, 1, false);
-    cylGeo.translate(0, 0.275, 0);
+    cylGeo.scale(1, 0.30 / 0.55, 1); cylGeo.translate(0, 0.40, 0);   /* torso 0.25..0.55, legs below (view3dx) */
     var headGeo = new THREE.SphereGeometry(0.14, 6, 4);
     headGeo.translate(0, 0.68, 0);
 
@@ -438,6 +439,7 @@ var VIEW3D = (function () {
     _groundMesh = null;
     _buildGround(map);
     _buildBuildings(map);
+    if (typeof VIEW3DX !== 'undefined') VIEW3DX.buildCity(_cityGroup, map);   /* markings, kerbs, windows, lamps */
   }
 
   function _checkMap(map) {
@@ -728,12 +730,14 @@ var VIEW3D = (function () {
     _updateVehicles(G, tx, tz);
     _updateHUD(G);
 
+    if (typeof VIEW3DX !== 'undefined') { VIEW3DX.update(G, dt, tx, tz); VIEW3DX.target(G, tx, tz, _yaw); }
     _renderer.render(_scene, _camera);
   }
 
   // ---------- public ----------
   function _setActive(v) {
     _on = !!v;
+    if (typeof VIEW3DX !== 'undefined') VIEW3DX.show(_on);
     if (_canvas) _canvas.style.display = _on ? 'block' : 'none';
     if (_hud) _hud.style.display = _on ? 'block' : 'none';
     if (_msgDiv) _msgDiv.style.display = _on ? (_msgDiv.textContent ? 'block' : 'none') : 'none';

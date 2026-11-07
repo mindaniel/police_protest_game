@@ -196,6 +196,10 @@ var POV = (function () {
         if (score > bestScore) { bestScore = score; best = a; }
       }
     }
+    if (typeof VIEW3D !== "undefined" && VIEW3D.active() && typeof VIEW3DX !== "undefined") {   /* 3D: the one under the crosshair */
+      var ti = VIEW3DX.lastTarget();
+      if (ti >= 0 && agents && agents[ti]) best = agents[ti];
+    }
     if (!best) {
       if (typeof UI !== "undefined" && UI.say) UI.say("No target");
       return false;
