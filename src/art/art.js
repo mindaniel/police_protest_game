@@ -243,7 +243,81 @@ var Art = (function () {
     }
   }
 
+  /* Far view (zoomed out): the city - ground, building tops, trees - is painted into FT x FT tile
+   * pieces at FPX px per tile, lazily, nearest first, kept in an LRU. Panning only blits pieces,
+   * like map tiles; pieces not painted yet show the plain mini ground. */
+  var FT = 64, FPX = 4, FTMAX = 200, ftiles = {}, ftCount = 0, ftWant = [], ftTick = 0, ftKey = "", ftPumping = false, ftJob = 0, ftTrees = null;
+  function ftTreeGrid() {
+    ftTrees = {};
+    for (var i = 0; i < trees.length; i++) {
+      var tr = trees[i], k = Math.floor(tr.x / FT) + "," + Math.floor(tr.y / FT);
+      (ftTrees[k] || (ftTrees[k] = [])).push(tr);
+    }
+  }
+  function paintFarTile(fx, fy) {
+    var x0 = fx * FT, y0 = fy * FT, x1 = Math.min(W, x0 + FT), y1 = Math.min(H, y0 + FT), d, i;
+    var cv = makeCanvas((x1 - x0) * FPX, (y1 - y0) * FPX), g = cv.getContext("2d"), k = FPX / TS;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(miniCv, x0 * MS, y0 * MS, (x1 - x0) * MS, (y1 - y0) * MS, 0, 0, cv.width, cv.height);
+    g.setTransform(k, 0, 0, k, -x0 * TS * k, -y0 * TS * k);
+    var dz = Math.ceil(HMAXZ * ZU / TS) + 2;   /* rows below the piece whose buildings rise into it */
+    if (diags) for (d = Math.max(0, y0 - 1); d <= Math.min(ND - 1, y1 + dz); d++) if (drow(d)) fillPaths(g, drow(d));
+    if (!ftTrees) ftTreeGrid();
+    var L = ftTrees[fx + "," + fy] || [];
+    for (i = 0; i < L.length; i++) {
+      var tr = L[i], v = tr.v || treeVariety(tr.sd || 1), r = (v === "bush" ? 0.30 : 0.48) * TS * tr.s;
+      g.fillStyle = v === "conifer" ? "#3f7a48" : (v === "bush" ? "#4f8f5a" : "#5c9a52");
+      g.beginPath(); g.arc(tr.x * TS, tr.y * TS - r * 0.9, Math.max(r, TS * 0.4), 0, Math.PI * 2); g.fill();
+    }
+    ftiles[fy * 4096 + fx] = { cv: cv, used: ftTick };
+    if (++ftCount > FTMAX) {   /* drop the piece unused the longest */
+      var old = null, ou = 1e18;
+      for (var key in ftiles) if (ftiles[key].used < ou) { ou = ftiles[key].used; old = key; }
+      if (old !== null && ou < ftTick) { delete ftiles[old]; ftCount--; }
+    }
+  }
+  function ftPump() {
+    if (ftPumping) return;
+    ftPumping = true;
+    var job = ftJob;
+    function tick() {
+      if (job !== ftJob) { ftPumping = false; return; }
+      var t0 = Date.now();
+      while (ftWant.length && Date.now() - t0 < 6) {
+        var w = ftWant.shift();
+        if (!ftiles[w[1] * 4096 + w[0]]) paintFarTile(w[0], w[1]);
+      }
+      if (ftWant.length) setTimeout(tick, 8); else ftPumping = false;
+    }
+    setTimeout(tick, 0);
+  }
+  function drawFarTiles(ctx) {
+    var key = cityVer + "," + viewMode + "," + (lowMode ? 1 : 0) + "," + W + "," + H + "," + trees.length;
+    if (key !== ftKey) { ftKey = key; ftiles = {}; ftCount = 0; ftWant = []; ftTrees = null; ftJob++; ftPumping = false; }
+    drawBackdrop(ctx);
+    if (!miniCv) return;
+    setGround(ctx, 1);
+    var v = visTiles(ctx, 1);
+    ftTick++;
+    var fx0 = Math.max(0, Math.floor(v.x0 / FT)), fx1 = Math.min(Math.ceil(W / FT) - 1, Math.floor(v.x1 / FT));
+    var fy0 = Math.max(0, Math.floor(v.y0 / FT)), fy1 = Math.min(Math.ceil(H / FT) - 1, Math.floor((v.y1 + HMAXZ * ZU / TS) / FT));
+    var want = [], fx, fy, t, mx = (fx0 + fx1) / 2, my = (fy0 + fy1) / 2;
+    for (fy = fy0; fy <= fy1; fy++) for (fx = fx0; fx <= fx1; fx++) {
+      t = ftiles[fy * 4096 + fx];
+      if (t) { t.used = ftTick; ctx.drawImage(t.cv, fx * FT, fy * FT, t.cv.width / FPX, t.cv.height / FPX); }
+      else {   /* not painted yet: plain mini ground */
+        want.push([fx, fy]);
+        blitGround(ctx, fx * FT, fy * FT, (fx + 1) * FT, (fy + 1) * FT, 0, 0, 1, false);
+      }
+    }
+    want.sort(function (a, b) { return ((a[0] - mx) * (a[0] - mx) + (a[1] - my) * (a[1] - my)) - ((b[0] - mx) * (b[0] - mx) + (b[1] - my) * (b[1] - my)); });
+    ftWant = want;   /* only what is on screen now */
+    if (want.length) ftPump();
+    setScreen(ctx);
+  }
+
   function drawFarCache(ctx, G) {
+    if (typeof document !== "undefined") { drawFarTiles(ctx); return; }
     if (typeof document === "undefined") {
       drawBackdrop(ctx);
       drawGround(ctx);
@@ -958,7 +1032,7 @@ var Art = (function () {
       for (var k = 0; k < chunks.length; k++) if (chunks[k] && chunks[k].used < ou && k !== ci) { ou = chunks[k].used; old = k; }
       if (old >= 0 && ou < chunkTick) { chunks[old] = null; chunkCount--; }
     }
-    cityVer++; FAR_DIRTY = true;
+    FAR_DIRTY = true;
   }
   function pumpChunks() {
     if (pumping) return;
@@ -967,11 +1041,11 @@ var Art = (function () {
     function tick() {
       if (job !== groundJob) { pumping = false; if (chunkWant.length) pumpChunks(); return; }
       var t0 = Date.now();
-      while (chunkWant.length && Date.now() - t0 < 12) {
+      while (chunkWant.length && Date.now() - t0 < 6) {
         var ci = chunkWant.shift();
         if (!chunks[ci]) paintChunk(ci);
       }
-      if (chunkWant.length) setTimeout(tick, 0); else pumping = false;
+      if (chunkWant.length) setTimeout(tick, 8); else pumping = false;
     }
     setTimeout(tick, 0);
   }
@@ -992,7 +1066,7 @@ var Art = (function () {
       if (c) {
         c.used = chunkTick;
         g.drawImage(c.cv, ox + cx * CH * s, oy + cy * CH * s, c.cv.width / GT * s, c.cv.height / GT * s);
-      } else if (chunkWant.indexOf(ci) < 0) want.push(ci);
+      } else want.push(ci);
     }
     if (want.length) {   /* nearest to the view centre first, ahead of background work */
       var mx = (c0x + c1x) / 2, my = (c0y + c1y) / 2;
@@ -1000,9 +1074,10 @@ var Art = (function () {
         var ax = a % CW - mx, ay = (a - a % CW) / CW - my, bx = b % CW - mx, by = (b - b % CW) / CW - my;
         return (ax * ax + ay * ay) - (bx * bx + by * by);
       });
-      chunkWant = want.concat(chunkWant);
+      /* big map: chunks the view has left are not painted any more (fast pans queued hundreds) */
+      chunkWant = CW * CHH > CHMAX ? want : want.concat(chunkWant.filter(function (c) { return want.indexOf(c) < 0; }));
       pumpChunks();
-    }
+    } else if (CW * CHH > CHMAX) chunkWant = [];
   }
   /* visible tile rectangle of a context whose transform maps tiles * unit to device pixels */
   function visTiles(g, unit) {
@@ -2515,10 +2590,7 @@ var Art = (function () {
     var ry0 = Math.max(b.y0, v.y0), ry1 = Math.min(b.y1, v.y1);
     SC.k = k; SC.lastK = k; SC.ver = cityVer;
     SC.rx0 = rx0; SC.rx1 = rx1; SC.ry0 = ry0; SC.ry1 = ry1;
-    var bg = makeCanvas((rx1 - rx0) * k, (ry1 - ry0) * k), g = bg.getContext("2d");
-    g.setTransform(k, 0, 0, k, -rx0 * k, -ry0 * k);
-    if (groundCv) blitGround(g, rx0 / TS - 1, ry0 / TS - 1, rx1 / TS + 1, ry1 / TS + 1, 0, 0, TS, true);
-    SC.bg = { c: bg, ox: rx0, oy: ry0 };
+    SC.bg = { c: null, ox: rx0, oy: ry0 };   /* ground is not cached: drawGround blits chunks each frame */
     SC.strips = [];
     for (d0 = 0; d0 < ND; d0 += 2) {
       var e = null;
@@ -2793,9 +2865,7 @@ var Art = (function () {
       } else {
         if (cached) {
           ensureCache();
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          blit(ctx, SC.bg);
-          setScreen(ctx);
+          drawGround(ctx);
         } else {
           drawBackdrop(ctx);
           drawGround(ctx);

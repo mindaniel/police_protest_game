@@ -235,8 +235,11 @@ var MINIMAP = (function () {
     // ground
     ctx.fillStyle = "#222a33";
     ctx.fillRect(cxp - g.r, cyp - g.r, g.r * 2, g.r * 2);
-    if (base) {
-      ctx.drawImage(base, cxp - cam.cx * s, cyp - cam.cy * s, MAP.width * s, MAP.height * s);
+    if (base) {   /* only the part of the map inside the circle (whole big maps cost a lot per frame) */
+      var tr = g.r / s, sx0 = Math.max(0, Math.floor(cam.cx - tr)), sy0 = Math.max(0, Math.floor(cam.cy - tr));
+      var sx1 = Math.min(MAP.width, Math.ceil(cam.cx + tr)), sy1 = Math.min(MAP.height, Math.ceil(cam.cy + tr));
+      if (sx1 > sx0 && sy1 > sy0) ctx.drawImage(base, sx0 * px, sy0 * px, (sx1 - sx0) * px, (sy1 - sy0) * px,
+        cxp + (sx0 - cam.cx) * s, cyp + (sy0 - cam.cy) * s, (sx1 - sx0) * s, (sy1 - sy0) * s);
     }
 
     // current view rectangle
