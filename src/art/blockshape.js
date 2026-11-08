@@ -211,8 +211,47 @@ var BLOCKSHAPE = (function make() {   /* make() gives a separate instance (roads
     if (x < 0 || y < 0 || x >= W || y >= H) return null;
     return cells[y * W + x] || null;
   }
+  /* baked shapes (tools/bake.py): save() gives a compact object, load() puts it back instead of build() */
+  function r4(v) { return Math.round(v * 1e4) / 1e4; }
+  /* skip(i, cell) -> true leaves a cell out (the reader treats it as plain); numbers are stored
+     relative to their tile, so most are short like 0, 1 or 0.5 */
+  function save(skip) {
+    var d = { v: 2, W: W, H: H, regions: stats.regions, ncells: stats.cells, outl: [], idx: [], area: [], np: [], pl: [], pv: [], nw: [], wv: [] };
+    var i, j, k, c, p, last = 0;
+    for (i = 0; i < outl.length; i++) { p = []; for (j = 0; j < outl[i].length; j++) p.push(r4(outl[i][j])); d.outl.push(p); }
+    for (i = 0; i < W * H; i++) {
+      c = cells[i];
+      if (!c || (skip && skip(i, c))) continue;
+      var tx = i % W, ty = (i - tx) / W;
+      d.idx.push(i - last); last = i;
+      d.area.push(r4(c.area));
+      d.np.push(c.polys.length);
+      for (j = 0; j < c.polys.length; j++) { p = c.polys[j]; d.pl.push(p.length); for (k = 0; k < p.length; k++) d.pv.push(r4(p[k] - (k & 1 ? ty : tx))); }
+      d.nw.push(c.walls.length);
+      for (j = 0; j < c.walls.length; j++) for (k = 0; k < 4; k++) d.wv.push(r4(c.walls[j][k] - (k & 1 ? ty : tx)));
+    }
+    return d;
+  }
+  function load(d) {
+    W = d.W; H = d.H; cells = new Array(W * H); outl = d.outl;
+    var i, j, k, n, c, p, at = 0, pi = 0, pv = 0, wv = 0;
+    for (n = 0; n < d.idx.length; n++) {
+      at += d.idx[n];
+      var tx = at % W, ty = (at - tx) / W;
+      c = { polys: [], walls: [], area: d.area[n] };
+      for (j = 0; j < d.np[n]; j++) {
+        p = d.pv.slice(pv, pv + d.pl[pi]); pv += d.pl[pi++];
+        for (k = 0; k < p.length; k++) p[k] += k & 1 ? ty : tx;
+        c.polys.push(p);
+      }
+      for (j = 0; j < d.nw[n]; j++, wv += 4) c.walls.push([d.wv[wv] + tx, d.wv[wv + 1] + ty, d.wv[wv + 2] + tx, d.wv[wv + 3] + ty]);
+      cells[at] = c;
+    }
+    stats.regions = d.regions; stats.cells = d.ncells; stats.ms = 0;
+    return stats;
+  }
   function debugStats() { return { regions: stats.regions, cells: stats.cells, ms: stats.ms }; }
   /* simplified outlines as flat [x0,y0,x1,y1,...] loops (solid on the right of each edge) */
   function outlines() { return outl; }
-  return { build: build, cell: cell, outlines: outlines, debugStats: debugStats, make: make };
+  return { build: build, cell: cell, outlines: outlines, debugStats: debugStats, make: make, save: save, load: load };
 })();

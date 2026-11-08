@@ -909,13 +909,32 @@ var Art = (function () {
     g.restore();
   }
 
+  /* Baked shapes: maps/<map>.bake.js (made by tools/bake.py) pushes { v, sig, b, r } to BAKED.
+   * Used only when the signature matches this map, so an edited map falls back to building. */
+  var BAKE_V = 2;
+  function mapSig() {
+    var h = 2166136261, y, x, row;
+    for (y = 0; y < H; y++) {
+      row = MAP.rows[y] || "";
+      for (x = 0; x < row.length; x++) h = Math.imul(h ^ row.charCodeAt(x), 16777619) >>> 0;
+    }
+    return BAKE_V + ":" + W + "x" + H + ":" + h;
+  }
+  function bakedShapes() {
+    if (typeof BAKED === "undefined" || !BAKED.length) return null;
+    if (typeof location !== "undefined" && /[?&]nobake=1/.test(location.search)) return null;   /* tools/bake.py */
+    var sig = mapSig();
+    for (var i = 0; i < BAKED.length; i++) if (BAKED[i].sig === sig) return BAKED[i];
+    return null;
+  }
   function buildCity() {
     computeHeights();
     BSON = !lowMode && typeof BLOCKSHAPE !== "undefined";
     if (BSON) {
-      BLOCKSHAPE.build(W, H, shapeSolid);
       RSHAPE = RSHAPE || BLOCKSHAPE.make();
-      RSHAPE.build(W, H, roadSolid);
+      var bk = bakedShapes();
+      if (bk) { BLOCKSHAPE.load(bk.b); RSHAPE.load(bk.r); }
+      else { BLOCKSHAPE.build(W, H, shapeSolid); RSHAPE.build(W, H, roadSolid); }
     }
     cityVer++;
     HMAXZ = 0.5;
@@ -2955,6 +2974,11 @@ var Art = (function () {
     centerOn: centerOn,
     isLow: function () { return lowMode; },
     toggleLow: toggleLow,
+    bakeData: function () { return BSON ? { v: BAKE_V, sig: mapSig(), b: BLOCKSHAPE.save(), r: RSHAPE.save(function (i, c) {   /* road cells drawn as plain tiles are not stored */
+      var x = i % W, y = (i - x) / W;
+      return tile(x, y) === "." ? c.area > 0.999 : c.area < 0.001;
+    }) } : null; },
+    baked: function () { return !!(BSON && bakedShapes()); },
     groundStats: function () { return { chunks: chunkCount, want: chunkWant.length, CW: CW, CHH: CHH, CHMAX: CHMAX, GT: GT, pumping: pumping, tick: chunkTick }; },
     ground: function () { return groundCv ? { cv: miniCv, GT: MS } : null; },
     /* draw ground tiles [x0,x0+w) x [y0,y0+h) into the screen rect (dx,dy,dw,dh) (squad cam inset) */

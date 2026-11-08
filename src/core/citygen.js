@@ -101,11 +101,22 @@ var CityGen = (function () {
 
     var doors = spacedPick(shuffle(doorC), 90, 3, null, 0);
 
+    /* openness for every tile from a summed-area table (big maps: millions of 5x5 scans otherwise) */
+    var SW = W + 1, sat = new Int32Array(SW * (H + 1));
+    for (y = 0; y < H; y++) {
+      var run = 0;
+      for (x = 0; x < W; x++) { if (walk(g[y * W + x])) run++; sat[(y + 1) * SW + x + 1] = sat[y * SW + x + 1] + run; }
+    }
+    function openFast(x, y) {
+      var x0 = Math.max(0, x - 2), y0 = Math.max(0, y - 2), x1 = Math.min(W, x + 3), y1 = Math.min(H, y + 3);
+      return sat[y1 * SW + x1] - sat[y0 * SW + x1] - sat[y1 * SW + x0] + sat[y0 * SW + x0];
+    }
+
     /* protest areas: the plaza plus open junctions spread across the city */
     var junc = [];
     for (y = 2; y < H - 2; y++) for (x = 2; x < W - 2; x++) {
       if (get(x, y) !== ".") continue;
-      var o = openness(x, y);
+      var o = openFast(x, y);
       if (o >= 15) junc.push({ x: x, y: y, o: o + R() * 3 });
       else if (o >= 11) junc.push({ x: x, y: y, o: o - 20 });   /* street spots, used when many areas are needed */
     }
@@ -142,7 +153,7 @@ var CityGen = (function () {
     var stage = [];
     for (y = 3; y < H - 3; y++) for (x = 3; x < W - 3; x++) {
       if (get(x, y) !== "." || get(x - 1, y) !== "." || get(x - 2, y) !== "." || get(x + 1, y) !== ".") continue;
-      if (openness(x, y) < 12) continue;
+      if (openFast(x, y) < 12) continue;
       stage.push({ x: x, y: y, s: Math.abs(Math.sqrt(d2({ x: x, y: y }, pc)) - 18) + R() * 6 });
     }
     stage.sort(function (p, q) { return p.s - q.s; });
