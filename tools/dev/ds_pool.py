@@ -160,14 +160,23 @@ class Account:
             except Exception:
                 pass
 
-    def ask(self, prompt, timeout_s=900, raw_path=None):
-        self.page.goto(URL, wait_until="domcontentloaded")
+    def ask(self, prompt, timeout_s=900, raw_path=None, fresh=True):
+        # fresh=False sends the next message in the same chat (multi-part prompts)
+        if fresh:
+            self.page.goto(URL, wait_until="domcontentloaded")
         try:
             self.page.wait_for_selector(COMPOSER, timeout=30000)
         except Exception:
             raise RuntimeError("LOGGED_OUT: run  ds_pool.py login %d" % self.n)
         box = self.page.locator(COMPOSER).first
-        box.fill(prompt); time.sleep(1)
+        try:
+            box.fill(prompt, timeout=60000)
+        except Exception:
+            if raw_path:   # keep a picture of what blocked the text box
+                try: self.page.screenshot(path=str(raw_path) + ".png")
+                except Exception: pass
+            raise
+        time.sleep(1)
         with self.page.expect_response(lambda r: "chat/completion" in r.url, timeout=timeout_s * 1000) as info:
             box.press("Enter")
         text, part = "", 0
@@ -284,8 +293,16 @@ def run(jobs, accounts, gap):
             prompt = src.read_text(encoding="utf-8")
             print("%s acct %d -> %s (%d chars)" % (time.strftime("%H:%M"), n, job, len(prompt)), flush=True)
             try:
+                # a prompt may hold several messages split by PART lines (files first, task last),
+                # sent one by one in the same chat; the reply to the last one is kept
+                parts = [x for x in re.split(r"\r?\n=====PART=====\r?\n", prompt) if x.strip()]
+                stamp = time.strftime("%Y%m%d_%H%M%S")
                 with Account(n) as a:
-                    text = a.ask(prompt, raw_path=WORK / "raw" / ("%s_acct%d_%s.txt" % (job, n, time.strftime("%Y%m%d_%H%M%S"))))
+                    for pi, part in enumerate(parts):
+                        if pi:
+                            time.sleep(5)
+                        text = a.ask(part, fresh=(pi == 0),
+                                     raw_path=WORK / "raw" / ("%s_acct%d_%s_m%d.txt" % (job, n, stamp, pi + 1)))
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_text(text, encoding="utf-8")
                 print("%s acct %d <- %s saved %s (%d chars)" % (time.strftime("%H:%M"), n, job, dst, len(text)), flush=True)

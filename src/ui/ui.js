@@ -1156,7 +1156,7 @@ function uiPlanningLayer(ctx, g) {
   var rz = CONFIG.rallyZones || [], ri, rt;
   ctx.fillStyle = "rgba(240,140,0,0.09)";
   for (ri = 0; ri < rz.length; ri++) {
-    if (rz[ri].plaza) continue;
+    if (rz[ri].plaza || rz[ri].off) continue;
     for (rt = 0; rt < rz[ri].tiles.length; rt++) ctx.fillRect(rz[ri].tiles[rt].x * ts, rz[ri].tiles[rt].y * ts, ts, ts);
   }
   ctx.strokeStyle = "#f08c00";

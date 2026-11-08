@@ -39,19 +39,23 @@ var MEDIA = (function () {
     var w = MAP.width, h = MAP.height;
     var n = w * h;
     if (_bfsCap < n) {
-      _bfsSeen = new Int16Array(n);
+
       _bfsQueue = new Int32Array(n);
-      _bfsDist = new Int32Array(n);
       _bfsCap = n;
     }
   }
 
-  function bfsFrom(G, tx, ty, stamp) {
+  /* BFS into the crew's own field, out to BFS_MAX steps only; cells reached last time are
+   * cleared from the crew's touched list (a full-map clear and BFS took ~1 ms a frame on big maps) */
+  var BFS_MAX = 220;
+  function bfsFrom(G, tx, ty, crew) {
     ensureBfs(G);
     var w = MAP.width, h = MAP.height;
-    var n = w * h;
-    var seen = _bfsSeen, q = _bfsQueue, dist = _bfsDist;
-    for (var i = 0; i < n; i++) dist[i] = -1;
+    var n = w * h, i;
+    var q = _bfsQueue, dist = crew._dist;
+    if (!dist || dist.length !== n) { dist = crew._dist = new Int32Array(n); dist.fill(-1); crew._touched = null; }
+    if (crew._touched) for (i = 0; i < crew._touched.length; i++) dist[crew._touched[i]] = -1;
+    crew._touched = null;
     if (!isWalk(G, tx, ty)) {
       // find nearest walkable
       var found = false;
@@ -75,6 +79,7 @@ var MEDIA = (function () {
       var cur = q[head++];
       var cx = cur % w, cy = (cur / w) | 0;
       var cd = dist[cur];
+      if (cd >= BFS_MAX) continue;
       for (var k = 0; k < 4; k++) {
         var nx = cx + dirs[k * 2], ny = cy + dirs[k * 2 + 1];
         if (!isWalk(G, nx, ny)) continue;
@@ -84,6 +89,7 @@ var MEDIA = (function () {
         q[tail++] = ni;
       }
     }
+    crew._touched = q.slice(0, tail);
   }
 
   function randStreetNearEdge(G, edge) {
@@ -205,10 +211,7 @@ var MEDIA = (function () {
     crew.ty = tgt.y;
     // BFS from target tile
     var tx = Math.floor(tgt.x), ty = Math.floor(tgt.y);
-    bfsFrom(G, tx, ty, 0);
-    var n = MAP.width * MAP.height;
-    if (!crew._dist || crew._dist.length !== n) crew._dist = new Int32Array(n);
-    crew._dist.set(_bfsDist.subarray(0, n));
+    bfsFrom(G, tx, ty, crew);
     crew._flow = crew._dist;
     crew._flowTarget = { tx: tx, ty: ty };
   }
@@ -220,14 +223,17 @@ var MEDIA = (function () {
     var cx = Math.floor(ent.x), cy = Math.floor(ent.y);
     if (cx < 0 || cy < 0 || cx >= w || cy >= h) return;
     var cur = flow[cy * w + cx];
-    if (cur <= 0) return;
+    if (cur === 0) return;
     var best = cur, bx = cx, by = cy;
+    if (cur < 0) { bx = Math.floor(crew.tx); by = Math.floor(crew.ty); }   /* beyond the field: head straight for the target */
+    else {
     var dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
     for (var k = 0; k < 4; k++) {
       var nx = cx + dirs[k * 2], ny = cy + dirs[k * 2 + 1];
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       var d = flow[ny * w + nx];
       if (d >= 0 && d < best) { best = d; bx = nx; by = ny; }
+    }
     }
     if (bx === cx && by === cy) return;
     var tgtx = bx + 0.5, tgty = by + 0.5;

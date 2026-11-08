@@ -315,6 +315,7 @@ function frame(now) {
     while (Game.simAcc >= step && nSteps < 8 * Game.speed) { Game.simAcc -= step; nSteps++; }
     if (nSteps >= 8 * Game.speed) Game.simAcc = 0;   /* far behind (slow machine): drop the backlog */
     for (var i = 0; i < nSteps; i++) {
+      if (typeof EVENTS !== "undefined") EVENTS.update(G, step);   /* random protest events, freezes unwatched ones */
       Crowd.update(G, step);
       if (typeof Police !== "undefined") Police.update(G, step);
       if (typeof RESIST !== "undefined") RESIST.update(G, step);

@@ -347,6 +347,7 @@ var Crowd = (function () {
     leaveZone(G, a);
     var idx = Math.floor(a.y) * MAP.width + Math.floor(a.x), best = -1, bestC = Infinity, bestF = null;
     for (var i = 0; i < zs.length; i++) {
+      if (zs[i].off) continue;   /* no protest event there now (events.js) */
       var f = zoneField(G, i), d = f ? f[idx] : Infinity;
       if (d === undefined || d === Infinity) continue;
       var cap = (zs[i].tiles ? zs[i].tiles.length : 20) * 1.3, load = G._zoneLoad[i] || 0;
@@ -1231,7 +1232,7 @@ var Crowd = (function () {
     var moodTick = G._moodTick;
     for (i = 0; i < n; i++) {
       var am = agents[i];
-      if (!am.active) continue;
+      if (!am.active || am._frozen) continue;   /* _frozen: unwatched event (events.js) */
       var nbm = am._nbrs;
       if (!nbm) nbm = am._nbrs = [];
       neighbors(G, am.x, am.y, queryR, nbm);
@@ -1241,7 +1242,7 @@ var Crowd = (function () {
 
     for (i = 0; i < n; i++) {
       var sa = agents[i];
-      if (!sa.active || sa.role !== "peaceful") continue;
+      if (!sa.active || sa._frozen || sa.role !== "peaceful") continue;
       if (zoneMode) tendZone(G, sa);
       else if (sa._site >= 0) applySite(G, sa);
     }
@@ -1249,7 +1250,7 @@ var Crowd = (function () {
     var lodTick = G._lodTick;
     for (i = 0; i < n; i++) {
       var mv = agents[i];
-      if (!mv.active) continue;
+      if (!mv.active || mv._frozen) continue;
 
       /* recompute sim level every 0.5s, staggered by index */
       if (fullRefresh || (((i + simTick) & 15) === 0)) {

@@ -258,7 +258,7 @@ var MINIMAP = (function () {
       ctx.lineWidth = 1;
       for (i = 0; i < CONFIG.rallyZones.length; i++) {
         var rz = CONFIG.rallyZones[i];
-        if (!rz || typeof rz.x !== "number" || typeof rz.y !== "number") continue;
+        if (!rz || rz.off || typeof rz.x !== "number" || typeof rz.y !== "number") continue;   /* off: no event there (events.js) */
         var zx = cxp + (rz.x - cam.cx) * s;
         var zy = cyp + (rz.y - cam.cy) * s;
         var zr = (typeof rz.r === "number" ? rz.r : 5) * s;
