@@ -115,7 +115,11 @@ def parse_sse(body):
 
 
 class Account:
-    def __init__(self, n, headless=True):
+    def __init__(self, n, headless=None):
+        # headless Edge gets DeepSeek's hCaptcha (CHALLENGE_REQUIRED); a normal window does not.
+        # DS_HEADLESS=1 brings headless back.
+        if headless is None:
+            headless = os.environ.get("DS_HEADLESS") == "1"
         self.n, self.headless = n, headless
         dirs = [d for d in os.environ.get("DS_PROFILE_DIRS", "").split(os.pathsep) if d]
         self.profile = pathlib.Path(dirs[n - 1]) if n <= len(dirs) else HOME / (".deepseek-profile-%d" % n)
@@ -170,6 +174,17 @@ class Account:
         r = info.value
         while True:
             body = self._save_raw(r, raw_path, part)
+            if "CHALLENGE_REQUIRED" in body:
+                # never bypassed: the page shows the captcha, the user solves it, the page resends
+                print("  acct %d: DeepSeek asks for a captcha - solve it in the browser window (10 min)" % self.n, flush=True)
+                try:
+                    self.page.bring_to_front()
+                    with self.page.expect_response(lambda r: "chat/completion" in r.url, timeout=600000) as info:
+                        pass
+                except Exception:
+                    raise RuntimeError("CHALLENGE_REQUIRED: captcha not solved; open the profile and solve it")
+                r = info.value
+                continue
             if r.status in (401, 403):
                 raise RuntimeError("LOGGED_OUT: HTTP %d" % r.status)
             if r.status == 429:
